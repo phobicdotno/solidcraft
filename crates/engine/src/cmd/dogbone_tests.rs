@@ -138,6 +138,13 @@ fn t_bone_and_minimal_reliefs_remove_their_derived_volumes() {
     let segment = r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
     let want = POCKETED - 4.0 * 2.0 * segment * 6.0;
     assert!(rel(volume(&mut s), want) < 1e-7, "{} vs {want}", volume(&mut s));
+    // Without a gap, minimal stops 5% of the diameter short: 0.15 for a 3 mm bit.
+    let mut s = pocketed();
+    run(&mut s, "solid.dogbone", json!({"edges": CORNERS, "diameter": 3, "style": "minimal"}));
+    let d = 1.65 / 2f64.sqrt();
+    let segment = r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
+    let want = POCKETED - 4.0 * 2.0 * segment * 6.0;
+    assert!(rel(volume(&mut s), want) < 1e-7, "{} vs {want}", volume(&mut s));
     // The T-bone bites the longer (20 mm) wall: the side's choice turns it onto the 14 mm one.
     // Both remove the same; the reliefs' centres differ (checked in the kernel).
     let mut s = pocketed();
