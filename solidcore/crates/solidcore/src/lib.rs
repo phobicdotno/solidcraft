@@ -49,6 +49,7 @@ pub mod blend;
 pub mod boolean;
 pub mod curve;
 pub mod eval;
+pub mod flat;
 pub mod geom;
 pub mod heal;
 pub mod intersect;
