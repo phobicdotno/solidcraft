@@ -159,7 +159,7 @@ pub fn relieve_corners(shape: &Shape, tool_diameter: f64) -> Shape {
     let mut circles: Region = Vec::new();
     for ring in norm.rings() {
         let Ok(corners) = crate::dogbone::ring_reliefs(ring, &options) else {
-            return norm;
+            return norm.clone();
         };
         for c in corners {
             if let crate::dogbone::Corner2::Relief(r) = c {
