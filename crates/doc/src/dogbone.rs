@@ -210,7 +210,12 @@ pub(crate) fn evaluate(doc: &Document, vals: &BTreeMap<String, Value>, f: &Featu
         notes.push(skipped_note(&warned));
     }
     if plan.tools.is_empty() {
-        let why = if notes.is_empty() { String::new() } else { format!(" ({})", notes.join("; ")) };
+        // Nothing relieved: say why for every edge looked at.
+        let mut all = notes.clone();
+        if !report.skipped.is_empty() && warned.len() < report.skipped.len() {
+            all.push(skipped_note(&report.skipped));
+        }
+        let why = if all.is_empty() { String::new() } else { format!(" ({})", all.join("; ")) };
         return Err(DocError::Invalid(format!("no inside corner to relieve{why}")));
     }
     let mut tools = Vec::new();
