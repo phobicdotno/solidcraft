@@ -2,8 +2,7 @@
 //! sheets, through solidcore's recipe ([`solidcore_ops::fab`]). Nothing here computes geometry.
 
 pub use solidcore_ops::fab::{
-    Axis, FabPart, FabResult, FabSettings, Finished, FlatError, Frame, Machine, Mark, P2, PartKind, Ring, Shape, Sheet, SheetSettings,
-    Style, Warning,
+    Axis, FabPart, FabResult, FabSettings, Finished, FlatError, Frame, Machine, Mark, P2, PartKind, Ring, Shape, Sheet, SheetSettings, Style, Warning,
 };
 
 use crate::{Body, KernelError, Result};

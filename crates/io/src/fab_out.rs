@@ -76,10 +76,16 @@ pub fn sheet_dxf(sheet: &SheetDrawing<'_>) -> Result<String> {
         shape: DxfShape::LwPolyline { verts: [[0.0, 0.0], [w, 0.0], [w, h], [0.0, h]].iter().map(|p| (v(p), 0.0)).collect(), closed: true },
     }];
     for ring in sheet.cuts.iter().filter(|r| r.len() >= 3) {
-        entities.push(DxfEntity { layer: CUT_LAYER.into(), shape: DxfShape::LwPolyline { verts: ring.iter().map(|p| (v(p), 0.0)).collect(), closed: true } });
+        entities.push(DxfEntity {
+            layer: CUT_LAYER.into(),
+            shape: DxfShape::LwPolyline { verts: ring.iter().map(|p| (v(p), 0.0)).collect(), closed: true },
+        });
     }
     for line in sheet.engrave.iter().filter(|l| l.len() >= 2) {
-        entities.push(DxfEntity { layer: ENGRAVE_LAYER.into(), shape: DxfShape::LwPolyline { verts: line.iter().map(|p| (v(p), 0.0)).collect(), closed: false } });
+        entities.push(DxfEntity {
+            layer: ENGRAVE_LAYER.into(),
+            shape: DxfShape::LwPolyline { verts: line.iter().map(|p| (v(p), 0.0)).collect(), closed: false },
+        });
     }
     write_dxf_drawing(&layers, &entities)
 }

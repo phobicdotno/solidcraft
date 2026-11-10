@@ -498,13 +498,21 @@ mod tests {
     fn a_box_far_from_the_origin_is_cut_where_it_is() {
         // a part placed a metre away, as parts of an assembly are: every layer is its rectangle
         let mut k = Kernel::default();
-        let mut b = create_box(&mut k, Point3::new(13.0, -1069.0, 864.0), 10.0, 100.0, 7.0).unwrap();
+        let mut b =
+            create_box(&mut k, Point3::new(13.0, -1069.0, 864.0), 10.0, 100.0, 7.0).unwrap();
         let mut s = BrepSection::new(&k, &mut b, CHORD).unwrap();
         for z in [865.5, 867.5, 870.5] {
             let r = s.section(Axis::Z, z).unwrap();
-            assert!(close(region::area(&r), 1000.0, 1e-6), "{z}: {}", region::area(&r));
+            assert!(
+                close(region::area(&r), 1000.0, 1e-6),
+                "{z}: {}",
+                region::area(&r)
+            );
             let bb = region::bounds(&r).unwrap();
-            assert!(close(bb[0], 13.0, 1e-6) && close(bb[1], -1069.0, 1e-6), "{bb:?}");
+            assert!(
+                close(bb[0], 13.0, 1e-6) && close(bb[1], -1069.0, 1e-6),
+                "{bb:?}"
+            );
         }
     }
 

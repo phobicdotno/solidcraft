@@ -257,7 +257,11 @@ fn exported_sheets_read_back_with_cuts_red_and_engraving_blue() {
 #[test]
 fn without_a_path_the_texts_come_back_and_a_router_cuts_true_size() {
     let mut s = block();
-    let r = run(&mut s, "fab.export_sheets", json!({"thickness": 10, "machine": "cnc", "tool_diameter": 6, "formats": ["svg"], "labels": false, "dowels": 0}));
+    let r = run(
+        &mut s,
+        "fab.export_sheets",
+        json!({"thickness": 10, "machine": "cnc", "tool_diameter": 6, "formats": ["svg"], "labels": false, "dowels": 0}),
+    );
     let files = r["files"].as_array().unwrap();
     assert!(files.iter().all(|f| f["format"] == "svg" && f["path"].is_null()));
     let svg = files[0]["text"].as_str().unwrap();

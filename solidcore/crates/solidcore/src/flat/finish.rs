@@ -163,7 +163,11 @@ pub fn relieve_corners(shape: &Shape, tool_diameter: f64) -> Shape {
         };
         for c in corners {
             if let crate::dogbone::Corner2::Relief(r) = c {
-                circles.extend(region::disk(r.centre, r.radius + RELIEF_CHORD, RELIEF_CHORD));
+                circles.extend(region::disk(
+                    r.centre,
+                    r.radius + RELIEF_CHORD,
+                    RELIEF_CHORD,
+                ));
             }
         }
     }
@@ -322,10 +326,7 @@ fn place_box(room: &[Shape], b: [f64; 4], w: f64, t: f64) -> Option<P2> {
             } else {
                 k
             };
-            [
-                gx0 + (j % nx) as f64 * step,
-                gy0 + (j / nx) as f64 * step,
-            ]
+            [gx0 + (j % nx) as f64 * step, gy0 + (j / nx) as f64 * step]
         })
         .filter(|&p| region::contains(room, p))
         .map(|p| (depth(room, p), p))
@@ -396,7 +397,12 @@ pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> Finished {
         } else {
             largest(region::difference(&material(&shape), &marked))
         };
-        engrave.extend(label_inside(&room, &part.name, ss.label_height, LABEL_MARGIN));
+        engrave.extend(label_inside(
+            &room,
+            &part.name,
+            ss.label_height,
+            LABEL_MARGIN,
+        ));
     }
     if let Machine::Laser { kerf: k } = ss.machine {
         if k > 0.0 {
@@ -646,7 +652,11 @@ mod tests {
         let s = solid(sq(0.0, 0.0, 10.0, 10.0, true));
         assert_eq!(kerf(&s, 1e300), s);
         assert_eq!(kerf(&s, -1e300), s);
-        assert!(close(shape_area(&kerf(&s, MAX_KERF)), 1010.0 * 1010.0, 1e-3));
+        assert!(close(
+            shape_area(&kerf(&s, MAX_KERF)),
+            1010.0 * 1010.0,
+            1e-3
+        ));
     }
 
     #[test]
@@ -684,7 +694,10 @@ mod tests {
     /// `(vx, vy)` (each ±1), both within 1.906 mm of the centre of a radius-2 relief through the
     /// corner on its bisector: one on each wall, so a relief takes both away.
     fn bitten(c: [f64; 2], v: [f64; 2]) -> [[f64; 2]; 2] {
-        [[c[0] - 0.2 * v[0], c[1] + 0.4 * v[1]], [c[0] + 0.4 * v[0], c[1] - 0.2 * v[1]]]
+        [
+            [c[0] - 0.2 * v[0], c[1] + 0.4 * v[1]],
+            [c[0] + 0.4 * v[0], c[1] - 0.2 * v[1]],
+        ]
     }
 
     #[test]
@@ -701,17 +714,30 @@ mod tests {
             }
         }
         // the outside corners and the walls away from the corners keep their material
-        for p in [[0.5, 0.5], [99.5, 59.5], [50.0, 27.0], [54.0, 50.0], [46.0, 50.0]] {
+        for p in [
+            [0.5, 0.5],
+            [99.5, 59.5],
+            [50.0, 27.0],
+            [54.0, 50.0],
+            [46.0, 50.0],
+        ] {
             assert!(region::contains(&material(&out), p), "{p:?}");
         }
         // what goes is two lenses, the primitive's closed form for a square corner each
         let r = 2.0;
         let removed = shape_area(&s) - shape_area(&out);
-        let opts = crate::dogbone::Options { radius: r, style: crate::dogbone::Style::Normal, max_angle: RELIEF_MAX_ANGLE };
+        let opts = crate::dogbone::Options {
+            radius: r,
+            style: crate::dogbone::Style::Normal,
+            max_angle: RELIEF_MAX_ANGLE,
+        };
         let each = crate::dogbone::removed_area(std::f64::consts::FRAC_PI_2, &opts).unwrap();
         // each arc is a polygon within RELIEF_CHORD inside its circle: about 2/3 of the chord
         // times the arc's length less per relief
-        assert!(removed < 2.0 * each && close(removed, 2.0 * each, 0.05), "{removed} vs 2 x {each}");
+        assert!(
+            removed < 2.0 * each && close(removed, 2.0 * each, 0.05),
+            "{removed} vs 2 x {each}"
+        );
     }
 
     #[test]
@@ -724,7 +750,10 @@ mod tests {
         assert_eq!(out.holes.len(), 1);
         // a hole's corners open into the hole
         for c in [[20.0, 20.0], [40.0, 20.0], [40.0, 40.0], [20.0, 40.0]] {
-            let v = [if c[0] < 30.0 { 1.0 } else { -1.0 }, if c[1] < 30.0 { 1.0 } else { -1.0 }];
+            let v = [
+                if c[0] < 30.0 { 1.0 } else { -1.0 },
+                if c[1] < 30.0 { 1.0 } else { -1.0 },
+            ];
             for p in bitten(c, v) {
                 assert!(!region::contains(&material(&out), p), "{c:?} {p:?}");
             }
@@ -736,7 +765,16 @@ mod tests {
     #[test]
     fn a_slot_narrower_than_two_bits_is_relieved_by_a_boolean() {
         // a 3 mm slot with a 4 mm bit: the two corner circles overlap on the slot's bottom edge
-        let s = solid(vec![[0.0, 0.0], [20.0, 0.0], [20.0, 10.0], [11.5, 10.0], [11.5, 5.0], [8.5, 5.0], [8.5, 10.0], [0.0, 10.0]]);
+        let s = solid(vec![
+            [0.0, 0.0],
+            [20.0, 0.0],
+            [20.0, 10.0],
+            [11.5, 10.0],
+            [11.5, 5.0],
+            [8.5, 5.0],
+            [8.5, 10.0],
+            [0.0, 10.0],
+        ]);
         let out = relieve_corners(&s, 4.0);
         assert!(shape_area(&out) < shape_area(&s));
         for (c, v) in [([8.5, 5.0], [1.0, 1.0]), ([11.5, 5.0], [-1.0, 1.0])] {
@@ -755,7 +793,11 @@ mod tests {
         }
         // an outline with no inside corner gets nothing
         let sq_shape = solid(sq(0.0, 0.0, 10.0, 10.0, true));
-        assert!(close(shape_area(&relieve_corners(&sq_shape, 3.0)), 100.0, 1e-9));
+        assert!(close(
+            shape_area(&relieve_corners(&sq_shape, 3.0)),
+            100.0,
+            1e-9
+        ));
     }
 
     // --- label ---
@@ -798,7 +840,10 @@ mod tests {
         assert!(!s.is_empty());
         assert_inside(&p, &s, 1.0);
         for [x, y] in points(&s) {
-            assert!(!(9.0 < x && x < 51.0 && 9.0 < y && y < 51.0), "{x} {y} in the hole");
+            assert!(
+                !(9.0 < x && x < 51.0 && 9.0 < y && y < 51.0),
+                "{x} {y} in the hole"
+            );
         }
     }
 
@@ -894,7 +939,11 @@ mod tests {
 
     #[test]
     fn laser_grows_a_part_by_half_the_kerf_each_side() {
-        let p = part("L1", PartKind::Slice, solid(sq(0.0, 0.0, 100.0, 50.0, true)));
+        let p = part(
+            "L1",
+            PartKind::Slice,
+            solid(sq(0.0, 0.0, 100.0, 50.0, true)),
+        );
         let f = finish(&p, &laser(0.2, false));
         let b = region::ring_bounds([&f.shape.outer]).unwrap();
         assert!(close(b[2] - b[0], 100.2, 1e-5) && close(b[3] - b[1], 50.2, 1e-5));
@@ -915,32 +964,57 @@ mod tests {
 
     #[test]
     fn spacers_are_not_labelled() {
-        let p = part("SP", PartKind::Spacer, solid(sq(0.0, 0.0, 50.0, 50.0, true)));
+        let p = part(
+            "SP",
+            PartKind::Spacer,
+            solid(sq(0.0, 0.0, 50.0, 50.0, true)),
+        );
         assert!(finish(&p, &laser(0.2, true)).engrave.is_empty());
-        let plate = part("Base plate", PartKind::Plate, solid(sq(0.0, 0.0, 200.0, 80.0, true)));
+        let plate = part(
+            "Base plate",
+            PartKind::Plate,
+            solid(sq(0.0, 0.0, 200.0, 80.0, true)),
+        );
         assert!(!finish(&plate, &laser(0.2, true)).engrave.is_empty());
     }
 
     #[test]
     fn the_name_keeps_clear_of_the_slot_numbers() {
         // a long plate with a row of numbers along its middle: the name goes above or below them
-        let mut p = part("Base plate", PartKind::Plate, solid(sq(0.0, 0.0, 200.0, 40.0, true)));
+        let mut p = part(
+            "Base plate",
+            PartKind::Plate,
+            solid(sq(0.0, 0.0, 200.0, 40.0, true)),
+        );
         p.marks = (0..10)
-            .map(|i| Mark { text: format!("{}", i + 1), at: [10.0 + 20.0 * f64::from(i), 17.0], height: 4.0 })
+            .map(|i| Mark {
+                text: format!("{}", i + 1),
+                at: [10.0 + 20.0 * f64::from(i), 17.0],
+                height: 4.0,
+            })
             .collect();
         let f = finish(&p, &laser(0.0, true));
         // the numbers' strokes come first; every later stroke (the name) stays out of their band
-        let numbers: usize = (0..10).map(|i| super::super::font::strokes(&format!("{}", i + 1), 4.0).len()).sum();
+        let numbers: usize = (0..10)
+            .map(|i| super::super::font::strokes(&format!("{}", i + 1), 4.0).len())
+            .sum();
         let named = &f.engrave[numbers..];
         assert!(!named.is_empty());
         for p in named.iter().flatten() {
-            assert!(p[1] < 17.0 - LABEL_MARGIN - 1e-9 || p[1] > 21.0 + LABEL_MARGIN + 1e-9, "{p:?}");
+            assert!(
+                p[1] < 17.0 - LABEL_MARGIN - 1e-9 || p[1] > 21.0 + LABEL_MARGIN + 1e-9,
+                "{p:?}"
+            );
         }
     }
 
     #[test]
     fn plate_marks_are_centred_on_their_point() {
-        let mut p = part("Base plate", PartKind::Plate, solid(sq(0.0, 0.0, 100.0, 40.0, true)));
+        let mut p = part(
+            "Base plate",
+            PartKind::Plate,
+            solid(sq(0.0, 0.0, 100.0, 40.0, true)),
+        );
         let line = vec![[1.0, 1.0], [2.0, 2.0]];
         p.engrave = vec![line.clone()];
         p.marks = vec![
@@ -1024,32 +1098,124 @@ mod tests {
 
     #[test]
     fn layout_names_the_setting_out_of_range() {
-        let res = result(vec![part("L1", PartKind::Slice, solid(sq(0.0, 0.0, 10.0, 10.0, true)))]);
+        let res = result(vec![part(
+            "L1",
+            PartKind::Slice,
+            solid(sq(0.0, 0.0, 10.0, 10.0, true)),
+        )]);
         let d = SheetSettings::default;
         let cases: Vec<(SheetSettings, &str)> = vec![
             (SheetSettings { width: 0.0, ..d() }, "width"),
-            (SheetSettings { width: f64::NAN, ..d() }, "width"),
-            (SheetSettings { width: 10_001.0, ..d() }, "width"),
-            (SheetSettings { height: -1.0, ..d() }, "height"),
-            (SheetSettings { height: f64::INFINITY, ..d() }, "height"),
+            (
+                SheetSettings {
+                    width: f64::NAN,
+                    ..d()
+                },
+                "width",
+            ),
+            (
+                SheetSettings {
+                    width: 10_001.0,
+                    ..d()
+                },
+                "width",
+            ),
+            (
+                SheetSettings {
+                    height: -1.0,
+                    ..d()
+                },
+                "height",
+            ),
+            (
+                SheetSettings {
+                    height: f64::INFINITY,
+                    ..d()
+                },
+                "height",
+            ),
             (SheetSettings { gap: -0.1, ..d() }, "gap"),
-            (SheetSettings { gap: f64::NAN, ..d() }, "gap"),
-            (SheetSettings { margin: -1.0, ..d() }, "margin"),
-            (SheetSettings { margin: 200.0, ..d() }, "margin"),
-            (SheetSettings { margin: 300.0, ..d() }, "margin"),
-            (SheetSettings { machine: Machine::Laser { kerf: -0.1 }, ..d() }, "kerf"),
-            (SheetSettings { machine: Machine::Laser { kerf: 5.1 }, ..d() }, "kerf"),
-            (SheetSettings { machine: Machine::Laser { kerf: f64::NAN }, ..d() }, "kerf"),
             (
-                SheetSettings { machine: Machine::Router { tool_diameter: 51.0 }, ..d() },
+                SheetSettings {
+                    gap: f64::NAN,
+                    ..d()
+                },
+                "gap",
+            ),
+            (
+                SheetSettings {
+                    margin: -1.0,
+                    ..d()
+                },
+                "margin",
+            ),
+            (
+                SheetSettings {
+                    margin: 200.0,
+                    ..d()
+                },
+                "margin",
+            ),
+            (
+                SheetSettings {
+                    margin: 300.0,
+                    ..d()
+                },
+                "margin",
+            ),
+            (
+                SheetSettings {
+                    machine: Machine::Laser { kerf: -0.1 },
+                    ..d()
+                },
+                "kerf",
+            ),
+            (
+                SheetSettings {
+                    machine: Machine::Laser { kerf: 5.1 },
+                    ..d()
+                },
+                "kerf",
+            ),
+            (
+                SheetSettings {
+                    machine: Machine::Laser { kerf: f64::NAN },
+                    ..d()
+                },
+                "kerf",
+            ),
+            (
+                SheetSettings {
+                    machine: Machine::Router {
+                        tool_diameter: 51.0,
+                    },
+                    ..d()
+                },
                 "tool_diameter",
             ),
             (
-                SheetSettings { machine: Machine::Router { tool_diameter: f64::NAN }, ..d() },
+                SheetSettings {
+                    machine: Machine::Router {
+                        tool_diameter: f64::NAN,
+                    },
+                    ..d()
+                },
                 "tool_diameter",
             ),
-            (SheetSettings { label_height: 0.0, ..d() }, "label_height"),
-            (SheetSettings { label_height: f64::NAN, ..d() }, "label_height"),
+            (
+                SheetSettings {
+                    label_height: 0.0,
+                    ..d()
+                },
+                "label_height",
+            ),
+            (
+                SheetSettings {
+                    label_height: f64::NAN,
+                    ..d()
+                },
+                "label_height",
+            ),
         ];
         for (ss, name) in cases {
             assert_eq!(layout(&res, &ss), Err(FlatError::Setting(name)), "{ss:?}");
@@ -1069,7 +1235,10 @@ mod tests {
         let mut p = part("SP", PartKind::Spacer, solid(sq(0.0, 0.0, 5.0, 5.0, true)));
         p.copies = u32::MAX;
         let res = result(vec![p]);
-        assert_eq!(layout(&res, &SheetSettings::default()), Err(FlatError::TooBig("parts")));
+        assert_eq!(
+            layout(&res, &SheetSettings::default()),
+            Err(FlatError::TooBig("parts"))
+        );
     }
 
     #[test]
@@ -1105,7 +1274,11 @@ mod tests {
 
     #[test]
     fn every_spacer_copy_is_placed() {
-        let mut p = part("SP", PartKind::Spacer, solid(sq(0.0, 0.0, 20.0, 20.0, true)));
+        let mut p = part(
+            "SP",
+            PartKind::Spacer,
+            solid(sq(0.0, 0.0, 20.0, 20.0, true)),
+        );
         p.copies = 7;
         let sheets = layout(&result(vec![p]), &SheetSettings::default()).unwrap();
         let n: usize = sheets.iter().map(|s| s.parts.len()).sum();
@@ -1118,8 +1291,15 @@ mod tests {
         let small = part("A", PartKind::Slice, solid(sq(0.0, 0.0, 10.0, 10.0, true)));
         let mut copies = part("B", PartKind::Spacer, solid(sq(0.0, 0.0, 10.0, 10.0, true)));
         copies.copies = 3;
-        let big = part("C", PartKind::Slice, solid(sq(0.0, 0.0, 900.0, 900.0, true)));
+        let big = part(
+            "C",
+            PartKind::Slice,
+            solid(sq(0.0, 0.0, 900.0, 900.0, true)),
+        );
         let err = layout(&result(vec![small, copies, big]), &SheetSettings::default());
-        assert!(matches!(err, Err(FlatError::DoesNotFit { part: 2, .. })), "{err:?}");
+        assert!(
+            matches!(err, Err(FlatError::DoesNotFit { part: 2, .. })),
+            "{err:?}"
+        );
     }
 }

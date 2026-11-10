@@ -191,7 +191,12 @@ fn warning(w: &Warning) -> FabWarning {
         }
         Warning::GapsNotWhole { thickness } => {
             d.insert("thickness".into(), json!(thickness));
-            ("gaps_not_whole", format!("The gaps between slices are no whole number of sheets: use a spacing that is a multiple of {thickness} mm for exact spacers"))
+            (
+                "gaps_not_whole",
+                format!(
+                    "The gaps between slices are no whole number of sheets: use a spacing that is a multiple of {thickness} mm for exact spacers"
+                ),
+            )
         }
         Warning::NeverCross => ("never_cross", "The two sets of slices never cross: nothing holds them together".to_string()),
     };
@@ -256,7 +261,8 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
                 width_mm: b[2] - b[0],
                 height_mm: b[3] - b[1],
                 rings: geometry.then(|| part.shape.rings().cloned().collect()),
-                places: geometry.then(|| if part.places.is_empty() { vec![frame_json(&part.frame)] } else { part.places.iter().map(frame_json).collect() }),
+                places: geometry
+                    .then(|| if part.places.is_empty() { vec![frame_json(&part.frame)] } else { part.places.iter().map(frame_json).collect() }),
             }
         })
         .collect();
@@ -314,7 +320,8 @@ fn export_sheets(s: &mut Session, p: &Value) -> Result<Value> {
     // every file is made before the first is written
     let mut made = Vec::new();
     for (i, sh) in sheets.iter().enumerate() {
-        let drawing = solidcraft_io::fab_out::SheetDrawing { width: ss.width, height: ss.height, cuts: &sh.cuts, engrave: &sh.engrave, parts: &sh.parts };
+        let drawing =
+            solidcraft_io::fab_out::SheetDrawing { width: ss.width, height: ss.height, cuts: &sh.cuts, engrave: &sh.engrave, parts: &sh.parts };
         for f in &formats {
             let text = match f {
                 FabFormat::Dxf => solidcraft_io::fab_out::sheet_dxf(&drawing),
@@ -339,7 +346,14 @@ fn export_sheets(s: &mut Session, p: &Value) -> Result<Value> {
             None => files.push(FabFile { sheet, format, path: None, text: Some(text) }),
         }
     }
-    let reply = FabExportResult { body: name, count: res.count(), sheets: sheets.len(), files, warnings: res.warnings.iter().map(warning).collect(), param_warnings: Vec::new() };
+    let reply = FabExportResult {
+        body: name,
+        count: res.count(),
+        sheets: sheets.len(),
+        files,
+        warnings: res.warnings.iter().map(warning).collect(),
+        param_warnings: Vec::new(),
+    };
     serde_json::to_value(reply).map_err(|e| EngineError::Other(e.to_string()))
 }
 

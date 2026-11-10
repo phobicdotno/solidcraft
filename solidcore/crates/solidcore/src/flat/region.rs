@@ -413,7 +413,12 @@ pub fn simplify_ring(ring: &[P2], tol: f64) -> Ring {
         return ring.to_vec();
     }
     let a: Ring = ring.iter().take(far + 1).copied().collect();
-    let b: Ring = ring.iter().skip(far).chain(std::iter::once(&first)).copied().collect();
+    let b: Ring = ring
+        .iter()
+        .skip(far)
+        .chain(std::iter::once(&first))
+        .copied()
+        .collect();
     let mut out = rdp(&a, tol);
     out.pop();
     let mut tail = rdp(&b, tol);
@@ -583,7 +588,10 @@ mod tests {
 
     #[test]
     fn pieces_are_largest_first_and_slivers_go() {
-        let r = union(&union(&square(0.0, 0.0, 2.0), &square(10.0, 0.0, 5.0)), &square(30.0, 0.0, 0.1));
+        let r = union(
+            &union(&square(0.0, 0.0, 2.0), &square(10.0, 0.0, 5.0)),
+            &square(30.0, 0.0, 0.1),
+        );
         let p = pieces(&r, 0.5);
         assert_eq!(p.len(), 2);
         assert!(close(shape_area(&p[0]), 25.0, 1e-9));
