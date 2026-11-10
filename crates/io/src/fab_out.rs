@@ -162,8 +162,9 @@ mod tests {
             assert_eq!(lines[at + colour_at + 1], colour, "{layer}");
         }
         let geoms = crate::read_dxf(&text).unwrap();
-        // the sheet, two cut rings and one engraved line (the one-point line is left out)
-        assert_eq!(geoms.len(), 4, "{geoms:?}");
+        // read back as lines: the sheet's four sides, four sides of each cut ring and the one
+        // engraved segment (the one-point line is left out)
+        assert_eq!(geoms.len(), 4 + 4 + 4 + 1, "{geoms:?}");
     }
 
     #[test]
@@ -176,7 +177,8 @@ mod tests {
         assert!(svg.contains("M10.0000 390.0000 L110.0000 390.0000"));
         assert!(svg.contains(r##"stroke="#ff0000""##) && svg.contains(r##"stroke="#0000ff""##));
         let back = crate::read_svg(&svg).unwrap();
-        assert_eq!(back.len(), 3, "{back:?}");
+        // four sides of each cut ring and the engraved segment, read with SVG's y pointing down
+        assert_eq!(back.len(), 9, "{back:?}");
     }
 
     #[test]
