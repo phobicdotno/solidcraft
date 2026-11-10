@@ -366,6 +366,8 @@ pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> Finished {
         }
     }
     let mut engrave = part.engrave.clone();
+    // the boxes round the marks, which the name keeps clear of
+    let mut marked: Region = Vec::new();
     for m in &part.marks {
         if !(m.at[0].is_finite() && m.at[1].is_finite()) {
             continue;
@@ -373,6 +375,14 @@ pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> Finished {
         let lines = super::font::strokes(&m.text, m.height);
         if let Some([lx0, _, lx1, _]) = line_bounds(&lines) {
             let dx = m.at[0] - (lx0 + lx1) / 2.0;
+            if let Some([x0, y0, x1, y1]) = line_bounds(&lines) {
+                marked.extend(region::rect(
+                    x0 + dx - LABEL_MARGIN,
+                    y0 + m.at[1] - LABEL_MARGIN,
+                    x1 + dx + LABEL_MARGIN,
+                    y1 + m.at[1] + LABEL_MARGIN,
+                ));
+            }
             engrave.extend(
                 lines
                     .into_iter()
@@ -381,7 +391,12 @@ pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> Finished {
         }
     }
     if ss.labels && part.kind != PartKind::Spacer {
-        engrave.extend(label_inside(&shape, &part.name, ss.label_height, LABEL_MARGIN));
+        let room = if marked.is_empty() {
+            shape.clone()
+        } else {
+            largest(region::difference(&material(&shape), &marked))
+        };
+        engrave.extend(label_inside(&room, &part.name, ss.label_height, LABEL_MARGIN));
     }
     if let Machine::Laser { kerf: k } = ss.machine {
         if k > 0.0 {
@@ -904,6 +919,23 @@ mod tests {
         assert!(finish(&p, &laser(0.2, true)).engrave.is_empty());
         let plate = part("Base plate", PartKind::Plate, solid(sq(0.0, 0.0, 200.0, 80.0, true)));
         assert!(!finish(&plate, &laser(0.2, true)).engrave.is_empty());
+    }
+
+    #[test]
+    fn the_name_keeps_clear_of_the_slot_numbers() {
+        // a long plate with a row of numbers along its middle: the name goes above or below them
+        let mut p = part("Base plate", PartKind::Plate, solid(sq(0.0, 0.0, 200.0, 40.0, true)));
+        p.marks = (0..10)
+            .map(|i| Mark { text: format!("{}", i + 1), at: [10.0 + 20.0 * f64::from(i), 17.0], height: 4.0 })
+            .collect();
+        let f = finish(&p, &laser(0.0, true));
+        // the numbers' strokes come first; every later stroke (the name) stays out of their band
+        let numbers: usize = (0..10).map(|i| super::super::font::strokes(&format!("{}", i + 1), 4.0).len()).sum();
+        let named = &f.engrave[numbers..];
+        assert!(!named.is_empty());
+        for p in named.iter().flatten() {
+            assert!(p[1] < 17.0 - LABEL_MARGIN - 1e-9 || p[1] > 21.0 + LABEL_MARGIN + 1e-9, "{p:?}");
+        }
     }
 
     #[test]
