@@ -694,7 +694,9 @@ mod tests {
         let removed = shape_area(&s) - shape_area(&out);
         let opts = crate::dogbone::Options { radius: r, style: crate::dogbone::Style::Normal, max_angle: RELIEF_MAX_ANGLE };
         let each = crate::dogbone::removed_area(std::f64::consts::FRAC_PI_2, &opts).unwrap();
-        assert!(close(removed, 2.0 * each, 0.02), "{removed} vs 2 x {each}");
+        // each arc is a polygon within RELIEF_CHORD inside its circle: about 2/3 of the chord
+        // times the arc's length less per relief
+        assert!(removed < 2.0 * each && close(removed, 2.0 * each, 0.05), "{removed} vs 2 x {each}");
     }
 
     #[test]
