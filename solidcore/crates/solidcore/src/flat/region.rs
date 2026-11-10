@@ -748,7 +748,13 @@ mod tests {
         let sq = square(0.0, 0.0, 10.0);
         assert!(offset(&sq, f64::NAN, Join::Miter).is_empty());
         assert!(offset(&sq, f64::INFINITY, Join::Round { chord: 0.01 }).is_empty());
-        let default = offset(&sq, 2.0, Join::Round { chord: DEFAULT_CHORD });
+        let default = offset(
+            &sq,
+            2.0,
+            Join::Round {
+                chord: DEFAULT_CHORD,
+            },
+        );
         for bad in [0.0, -1.0, f64::NAN] {
             assert_eq!(
                 offset(&sq, 2.0, Join::Round { chord: bad }),
