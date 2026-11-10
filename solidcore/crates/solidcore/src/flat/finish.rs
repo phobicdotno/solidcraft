@@ -120,14 +120,54 @@ pub fn kerf(shape: &Shape, width: f64) -> Shape {
 /// leave the coordinate range the polygon engine resolves well.
 pub const MAX_KERF: f64 = 1000.0;
 
-/// The shape with a relief cut into every inside corner a router bit of `tool_diameter` mm
-/// cannot reach. The seam for the kernel's corner-relief (dogbone) primitive, which another
-/// module provides: until it is wired in here this returns the shape unchanged, so router
-/// parts are cut without reliefs.
+/// The largest void angle of a corner a router relief is cut into (radians): 135°, so square
+/// slots and sharper corners get one and gently bent outlines (a sliced curve) do not.
+pub const RELIEF_MAX_ANGLE: f64 = 0.75 * std::f64::consts::PI;
+
+/// How far a relief's arc may stray from its circle (mm).
+pub const RELIEF_CHORD: f64 = 0.005;
+
+/// The shape with a dogbone relief cut into every inside corner a router bit of
+/// `tool_diameter` mm cannot reach: a circle of the bit's radius through the corner, its centre
+/// on the corner's bisector ([`crate::dogbone`]), for corners whose void angle is at most
+/// [`RELIEF_MAX_ANGLE`]. Each ring gets its arcs spliced in; where reliefs at both ends of a short
+/// edge overlap, their circles are cut out of the material instead. The largest piece is kept.
+/// A diameter that is not positive and finite leaves the shape as given.
 #[must_use]
 pub fn relieve_corners(shape: &Shape, tool_diameter: f64) -> Shape {
-    let _ = tool_diameter;
-    shape.clone()
+    let options = crate::dogbone::Options {
+        radius: tool_diameter / 2.0,
+        style: crate::dogbone::Style::Normal,
+        max_angle: RELIEF_MAX_ANGLE,
+    };
+    let Ok(options) = options.checked() else {
+        return shape.clone();
+    };
+    let norm = largest(material(shape));
+    if norm.outer.len() < 3 {
+        return shape.clone();
+    }
+    let spliced: Option<Vec<Ring>> = norm
+        .rings()
+        .map(|r| crate::dogbone::relieved_ring(r, &options, RELIEF_CHORD).ok())
+        .collect();
+    if let Some(rings) = spliced {
+        return largest(region::from_rings(&rings, true));
+    }
+    // an edge too short for the reliefs at both its ends: cut every relief circle out instead,
+    // each a polygon round the circle so the corner itself is cut
+    let mut circles: Region = Vec::new();
+    for ring in norm.rings() {
+        let Ok(corners) = crate::dogbone::ring_reliefs(ring, &options) else {
+            return norm;
+        };
+        for c in corners {
+            if let crate::dogbone::Corner2::Relief(r) = c {
+                circles.extend(region::disk(r.centre, r.radius + RELIEF_CHORD, RELIEF_CHORD));
+            }
+        }
+    }
+    largest(region::difference(&[norm], &circles))
 }
 
 /// The bounds `[xmin, ymin, xmax, ymax]` of polylines, `None` without points.
@@ -626,10 +666,73 @@ mod tests {
     }
 
     #[test]
-    fn relieve_corners_is_an_identity_seam() {
+    fn reliefs_go_into_the_slot_bottom_corners_only() {
+        // the slot is 6 wide and 30 deep: its two bottom corners (47, 30) and (53, 30) are the
+        // only inside corners; a 4 mm bit's circle of radius 2 passes through each corner with
+        // its centre on the bisector, 2 mm from it, into the empty side
         let s = slot_plate();
-        assert_eq!(relieve_corners(&s, 6.0), s);
-        assert_eq!(relieve_corners(&s, f64::NAN), s);
+        let out = relieve_corners(&s, 4.0);
+        assert!(out.holes.is_empty());
+        let r = 2.0;
+        let d = r / std::f64::consts::SQRT_2;
+        for (corner, centre) in [([53.0, 30.0], [53.0 + d, 30.0 - d]), ([47.0, 30.0], [47.0 - d, 30.0 - d])] {
+            // just past the corner, inside the circle: cut away
+            let inside = [corner[0] + (centre[0] - corner[0]) * 0.5, corner[1] + (centre[1] - corner[1]) * 0.5];
+            assert!(region::contains(&material(&s), inside));
+            assert!(!region::contains(&material(&out), inside), "{corner:?}");
+        }
+        // the outside corners and the walls away from the corners keep their material
+        for p in [[1.0, 1.0], [99.0, 59.0], [50.0, 28.0], [55.0, 50.0], [45.0, 50.0]] {
+            assert!(region::contains(&material(&out), p), "{p:?}");
+        }
+        // what goes is two lenses, each less than a half circle
+        let removed = shape_area(&s) - shape_area(&out);
+        assert!(removed > 0.5 && removed < std::f64::consts::PI * r * r, "{removed}");
+        // the closed form of the dogbone primitive for a square corner
+        let opts = crate::dogbone::Options { radius: r, style: crate::dogbone::Style::Normal, max_angle: RELIEF_MAX_ANGLE };
+        if let Some(each) = crate::dogbone::removed_area(std::f64::consts::FRAC_PI_2, &opts) {
+            assert!(close(removed, 2.0 * each, 0.02), "{removed} vs 2 x {each}");
+        }
+    }
+
+    #[test]
+    fn reliefs_go_into_every_corner_of_a_square_hole() {
+        let plate = Shape {
+            outer: sq(0.0, 0.0, 60.0, 60.0, true),
+            holes: vec![sq(20.0, 20.0, 40.0, 40.0, false)],
+        };
+        let out = relieve_corners(&plate, 4.0);
+        assert_eq!(out.holes.len(), 1);
+        // each hole corner gets a bite past it, diagonally out of the hole
+        for c in [[20.0, 20.0], [40.0, 20.0], [40.0, 40.0], [20.0, 40.0]] {
+            let out_dir = [if c[0] < 30.0 { -0.5 } else { 0.5 }, if c[1] < 30.0 { -0.5 } else { 0.5 }];
+            let p = [c[0] + out_dir[0], c[1] + out_dir[1]];
+            assert!(!region::contains(&material(&out), p), "{c:?}");
+        }
+        // the outline's corners are outside corners: untouched
+        assert!(close(region::ring_area(&out.outer), 3600.0, 1e-9));
+    }
+
+    #[test]
+    fn a_slot_narrower_than_two_bits_is_relieved_by_a_boolean() {
+        // a 3 mm slot with a 4 mm bit: the two corner circles overlap on the slot's bottom edge
+        let s = solid(vec![[0.0, 0.0], [20.0, 0.0], [20.0, 10.0], [11.5, 10.0], [11.5, 5.0], [8.5, 5.0], [8.5, 10.0], [0.0, 10.0]]);
+        let out = relieve_corners(&s, 4.0);
+        assert!(shape_area(&out) < shape_area(&s));
+        assert!(!region::contains(&material(&out), [8.6, 4.9]));
+        assert!(!region::contains(&material(&out), [11.4, 4.9]));
+        assert!(region::contains(&material(&out), [1.0, 1.0]));
+    }
+
+    #[test]
+    fn no_bit_or_a_bad_bit_leaves_the_shape() {
+        let s = slot_plate();
+        for d in [0.0, -4.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(relieve_corners(&s, d), s);
+        }
+        // an outline with no inside corner gets nothing
+        let sq_shape = solid(sq(0.0, 0.0, 10.0, 10.0, true));
+        assert!(close(shape_area(&relieve_corners(&sq_shape, 3.0)), 100.0, 1e-9));
     }
 
     // --- label ---
@@ -827,7 +930,7 @@ mod tests {
     }
 
     #[test]
-    fn router_leaves_the_shape_but_still_labels() {
+    fn router_relieves_the_slot_and_still_labels() {
         let p = part("X2", PartKind::Slice, slot_plate());
         let ss = SheetSettings {
             machine: Machine::Router {
@@ -836,7 +939,8 @@ mod tests {
             ..SheetSettings::default()
         };
         let f = finish(&p, &ss);
-        assert_eq!(f.shape, p.shape);
+        assert_eq!(f.shape, relieve_corners(&p.shape, 3.175));
+        assert!(shape_area(&f.shape) < shape_area(&p.shape));
         assert!(!f.engrave.is_empty());
         assert_inside(&p.shape, &f.engrave, LABEL_MARGIN);
     }
