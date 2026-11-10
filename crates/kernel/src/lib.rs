@@ -38,6 +38,7 @@ pub mod dogbone;
 mod distance;
 mod draft_corners;
 mod emboss;
+pub mod fab;
 #[cfg(test)]
 mod face_source_tests;
 mod fair;

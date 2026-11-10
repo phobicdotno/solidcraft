@@ -20,7 +20,8 @@
 //!
 //! The families: [`measure`] (mass properties, area, box, point class, gap samples, the picks'
 //! distances and normals), [`contact`] (whether bodies meet, their boundary distance),
-//! [`boolean`], [`stitch`], [`prism`] (planar region booleans and extrusion, prism sections).
+//! [`boolean`], [`stitch`], [`prism`] (planar region booleans and extrusion, prism sections),
+//! [`fab`] (a solid sliced into flat parts for laser or CNC cutting, packed onto sheets).
 //!
 //! Operations change the body they are given, as the kernel does. An application that keeps
 //! its input copies it first ([`Body::copy`]).
@@ -37,6 +38,7 @@ pub mod continuity;
 pub mod dogbone;
 pub mod error;
 pub mod extend;
+pub mod fab;
 pub mod file;
 pub mod label;
 pub mod measure;
