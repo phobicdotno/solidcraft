@@ -36,6 +36,7 @@ mod construct;
 mod delete;
 pub(crate) mod diagnostics;
 mod edit;
+mod fab;
 mod face;
 mod features;
 mod features_more;
@@ -370,6 +371,7 @@ pub fn command_specs() -> Vec<&'static CommandSpec> {
     v.extend(parameters::COMMANDS.iter());
     v.extend(parameter_sweep::COMMANDS.iter());
     v.extend(file::COMMANDS.iter());
+    v.extend(fab::COMMANDS.iter());
     v.extend(print_face::COMMANDS.iter());
     v.extend(metadata::COMMANDS.iter());
     v.extend(inspect::COMMANDS.iter());
