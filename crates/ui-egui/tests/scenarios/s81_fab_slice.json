@@ -1,0 +1,85 @@
+[
+ {
+  "pending": "fab.slice cuts nothing until the slicing kernel (feat/fab-slice) is merged"
+ },
+ {
+  "call": "engine.execute",
+  "params": {
+   "command": "solid.sphere",
+   "params": {
+    "radius": 40
+   }
+  }
+ },
+ {
+  "call": "ui.set",
+  "params": {
+   "tab": "INSERT"
+  }
+ },
+ {
+  "start": "fab.slice"
+ },
+ {
+  "until": {
+   "count": {
+    "name": "fab:ready",
+    "value": 1
+   }
+  }
+ },
+ {
+  "shot": "s81_fab_3d"
+ },
+ {
+  "widget": "Stacked layers"
+ },
+ {
+  "widget": "Slices on a rod"
+ },
+ {
+  "expect": {
+   "dialog": "style: 1"
+  }
+ },
+ {
+  "until": {
+   "count": {
+    "name": "fab:ready",
+    "value": 1
+   }
+  }
+ },
+ {
+  "widget": "Sheets"
+ },
+ {
+  "expect": {
+   "dialog": "view: 1"
+  }
+ },
+ {
+  "shot": "s81_fab_sheets"
+ },
+ {
+  "widget": "Export sheets…"
+ },
+ {
+  "until": {
+   "file": "Untitled-sheets-sheet1.dxf"
+  }
+ },
+ {
+  "expect": {
+   "file": "Untitled-sheets-sheet1.svg"
+  }
+ },
+ {
+  "widget": "Close"
+ },
+ {
+  "expect": {
+   "dialog": null
+  }
+ }
+]
