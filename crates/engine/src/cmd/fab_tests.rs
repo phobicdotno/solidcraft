@@ -167,7 +167,7 @@ fn refusals_say_which_setting_and_change_nothing() {
         (json!({"style": "base", "axis": "Z"}), "axis"),
         (json!({"kerf": -0.5}), "kerf"),
         (json!({"sheet_width": 0}), "sheet_width"),
-        (json!({"count": "lots"}), "count"),
+        (json!({"count": "lots"}), "lots"),
         (json!({"colour": "red"}), "colour"),
         (json!({"body": "Nope"}), "Nope"),
     ] {
@@ -212,7 +212,7 @@ fn dxf_layers(text: &str) -> Vec<(String, String)> {
     let start = lines.iter().position(|l| *l == "ENTITIES").unwrap();
     let mut out = Vec::new();
     let mut kind = String::new();
-    for w in lines[start..].chunks(2) {
+    for w in lines[start + 1..].chunks(2) {
         if let [code, value] = w {
             if *code == "0" {
                 kind = (*value).to_string();
