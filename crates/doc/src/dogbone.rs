@@ -138,7 +138,7 @@ pub(crate) fn evaluate(doc: &Document, vals: &BTreeMap<String, Value>, f: &Featu
                 Some(e) => crate::eval::val(vals, e, Kind::Length)?,
                 None => d * DEFAULT_GAP_SHARE,
             };
-            if !(g.is_finite() && g >= 0.0 && g <= 1e5) {
+            if !(g.is_finite() && (0.0..=1e5).contains(&g)) {
                 return Err(DocError::Invalid("the gap must be zero or positive".into()));
             }
             db::Style::Minimal { gap: g }
