@@ -665,34 +665,36 @@ mod tests {
         assert!(close(b[2], 19.5, 1e-5));
     }
 
+    /// Two points of the material next to an inside corner `c` whose void opens towards
+    /// `(vx, vy)` (each ±1), both within 1.906 mm of the centre of a radius-2 relief through the
+    /// corner on its bisector: one on each wall, so a relief takes both away.
+    fn bitten(c: [f64; 2], v: [f64; 2]) -> [[f64; 2]; 2] {
+        [[c[0] - 0.2 * v[0], c[1] + 0.4 * v[1]], [c[0] + 0.4 * v[0], c[1] - 0.2 * v[1]]]
+    }
+
     #[test]
     fn reliefs_go_into_the_slot_bottom_corners_only() {
-        // the slot is 6 wide and 30 deep: its two bottom corners (47, 30) and (53, 30) are the
-        // only inside corners; a 4 mm bit's circle of radius 2 passes through each corner with
-        // its centre on the bisector, 2 mm from it, into the empty side
+        // the slot (x 47..53, from y 30 up) has two inside corners, (47, 30) and (53, 30); a 4 mm
+        // bit's circle runs through each with its centre on the bisector, in the slot
         let s = slot_plate();
         let out = relieve_corners(&s, 4.0);
         assert!(out.holes.is_empty());
-        let r = 2.0;
-        let d = r / std::f64::consts::SQRT_2;
-        for (corner, centre) in [([53.0, 30.0], [53.0 + d, 30.0 - d]), ([47.0, 30.0], [47.0 - d, 30.0 - d])] {
-            // just past the corner, inside the circle: cut away
-            let inside = [corner[0] + (centre[0] - corner[0]) * 0.5, corner[1] + (centre[1] - corner[1]) * 0.5];
-            assert!(region::contains(&material(&s), inside));
-            assert!(!region::contains(&material(&out), inside), "{corner:?}");
+        for (c, v) in [([53.0, 30.0], [-1.0, 1.0]), ([47.0, 30.0], [1.0, 1.0])] {
+            for p in bitten(c, v) {
+                assert!(region::contains(&material(&s), p), "{p:?}");
+                assert!(!region::contains(&material(&out), p), "{c:?} {p:?}");
+            }
         }
         // the outside corners and the walls away from the corners keep their material
-        for p in [[1.0, 1.0], [99.0, 59.0], [50.0, 28.0], [55.0, 50.0], [45.0, 50.0]] {
+        for p in [[0.5, 0.5], [99.5, 59.5], [50.0, 27.0], [54.0, 50.0], [46.0, 50.0]] {
             assert!(region::contains(&material(&out), p), "{p:?}");
         }
-        // what goes is two lenses, each less than a half circle
+        // what goes is two lenses, the primitive's closed form for a square corner each
+        let r = 2.0;
         let removed = shape_area(&s) - shape_area(&out);
-        assert!(removed > 0.5 && removed < std::f64::consts::PI * r * r, "{removed}");
-        // the closed form of the dogbone primitive for a square corner
         let opts = crate::dogbone::Options { radius: r, style: crate::dogbone::Style::Normal, max_angle: RELIEF_MAX_ANGLE };
-        if let Some(each) = crate::dogbone::removed_area(std::f64::consts::FRAC_PI_2, &opts) {
-            assert!(close(removed, 2.0 * each, 0.02), "{removed} vs 2 x {each}");
-        }
+        let each = crate::dogbone::removed_area(std::f64::consts::FRAC_PI_2, &opts).unwrap();
+        assert!(close(removed, 2.0 * each, 0.02), "{removed} vs 2 x {each}");
     }
 
     #[test]
@@ -703,11 +705,12 @@ mod tests {
         };
         let out = relieve_corners(&plate, 4.0);
         assert_eq!(out.holes.len(), 1);
-        // each hole corner gets a bite past it, diagonally out of the hole
+        // a hole's corners open into the hole
         for c in [[20.0, 20.0], [40.0, 20.0], [40.0, 40.0], [20.0, 40.0]] {
-            let out_dir = [if c[0] < 30.0 { -0.5 } else { 0.5 }, if c[1] < 30.0 { -0.5 } else { 0.5 }];
-            let p = [c[0] + out_dir[0], c[1] + out_dir[1]];
-            assert!(!region::contains(&material(&out), p), "{c:?}");
+            let v = [if c[0] < 30.0 { 1.0 } else { -1.0 }, if c[1] < 30.0 { 1.0 } else { -1.0 }];
+            for p in bitten(c, v) {
+                assert!(!region::contains(&material(&out), p), "{c:?} {p:?}");
+            }
         }
         // the outline's corners are outside corners: untouched
         assert!(close(region::ring_area(&out.outer), 3600.0, 1e-9));
@@ -719,8 +722,11 @@ mod tests {
         let s = solid(vec![[0.0, 0.0], [20.0, 0.0], [20.0, 10.0], [11.5, 10.0], [11.5, 5.0], [8.5, 5.0], [8.5, 10.0], [0.0, 10.0]]);
         let out = relieve_corners(&s, 4.0);
         assert!(shape_area(&out) < shape_area(&s));
-        assert!(!region::contains(&material(&out), [8.6, 4.9]));
-        assert!(!region::contains(&material(&out), [11.4, 4.9]));
+        for (c, v) in [([8.5, 5.0], [1.0, 1.0]), ([11.5, 5.0], [-1.0, 1.0])] {
+            for p in bitten(c, v) {
+                assert!(!region::contains(&material(&out), p), "{c:?} {p:?}");
+            }
+        }
         assert!(region::contains(&material(&out), [1.0, 1.0]));
     }
 
