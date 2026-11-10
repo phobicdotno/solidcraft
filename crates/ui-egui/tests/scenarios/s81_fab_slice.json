@@ -1,8 +1,5 @@
 [
  {
-  "pending": "fab.slice cuts nothing until the slicing kernel (feat/fab-slice) is merged"
- },
- {
   "call": "engine.execute",
   "params": {
    "command": "solid.sphere",
@@ -62,7 +59,7 @@
   "shot": "s81_fab_sheets"
  },
  {
-  "widget": "Export sheets…"
+  "widget": "Export sheets\u2026"
  },
  {
   "until": {

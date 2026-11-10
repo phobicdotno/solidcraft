@@ -288,3 +288,38 @@ fn the_sheets_view_takes_the_flat_camera() {
     assert!(sheets_active(&h.app) && crate::dialogs_sheet::flat_active(&h.app));
     assert_eq!(crate::navigation_bar_view::canvas_caps(&h.app), crate::navigation::NavCaps { orbit: false, pick: false });
 }
+
+fn wait_ready(h: &mut Harness) {
+    let began = std::time::Instant::now();
+    while h.app.fab.busy() || h.app.fab.result.is_none() {
+        assert!(began.elapsed().as_secs() < 60, "no slicing came back");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        h.frames(1);
+    }
+    h.frames(2);
+}
+
+#[test]
+fn a_sphere_shows_its_parts_assembled_then_its_sheets() {
+    let mut h = Harness::new();
+    h.app.run("solid.sphere", json!({"radius": 40})).unwrap();
+    open(&mut h);
+    wait_ready(&mut h);
+    let v = h.app.fab.result.clone().unwrap().unwrap_or_else(|e| panic!("{e}"));
+    assert!(v["count"].as_u64().unwrap_or(0) > 5, "{}", v["count"]);
+    assert!(!h.app.fab.plates.is_empty() && h.app.preview.active, "the parts are drawn assembled");
+    assert_eq!(h.app.preview.effective_replaced(), [v["body"].as_str().unwrap().to_string()], "in place of the body");
+    assert!(crate::scenario::count_of("fab:ready") == Some(1.0));
+    // A change waits for the settings to settle, then slices again.
+    let before = h.app.fab.generation;
+    form(&mut h).thickness = "6 mm".into();
+    h.frames(1);
+    assert!(h.app.fab.busy());
+    wait_ready(&mut h);
+    assert!(h.app.fab.generation > before);
+    assert_eq!(h.app.fab.result.as_ref().unwrap().as_ref().unwrap()["thickness"], 6.0);
+    h.step(&json!({"widget": "Sheets"})).unwrap();
+    h.frames(3);
+    assert!(!h.app.preview.active, "the sheets view draws no parts in 3D");
+    assert!(!h.app.fab.fills.is_empty() && h.app.flat_view.fitted, "the sheets are framed");
+}
