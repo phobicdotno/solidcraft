@@ -614,4 +614,101 @@ mod tests {
         assert_eq!(s.len(), 4);
         assert!(close(ring_area(&s), ring_area(&ring), 1e-12));
     }
+
+    // --- found by mutation testing (cargo mutants on this file) ---
+
+    #[test]
+    fn a_rectangle_needs_width_and_height() {
+        assert!(rect(0.0, 0.0, 0.0, 5.0).is_empty());
+        assert!(rect(0.0, 0.0, 5.0, 0.0).is_empty());
+        assert!(rect(0.0, 0.0, f64::NAN, 5.0).is_empty());
+        assert!(close(area(&rect(5.0, 5.0, 0.0, 0.0)), 25.0, 1e-12));
+    }
+
+    #[test]
+    fn circle_sides_follow_the_chord() {
+        // pi / acos(1 - 0.01 / 10) = 70.24...: 71 sides
+        assert_eq!(circle_sides(10.0, 0.01), 71);
+        assert_eq!(circle_sides(10.0, -1.0), circle_sides(10.0, DEFAULT_CHORD));
+        assert_eq!(circle_sides(10.0, f64::NAN), circle_sides(10.0, DEFAULT_CHORD));
+        assert_eq!(circle_sides(f64::INFINITY, 0.01), 24);
+        assert_eq!(circle_sides(0.001, 0.01), 24);
+        assert_eq!(circle_sides(1e6, 1e-6), 1440);
+    }
+
+    #[test]
+    fn round_offset_corners_stay_within_the_chord() {
+        // the corner arcs of a square grown by 5 with round joins: every chord's midpoint lies
+        // within 0.002 of the arc (radius 5 about the square's corner)
+        let g = offset(&square(0.0, 0.0, 10.0), 5.0, Join::Round { chord: 0.001 });
+        let pts = &g[0].outer;
+        let n = pts.len();
+        let mut on_arcs = 0;
+        for i in 0..n {
+            let (a, b) = (pts[i], pts[(i + 1) % n]);
+            for c in [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]] {
+                let da = ((a[0] - c[0]).powi(2) + (a[1] - c[1]).powi(2)).sqrt();
+                let db = ((b[0] - c[0]).powi(2) + (b[1] - c[1]).powi(2)).sqrt();
+                if (da - 5.0).abs() < 1e-3 && (db - 5.0).abs() < 1e-3 {
+                    let m = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
+                    let dm = ((m[0] - c[0]).powi(2) + (m[1] - c[1]).powi(2)).sqrt();
+                    assert!(5.0 - dm < 0.002, "{a:?} {b:?}: {dm}");
+                    on_arcs += 1;
+                }
+            }
+        }
+        assert!(on_arcs >= 4 * 20, "{on_arcs}");
+    }
+
+    #[test]
+    fn spans_along_a_slanted_edge_and_touching_pieces() {
+        // a right triangle: at x = 4 the material runs from y = 0 to y = 6
+        let tri = from_rings(&[vec![[0.0, 0.0], [10.0, 0.0], [0.0, 10.0]]], true);
+        let s = spans_at_x(&tri, 4.0);
+        assert_eq!(s.len(), 1);
+        assert!(close(s[0].0, 0.0, 1e-12) && close(s[0].1, 6.0, 1e-12), "{s:?}");
+        // two pieces one above the other, touching: one stretch; apart: two
+        let touching = vec![rect(0.0, 0.0, 4.0, 1.0)[0].clone(), rect(0.0, 1.0, 4.0, 3.0)[0].clone()];
+        assert_eq!(spans_at_x(&touching, 2.0), vec![(0.0, 3.0)]);
+        let apart = vec![rect(0.0, 0.0, 4.0, 1.0)[0].clone(), rect(0.0, 2.0, 4.0, 3.0)[0].clone()];
+        assert_eq!(spans_at_x(&apart, 2.0), vec![(0.0, 1.0), (2.0, 3.0)]);
+        // a vertex on the line counts once
+        let diamond = from_rings(&[vec![[0.0, 5.0], [5.0, 0.0], [10.0, 5.0], [5.0, 10.0]]], true);
+        let s = spans_at_x(&diamond, 5.0);
+        assert_eq!(s.len(), 1);
+        assert!(close(s[0].0, 0.0, 1e-12) && close(s[0].1, 10.0, 1e-12), "{s:?}");
+    }
+
+    #[test]
+    fn points_are_counted_over_every_ring() {
+        let r = difference(&square(0.0, 0.0, 10.0), &square(3.0, 3.0, 4.0));
+        assert_eq!(point_count(&r), 8);
+        assert_eq!(point_count(&[]), 0);
+    }
+
+    #[test]
+    fn simplify_keeps_corners_and_short_rings() {
+        // fewer than eight points: as given
+        let short: Ring = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 0.001], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0], [0.0, 1.0]];
+        assert_eq!(simplify_ring(&short, 0.01), short);
+        // a slanted edge with points within the tolerance of it goes to its ends; a point
+        // further out than the tolerance stays
+        let mut ring: Ring = (0..=10).map(|i| [f64::from(i), f64::from(i) * 0.5]).collect();
+        ring[5][1] += 0.004; // within 0.01 of the edge
+        ring.extend([[10.0, 8.0], [0.0, 8.0]]);
+        let s = simplify_ring(&ring, 0.01);
+        assert_eq!(s.len(), 4, "{s:?}");
+        ring[5][1] += 0.05; // now 0.054 off: kept
+        let s = simplify_ring(&ring, 0.01);
+        assert_eq!(s.len(), 5, "{s:?}");
+        assert!(s.contains(&ring[5]));
+        // a bad tolerance leaves the ring
+        assert_eq!(simplify_ring(&ring, 0.0), ring);
+        assert_eq!(simplify_ring(&ring, f64::NAN), ring);
+        // the result stays within the tolerance of every dropped point and keeps the area close
+        let circle = disk([3.0, -2.0], 20.0, 0.0001)[0].outer.clone();
+        let s = simplify_ring(&circle, 0.01);
+        assert!(s.len() < circle.len() && s.len() >= 8);
+        assert!((ring_area(&s) - ring_area(&circle)).abs() < 2.0 * std::f64::consts::PI * 20.0 * 0.01);
+    }
 }
