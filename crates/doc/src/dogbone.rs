@@ -138,7 +138,7 @@ pub(crate) fn evaluate(doc: &Document, vals: &BTreeMap<String, Value>, f: &Featu
                 Some(e) => crate::eval::val(vals, e, Kind::Length)?,
                 None => d * DEFAULT_GAP_SHARE,
             };
-            if !(g.is_finite() && g >= 0.0 && g <= 1e5) {
+            if !(g.is_finite() && (0.0..=1e5).contains(&g)) {
                 return Err(DocError::Invalid("the gap must be zero or positive".into()));
             }
             db::Style::Minimal { gap: g }
@@ -197,11 +197,25 @@ pub(crate) fn evaluate(doc: &Document, vals: &BTreeMap<String, Value>, f: &Featu
         relieved: plan.tools.iter().map(|t| Vec3::new(t.at[0], t.at[1], t.at[2])).collect(),
         skipped: plan.skipped.iter().map(|s| (Vec3::new(s.at[0], s.at[1], s.at[2]), reason_id(&s.why))).collect(),
     };
-    if !report.skipped.is_empty() {
-        notes.push(skipped_note(&report.skipped));
+    // The feature warns about the edges it was given that it skipped, and a picked face with no
+    // corners; the other edges a picked face reaches (a plate's outside corners) are listed in
+    // the command's reply only.
+    let warned: Vec<(Vec3, &'static str)> = plan
+        .skipped
+        .iter()
+        .filter(|s| s.face.is_some() || s.edge.is_some_and(|e| edge_idx.contains(&e)))
+        .map(|s| (Vec3::new(s.at[0], s.at[1], s.at[2]), reason_id(&s.why)))
+        .collect();
+    if !warned.is_empty() {
+        notes.push(skipped_note(&warned));
     }
     if plan.tools.is_empty() {
-        let why = if notes.is_empty() { String::new() } else { format!(" ({})", notes.join("; ")) };
+        // Nothing relieved: say why for every edge looked at.
+        let mut all = notes.clone();
+        if !report.skipped.is_empty() && warned.len() < report.skipped.len() {
+            all.push(skipped_note(&report.skipped));
+        }
+        let why = if all.is_empty() { String::new() } else { format!(" ({})", all.join("; ")) };
         return Err(DocError::Invalid(format!("no inside corner to relieve{why}")));
     }
     let mut tools = Vec::new();

@@ -98,6 +98,8 @@ fn a_slot_through_the_plate_is_relieved_through_and_its_outside_corners_skipped(
     let skipped = out["skipped"].as_array().unwrap();
     assert_eq!(skipped.len(), 4);
     assert!(skipped.iter().all(|k| k["reason"] == "convex"), "{out}");
+    // The plate's outside corners a picked face reaches are listed, but don't flag the feature.
+    assert!(out["warning"].is_null(), "{out}");
     let r = 3.175 / 2.0;
     let want = PLATE - 20.0 * 6.0 * 10.0 - 4.0 * normal_relief(r, 10.0);
     assert!(rel(volume(&mut s), want) < 1e-7, "{} vs {want}", volume(&mut s));
@@ -136,6 +138,13 @@ fn t_bone_and_minimal_reliefs_remove_their_derived_volumes() {
     let segment = r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
     let want = POCKETED - 4.0 * 2.0 * segment * 6.0;
     assert!(rel(volume(&mut s), want) < 1e-7, "{} vs {want}", volume(&mut s));
+    // Without a gap, minimal stops 5% of the diameter short: 0.15 for a 3 mm bit.
+    let mut s = pocketed();
+    run(&mut s, "solid.dogbone", json!({"edges": CORNERS, "diameter": 3, "style": "minimal"}));
+    let d = 1.65 / 2f64.sqrt();
+    let segment = r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
+    let want = POCKETED - 4.0 * 2.0 * segment * 6.0;
+    assert!(rel(volume(&mut s), want) < 1e-7, "{} vs {want}", volume(&mut s));
     // The T-bone bites the longer (20 mm) wall: the side's choice turns it onto the 14 mm one.
     // Both remove the same; the reliefs' centres differ (checked in the kernel).
     let mut s = pocketed();
@@ -153,6 +162,18 @@ fn the_reliefs_follow_a_diameter_parameter() {
     assert!(rel(volume(&mut s), POCKETED - 4.0 * normal_relief(3.0, 6.0)) < 1e-7, "{}", volume(&mut s));
     // The pocket grows: the reliefs follow its corners.
     run(&mut s, "parameters.change", json!({"name": "bit", "expression": "3 mm"}));
+    // Edit Feature redefines it with the dialog's parameters (timeline.redefine).
+    run(
+        &mut s,
+        "timeline.redefine",
+        json!({"feature": "Bones", "command": "solid.dogbone", "params": {"edges": CORNERS, "diameter": "bit * 2", "body": "Plate"}}),
+    );
+    assert!(rel(volume(&mut s), POCKETED - 4.0 * normal_relief(3.0, 6.0)) < 1e-7, "{}", volume(&mut s));
+    run(
+        &mut s,
+        "timeline.redefine",
+        json!({"feature": "Bones", "command": "solid.dogbone", "params": {"edges": CORNERS, "diameter": "bit", "body": "Plate"}}),
+    );
     // Editing the style rebuilds the feature.
     run(&mut s, "timeline.edit", json!({"feature": "Bones", "set": {"style": "t_bone"}}));
     assert!(rel(volume(&mut s), POCKETED - 4.0 * (PI * 1.5 * 1.5 / 2.0) * 6.0) < 1e-7, "{}", volume(&mut s));
@@ -231,6 +252,11 @@ fn corners_it_cannot_relieve_are_refused_with_the_reason() {
     };
     // An outside edge alone: nothing to relieve.
     let e = refused(&mut s, json!({"edges": [[0, 0, 5]], "diameter": 3}));
+    // A picked edge skipped beside relieved ones is named in the feature's warning.
+    let mut t = pocketed();
+    let out = run(&mut t, "solid.dogbone", json!({"edges": [CORNERS[0], [0, 0, 5]], "diameter": 3}));
+    assert_eq!(out["relieved"], 1);
+    assert!(out["warning"].as_str().is_some_and(|w| w.contains("convex")), "{out}");
     assert!(e.contains("no inside corner") && e.contains("convex"), "{e}");
     // A floor edge (along x) with the bit along Z.
     let e = refused(&mut s, json!({"edges": [[20, 8, 4]], "diameter": 3, "along": "Z"}));

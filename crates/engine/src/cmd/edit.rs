@@ -2049,6 +2049,7 @@ fn redefine(s: &mut Session, p: &Value) -> Result<Value> {
     let constructor = super::features::COMMANDS
         .iter()
         .chain(super::features_more::COMMANDS)
+        .chain(super::dogbone::COMMANDS)
         .chain(super::construct::COMMANDS)
         .chain(super::surface::COMMANDS)
         .chain(super::surface_boundary::COMMANDS)
