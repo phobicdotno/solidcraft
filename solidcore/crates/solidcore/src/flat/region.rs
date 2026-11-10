@@ -630,7 +630,10 @@ mod tests {
         // pi / acos(1 - 0.01 / 10) = 70.24...: 71 sides
         assert_eq!(circle_sides(10.0, 0.01), 71);
         assert_eq!(circle_sides(10.0, -1.0), circle_sides(10.0, DEFAULT_CHORD));
-        assert_eq!(circle_sides(10.0, f64::NAN), circle_sides(10.0, DEFAULT_CHORD));
+        assert_eq!(
+            circle_sides(10.0, f64::NAN),
+            circle_sides(10.0, DEFAULT_CHORD)
+        );
         assert_eq!(circle_sides(f64::INFINITY, 0.01), 24);
         assert_eq!(circle_sides(0.001, 0.01), 24);
         assert_eq!(circle_sides(1e6, 1e-6), 1440);
@@ -666,17 +669,32 @@ mod tests {
         let tri = from_rings(&[vec![[0.0, 0.0], [10.0, 0.0], [0.0, 10.0]]], true);
         let s = spans_at_x(&tri, 4.0);
         assert_eq!(s.len(), 1);
-        assert!(close(s[0].0, 0.0, 1e-12) && close(s[0].1, 6.0, 1e-12), "{s:?}");
+        assert!(
+            close(s[0].0, 0.0, 1e-12) && close(s[0].1, 6.0, 1e-12),
+            "{s:?}"
+        );
         // two pieces one above the other, touching: one stretch; apart: two
-        let touching = vec![rect(0.0, 0.0, 4.0, 1.0)[0].clone(), rect(0.0, 1.0, 4.0, 3.0)[0].clone()];
+        let touching = vec![
+            rect(0.0, 0.0, 4.0, 1.0)[0].clone(),
+            rect(0.0, 1.0, 4.0, 3.0)[0].clone(),
+        ];
         assert_eq!(spans_at_x(&touching, 2.0), vec![(0.0, 3.0)]);
-        let apart = vec![rect(0.0, 0.0, 4.0, 1.0)[0].clone(), rect(0.0, 2.0, 4.0, 3.0)[0].clone()];
+        let apart = vec![
+            rect(0.0, 0.0, 4.0, 1.0)[0].clone(),
+            rect(0.0, 2.0, 4.0, 3.0)[0].clone(),
+        ];
         assert_eq!(spans_at_x(&apart, 2.0), vec![(0.0, 1.0), (2.0, 3.0)]);
         // a vertex on the line counts once
-        let diamond = from_rings(&[vec![[0.0, 5.0], [5.0, 0.0], [10.0, 5.0], [5.0, 10.0]]], true);
+        let diamond = from_rings(
+            &[vec![[0.0, 5.0], [5.0, 0.0], [10.0, 5.0], [5.0, 10.0]]],
+            true,
+        );
         let s = spans_at_x(&diamond, 5.0);
         assert_eq!(s.len(), 1);
-        assert!(close(s[0].0, 0.0, 1e-12) && close(s[0].1, 10.0, 1e-12), "{s:?}");
+        assert!(
+            close(s[0].0, 0.0, 1e-12) && close(s[0].1, 10.0, 1e-12),
+            "{s:?}"
+        );
     }
 
     #[test]
@@ -689,18 +707,29 @@ mod tests {
     #[test]
     fn simplify_keeps_corners_and_short_rings() {
         // fewer than eight points: as given
-        let short: Ring = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 0.001], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0], [0.0, 1.0]];
+        let short: Ring = vec![
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [1.0, 0.001],
+            [2.0, 0.0],
+            [2.0, 2.0],
+            [0.0, 2.0],
+            [0.0, 1.0],
+        ];
         assert_eq!(simplify_ring(&short, 0.01), short);
         // a slanted edge with points within the tolerance of it goes to its ends; a point
         // further out than the tolerance stays
-        let mut ring: Ring = (0..=10).map(|i| [f64::from(i), f64::from(i) * 0.5]).collect();
+        let mut ring: Ring = (0..=10)
+            .map(|i| [f64::from(i), f64::from(i) * 0.5])
+            .collect();
         ring[5][1] += 0.004; // within 0.01 of the edge
         ring.extend([[10.0, 8.0], [0.0, 8.0]]);
         let s = simplify_ring(&ring, 0.01);
         assert_eq!(s.len(), 4, "{s:?}");
-        ring[5][1] += 0.05; // now 0.054 off: kept
+        ring[5][1] += 0.05; // now 0.054 off: kept, and with it its neighbours, each now more
+                            // than the tolerance off the lines to the bump
         let s = simplify_ring(&ring, 0.01);
-        assert_eq!(s.len(), 5, "{s:?}");
+        assert_eq!(s.len(), 7, "{s:?}");
         assert!(s.contains(&ring[5]));
         // a bad tolerance leaves the ring
         assert_eq!(simplify_ring(&ring, 0.0), ring);
@@ -709,6 +738,8 @@ mod tests {
         let circle = disk([3.0, -2.0], 20.0, 0.0001)[0].outer.clone();
         let s = simplify_ring(&circle, 0.01);
         assert!(s.len() < circle.len() && s.len() >= 8);
-        assert!((ring_area(&s) - ring_area(&circle)).abs() < 2.0 * std::f64::consts::PI * 20.0 * 0.01);
+        assert!(
+            (ring_area(&s) - ring_area(&circle)).abs() < 2.0 * std::f64::consts::PI * 20.0 * 0.01
+        );
     }
 }
