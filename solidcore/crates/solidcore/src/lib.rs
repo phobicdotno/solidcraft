@@ -50,6 +50,7 @@ pub mod boolean;
 pub mod curve;
 pub mod dogbone;
 pub mod eval;
+pub mod flat;
 pub mod geom;
 pub mod heal;
 pub mod intersect;
