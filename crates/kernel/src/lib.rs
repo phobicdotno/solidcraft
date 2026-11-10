@@ -34,8 +34,8 @@ mod coplanar_tests;
 mod corner_g2;
 mod curvature_comb;
 mod delete_face;
-pub mod dogbone;
 mod distance;
+pub mod dogbone;
 mod draft_corners;
 mod emboss;
 #[cfg(test)]
