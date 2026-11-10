@@ -80,3 +80,43 @@ pub fn part_area(shape: &Shape) -> f64 {
 pub fn part_bounds(shape: &Shape) -> Option<[f64; 4]> {
     solidcore::flat::region::ring_bounds(std::iter::once(&shape.outer))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A ball of radius 50 on the XY plane, cut by the recipe in every style, finished for both
+    /// machines and packed: the parts are those the kernel makes, the body is untouched.
+    #[test]
+    fn a_ball_is_sliced_finished_and_packed_in_every_style() {
+        let ball = crate::body::make_sphere([0.0, 0.0, 50.0], 50.0).unwrap();
+        let volume = ball.volume(1e-6).unwrap();
+        for style in [Style::Stacked, Style::Rod, Style::Base, Style::Back, Style::Waffle] {
+            let axis = if style == Style::Stacked { Axis::Z } else { Axis::X };
+            let s = FabSettings { style, axis, thickness: 5.0, count: 5, ..FabSettings::default() };
+            let res = slice_body(&ball, &s).unwrap().unwrap();
+            let slices = res.parts.iter().filter(|p| p.kind == PartKind::Slice).count();
+            assert_eq!(slices, if style == Style::Stacked { 20 } else if style == Style::Waffle { 10 } else { 5 }, "{style:?}");
+            for p in &res.parts {
+                assert!(part_area(&p.shape) > 0.0);
+                assert!(part_bounds(&p.shape).is_some());
+            }
+            for machine in [Machine::Laser { kerf: 0.15 }, Machine::Router { tool_diameter: 3.175 }] {
+                let ss = SheetSettings { machine, ..SheetSettings::default() };
+                let sheets = layout_sheets(&res, &ss).unwrap();
+                let placed: usize = sheets.iter().map(|sh| sh.parts.len()).sum();
+                assert_eq!(placed as u64, res.count(), "{style:?} {machine:?}");
+            }
+        }
+        assert!((ball.volume(1e-6).unwrap() - volume).abs() < 1e-9 * volume);
+    }
+
+    #[test]
+    fn a_bad_setting_is_the_slicings_refusal_not_the_sessions() {
+        let ball = crate::body::make_sphere([0.0, 0.0, 0.0], 10.0).unwrap();
+        let s = FabSettings { thickness: -1.0, ..FabSettings::default() };
+        assert_eq!(slice_body(&ball, &s).unwrap().unwrap_err(), FlatError::Setting("thickness"));
+        let s = FabSettings { chord: 0.0, ..FabSettings::default() };
+        assert!(matches!(slice_body(&ball, &s).unwrap(), Err(FlatError::Setting(_))));
+    }
+}
