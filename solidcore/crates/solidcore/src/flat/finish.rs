@@ -709,8 +709,8 @@ mod tests {
         assert!(out.holes.is_empty());
         for (c, v) in [([53.0, 30.0], [-1.0, 1.0]), ([47.0, 30.0], [1.0, 1.0])] {
             for p in bitten(c, v) {
-                assert!(region::contains(&material(&s), p), "{p:?}");
-                assert!(!region::contains(&material(&out), p), "{c:?} {p:?}");
+                assert!(contains(&material(&s), p), "{p:?}");
+                assert!(!contains(&material(&out), p), "{c:?} {p:?}");
             }
         }
         // the outside corners and the walls away from the corners keep their material
@@ -721,7 +721,7 @@ mod tests {
             [54.0, 50.0],
             [46.0, 50.0],
         ] {
-            assert!(region::contains(&material(&out), p), "{p:?}");
+            assert!(contains(&material(&out), p), "{p:?}");
         }
         // what goes is two lenses, the primitive's closed form for a square corner each
         let r = 2.0;
@@ -755,11 +755,11 @@ mod tests {
                 if c[1] < 30.0 { 1.0 } else { -1.0 },
             ];
             for p in bitten(c, v) {
-                assert!(!region::contains(&material(&out), p), "{c:?} {p:?}");
+                assert!(!contains(&material(&out), p), "{c:?} {p:?}");
             }
         }
         // the outline's corners are outside corners: untouched
-        assert!(close(region::ring_area(&out.outer), 3600.0, 1e-9));
+        assert!(close(ring_area(&out.outer), 3600.0, 1e-9));
     }
 
     #[test]
@@ -779,10 +779,10 @@ mod tests {
         assert!(shape_area(&out) < shape_area(&s));
         for (c, v) in [([8.5, 5.0], [1.0, 1.0]), ([11.5, 5.0], [-1.0, 1.0])] {
             for p in bitten(c, v) {
-                assert!(!region::contains(&material(&out), p), "{c:?} {p:?}");
+                assert!(!contains(&material(&out), p), "{c:?} {p:?}");
             }
         }
-        assert!(region::contains(&material(&out), [1.0, 1.0]));
+        assert!(contains(&material(&out), [1.0, 1.0]));
     }
 
     #[test]
