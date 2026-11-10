@@ -742,4 +742,20 @@ mod tests {
             (ring_area(&s) - ring_area(&circle)).abs() < 2.0 * std::f64::consts::PI * 20.0 * 0.01
         );
     }
+
+    #[test]
+    fn an_offset_that_is_not_a_number_is_empty_and_a_bad_chord_takes_the_default() {
+        let sq = square(0.0, 0.0, 10.0);
+        assert!(offset(&sq, f64::NAN, Join::Miter).is_empty());
+        assert!(offset(&sq, f64::INFINITY, Join::Round { chord: 0.01 }).is_empty());
+        let default = offset(&sq, 2.0, Join::Round { chord: DEFAULT_CHORD });
+        for bad in [0.0, -1.0, f64::NAN] {
+            assert_eq!(
+                offset(&sq, 2.0, Join::Round { chord: bad }),
+                default,
+                "{bad}"
+            );
+        }
+        assert_eq!(circle_sides(10.0, 0.0), circle_sides(10.0, DEFAULT_CHORD));
+    }
 }
