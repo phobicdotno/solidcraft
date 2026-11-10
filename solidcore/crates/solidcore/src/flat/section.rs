@@ -58,6 +58,8 @@ pub struct BrepSection<'a> {
     b: &'a mut Brep,
     chord: f64,
     bounds: [f64; 6],
+    /// The middle of the bounds, where each section plane's point is taken.
+    centre: [f64; 3],
     vertices: Vec<[f64; 3]>,
 }
 
@@ -96,11 +98,14 @@ impl<'a> BrepSection<'a> {
             let p = vertex::point(b, v)?;
             vertices.push([p.x, p.y, p.z]);
         }
+        let [x0, y0, z0, x1, y1, z1] = bounds;
+        let centre = [(x0 + x1) / 2.0, (y0 + y1) / 2.0, (z0 + z1) / 2.0];
         Ok(BrepSection {
             k,
             b,
             chord,
             bounds,
+            centre,
             vertices,
         })
     }
@@ -145,9 +150,26 @@ impl Sectioner for BrepSection<'_> {
         self.bounds
     }
 
+    /// The section at the nudged position; when the kernel refuses that plane (a face whose
+    /// surface it cannot cut there), the other nudges are tried, then the same planes with the
+    /// section curves traced to half the chord instead of a tenth: the first that works.
     fn section(&mut self, axis: Axis, at: f64) -> FlatResult<Region> {
-        let c = self.nudged(axis, at);
-        plane_section(self.k, self.b, axis, c, self.chord)
+        let first = self.nudged(axis, at);
+        let mut tries = vec![first];
+        tries.extend(NUDGES.iter().map(|d| at + d).filter(|c| *c != first));
+        let mut error = None;
+        for loose in [false, true] {
+            for &c in &tries {
+                match section_at(self.k, self.b, axis, c, self.chord, self.centre, loose) {
+                    Ok(r) => return Ok(r),
+                    Err(e @ (FlatError::Setting(_) | FlatError::TooBig(_))) => return Err(e),
+                    Err(e) => {
+                        error.get_or_insert(e);
+                    }
+                }
+            }
+        }
+        Err(error.unwrap_or(FlatError::Nothing))
     }
 }
 
@@ -165,6 +187,21 @@ pub fn plane_section(
     at: f64,
     chord: f64,
 ) -> FlatResult<Region> {
+    section_at(k, b, axis, at, chord, [0.0; 3], false)
+}
+
+/// [`plane_section`] with the plane's point taken at `centre` moved onto the plane (the body's
+/// middle, so the kernel's bounded plane sits over the body however far it is from the origin),
+/// and with `loose` the section curves traced to half the chord instead of a tenth.
+fn section_at(
+    k: &Kernel,
+    b: &mut Brep,
+    axis: Axis,
+    at: f64,
+    chord: f64,
+    centre: [f64; 3],
+    loose: bool,
+) -> FlatResult<Region> {
     if !at.is_finite() || at.abs() >= 1e6 {
         return Err(FlatError::Setting("section position"));
     }
@@ -172,13 +209,17 @@ pub fn plane_section(
         return Err(FlatError::Setting("chord"));
     }
     let (n, u, v) = axis.directions();
-    let mut point = [0.0; 3];
+    let mut point = if centre.iter().all(|x| x.is_finite() && x.abs() < 1e6) {
+        centre
+    } else {
+        [0.0; 3]
+    };
     if let Some(p) = point.get_mut(axis.index()) {
         *p = at;
     }
     let opts = PlanarSectionOptions {
         // the section curves themselves stay well inside the outline's chord budget
-        approx_tol_3d: Some((chord * 0.1).max(1e-6)),
+        approx_tol_3d: Some((chord * if loose { 0.5 } else { 0.1 }).max(1e-6)),
         outputs: SectionOutputs {
             curves_3d: true,
             ..SectionOutputs::default()
@@ -451,6 +492,20 @@ mod tests {
             );
         }
         assert!(region::ring_area(&r[0].outer) > 0.0);
+    }
+
+    #[test]
+    fn a_box_far_from_the_origin_is_cut_where_it_is() {
+        // a part placed a metre away, as parts of an assembly are: every layer is its rectangle
+        let mut k = Kernel::default();
+        let mut b = create_box(&mut k, Point3::new(13.0, -1069.0, 864.0), 10.0, 100.0, 7.0).unwrap();
+        let mut s = BrepSection::new(&k, &mut b, CHORD).unwrap();
+        for z in [865.5, 867.5, 870.5] {
+            let r = s.section(Axis::Z, z).unwrap();
+            assert!(close(region::area(&r), 1000.0, 1e-6), "{z}: {}", region::area(&r));
+            let bb = region::bounds(&r).unwrap();
+            assert!(close(bb[0], 13.0, 1e-6) && close(bb[1], -1069.0, 1e-6), "{bb:?}");
+        }
     }
 
     #[test]
