@@ -935,7 +935,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs flat::nest"]
     fn every_part_lands_on_a_sheet_inside_its_edges() {
         let mut parts = Vec::new();
         for i in 0..6 {
@@ -961,7 +960,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs flat::nest"]
     fn every_spacer_copy_is_placed() {
         let mut p = part("SP", PartKind::Spacer, solid(sq(0.0, 0.0, 20.0, 20.0, true)));
         p.copies = 7;
@@ -972,7 +970,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs flat::nest"]
     fn a_part_bigger_than_the_sheet_is_named_by_its_part_index() {
         let small = part("A", PartKind::Slice, solid(sq(0.0, 0.0, 10.0, 10.0, true)));
         let mut copies = part("B", PartKind::Spacer, solid(sq(0.0, 0.0, 10.0, 10.0, true)));

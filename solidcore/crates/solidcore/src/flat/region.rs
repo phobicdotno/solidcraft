@@ -242,7 +242,8 @@ pub fn contains(r: &[Shape], p: P2) -> bool {
 pub fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Region {
     let (a, b) = (x0.min(x1), x0.max(x1));
     let (c, d) = (y0.min(y1), y0.max(y1));
-    if !(b > a && d > c) || !sane([a, c]) || !sane([b, d]) {
+    let ok = b > a && d > c && sane([a, c]) && sane([b, d]);
+    if !ok {
         return Vec::new();
     }
     vec![Shape {
@@ -276,7 +277,8 @@ pub fn circle_sides(r: f64, chord: f64) -> usize {
 /// of it, with a vertex at angle 0. Empty for a radius that is not positive.
 #[must_use]
 pub fn disk(c: P2, r: f64, chord: f64) -> Region {
-    if !(r.is_finite() && r > 0.0) || !sane(c) {
+    let ok = r.is_finite() && r > 0.0 && sane(c);
+    if !ok {
         return Vec::new();
     }
     let n = circle_sides(r, chord);
