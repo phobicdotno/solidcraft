@@ -25,6 +25,7 @@ pub mod construct;
 pub mod csv;
 pub mod display_quality;
 pub mod display_units;
+pub mod dogbone;
 mod document;
 pub mod drawing;
 pub mod end_cap;

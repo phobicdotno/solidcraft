@@ -1,0 +1,227 @@
+//! Dogbone reliefs (CNC routing): a round bite of the tool's diameter cut into each inside
+//! corner edge of a body a round tool would leave rounded, so a square part or board seats in
+//! it. The corners are picked edges, or the inside corners at picked planar faces (a pocket's
+//! floor, a plate's face a slot runs through). The kernel says which edges are inside corners
+//! and where each relief cylinder goes (`solidcraft_kernel::dogbone`); this module picks the
+//! body, the edges and faces, cuts the cylinders and keeps what was relieved and skipped.
+
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+use solidcore_record::Vec3;
+use solidcraft_geom::prelude::*;
+use solidcraft_kernel::{self as kernel, dogbone as db};
+
+use crate::expr::{Kind, Value};
+use crate::{DocError, Document, Feature, FeatureKind, ModelState, Operation, Result};
+
+/// Where a relief sits in its corner.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DogboneStyle {
+    /// On the corner's bisector, the circle through the sharp corner: the least material removed
+    /// of any relief that clears the corner.
+    #[default]
+    Normal,
+    /// On the bisector, stopping `gap` short of the sharp corner, for mating parts whose corners
+    /// are slightly broken.
+    Minimal,
+    /// Along one wall, the circle through the corner: the bite goes into one wall only.
+    TBone,
+}
+
+impl DogboneStyle {
+    pub fn is_normal(&self) -> bool {
+        *self == DogboneStyle::Normal
+    }
+
+    /// Its id in commands and files.
+    pub fn id(self) -> &'static str {
+        match self {
+            DogboneStyle::Normal => "normal",
+            DogboneStyle::Minimal => "minimal",
+            DogboneStyle::TBone => "t_bone",
+        }
+    }
+
+    /// The style an id names.
+    pub fn parse(s: &str) -> Option<DogboneStyle> {
+        match s {
+            "normal" => Some(DogboneStyle::Normal),
+            "minimal" => Some(DogboneStyle::Minimal),
+            "t_bone" | "tbone" => Some(DogboneStyle::TBone),
+            _ => None,
+        }
+    }
+}
+
+/// Which wall a T-bone relief bites.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DogboneSide {
+    /// The longer wall at the corner.
+    #[default]
+    Longer,
+    /// The shorter wall at the corner.
+    Shorter,
+}
+
+impl DogboneSide {
+    pub fn is_longer(&self) -> bool {
+        *self == DogboneSide::Longer
+    }
+
+    /// Its id in commands and files.
+    pub fn id(self) -> &'static str {
+        match self {
+            DogboneSide::Longer => "longer",
+            DogboneSide::Shorter => "shorter",
+        }
+    }
+
+    /// The side an id names.
+    pub fn parse(s: &str) -> Option<DogboneSide> {
+        match s {
+            "longer" | "long" => Some(DogboneSide::Longer),
+            "shorter" | "short" => Some(DogboneSide::Shorter),
+            _ => None,
+        }
+    }
+}
+
+/// The share of the tool's diameter a minimal relief stops short of the corner by when no gap is
+/// given: a tenth of the radius.
+pub const DEFAULT_GAP_SHARE: f64 = 0.05;
+
+/// What a dogbone feature relieved and skipped in its last evaluation.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct DogboneReport {
+    /// The relieved corner edges, by a point at the middle of each.
+    pub relieved: Vec<Vec3>,
+    /// The edges (or picked faces) skipped: a point on each and why, as a reason id.
+    pub skipped: Vec<(Vec3, &'static str)>,
+}
+
+/// A skip reason's id (`convex`, `too_open`, …), as commands report it.
+pub fn reason_id(why: &db::Why) -> &'static str {
+    match why {
+        db::Why::Corner(db::Skip::Convex) => "convex",
+        db::Why::Corner(db::Skip::Straight) | db::Why::Smooth => "flat",
+        db::Why::Corner(db::Skip::TooOpen { .. }) => "too_open",
+        db::Why::Corner(db::Skip::Unreached) => "gap_too_large",
+        db::Why::Corner(db::Skip::Degenerate) => "degenerate",
+        db::Why::NotStraight => "not_straight",
+        db::Why::NotTwoFaces => "not_between_two_faces",
+        db::Why::NotPlanar => "not_planar",
+        db::Why::NotAlong => "not_along_axis",
+        db::Why::NoCorners => "no_corners",
+    }
+}
+
+/// How many skipped edges a feature's warning names before "and N more".
+const NAMED_SKIPS: usize = 6;
+
+/// Cut the reliefs of dogbone feature `f` from its body in `st`.
+pub(crate) fn evaluate(doc: &Document, vals: &BTreeMap<String, Value>, f: &Feature, st: &mut ModelState, warning: &mut Option<String>) -> Result<()> {
+    let FeatureKind::Dogbone { edges, faces, diameter, style, gap, side, max_angle, along, body } = &f.kind else {
+        return Err(DocError::Invalid("not a dogbone".into()));
+    };
+    let d = crate::eval::val(vals, diameter, Kind::Length)?;
+    if !(d.is_finite() && d > 0.0 && d <= 1e5) {
+        return Err(DocError::Invalid("the tool diameter must be positive".into()));
+    }
+    let radius = d / 2.0;
+    let relief_style = match style {
+        DogboneStyle::Normal => db::Style::Normal,
+        DogboneStyle::Minimal => {
+            let g = match gap {
+                Some(e) => crate::eval::val(vals, e, Kind::Length)?,
+                None => d * DEFAULT_GAP_SHARE,
+            };
+            if !(g.is_finite() && g >= 0.0 && g <= 1e5) {
+                return Err(DocError::Invalid("the gap must be zero or positive".into()));
+            }
+            db::Style::Minimal { gap: g }
+        }
+        DogboneStyle::TBone => db::Style::TBone {
+            side: match side {
+                DogboneSide::Longer => db::Side::Longer,
+                DogboneSide::Shorter => db::Side::Shorter,
+            },
+        },
+    };
+    let largest = match max_angle {
+        Some(e) => crate::eval::val(vals, e, Kind::Angle)?,
+        None => std::f64::consts::FRAC_PI_2,
+    };
+    if !(largest.is_finite() && largest > 0.0 && largest <= std::f64::consts::PI) {
+        return Err(DocError::Invalid("the largest corner angle must be between 0° and 180°".into()));
+    }
+    if let Some(a) = along
+        && !(a.0.is_finite() && a.0.len() > 0.0)
+    {
+        return Err(DocError::Invalid("the tool axis must be a direction".into()));
+    }
+    let picks: Vec<Vec3> = edges.iter().map(|p| p.0).chain(faces.iter().map(|p| p.0)).collect();
+    if picks.is_empty() {
+        return Err(DocError::Invalid("pick the inside corner edges, or the faces whose inside corners to relieve".into()));
+    }
+    let i = crate::eval::body_at(st, body, &picks)?;
+    let Some(mb) = st.bodies.get(i).cloned() else { return Err(DocError::Invalid("body".into())) };
+    if mb.body.is_mesh() {
+        return Err(DocError::Invalid(format!("{} is a mesh body: dogbones need a solid", mb.name)));
+    }
+    let mut notes = Vec::new();
+    // Edges by their names first, as a fillet finds its edges after upstream edits.
+    let edge_idx = if edges.is_empty() {
+        Vec::new()
+    } else {
+        let mut w = None;
+        let all: Vec<usize> = (0..edges.len()).collect();
+        let at = crate::eval::blend_edges_on(&mb, f, edges, &all, &mut w)?;
+        notes.extend(w);
+        kernel::blend_edges(&mb.body, &at)?
+    };
+    let mut face_idx = Vec::new();
+    for p in faces {
+        let face = crate::appearance::face_index_at(&mb, p.0)
+            .ok_or_else(|| DocError::Invalid(format!("no face of {} at [{}, {}, {}]", mb.name, p.0.x, p.0.y, p.0.z)))?;
+        face_idx.push(face);
+    }
+    let options = db::BodyOptions {
+        relief: db::Options { radius, style: relief_style, max_angle: largest },
+        along: along.as_ref().map(|a| [a.0.x, a.0.y, a.0.z]),
+    };
+    let plan = db::plan(&mb.body, &edge_idx, &face_idx, &options)?;
+    let report = DogboneReport {
+        relieved: plan.tools.iter().map(|t| Vec3::new(t.at[0], t.at[1], t.at[2])).collect(),
+        skipped: plan.skipped.iter().map(|s| (Vec3::new(s.at[0], s.at[1], s.at[2]), reason_id(&s.why))).collect(),
+    };
+    if !report.skipped.is_empty() {
+        notes.push(skipped_note(&report.skipped));
+    }
+    if plan.tools.is_empty() {
+        let why = if notes.is_empty() { String::new() } else { format!(" ({})", notes.join("; ")) };
+        return Err(DocError::Invalid(format!("no inside corner to relieve{why}")));
+    }
+    let mut tools = Vec::new();
+    for t in &plan.tools {
+        let c = t.cylinder;
+        let cylinder = kernel::cylinder(Vec3::new(c.base[0], c.base[1], c.base[2]), Vec3::new(c.axis[0], c.axis[1], c.axis[2]), c.radius, c.height)?;
+        tools.push(crate::lineage::cylinder_tool(cylinder));
+    }
+    st.dogbones.insert(f.id, report);
+    if !notes.is_empty() {
+        *warning = Some(notes.join("; "));
+    }
+    crate::eval::apply_traced(doc, st, f, tools, Operation::Cut, std::slice::from_ref(&mb.name))
+}
+
+/// What a feature's warning says about the edges it skipped.
+fn skipped_note(skipped: &[(Vec3, &'static str)]) -> String {
+    let named: Vec<String> =
+        skipped.iter().take(NAMED_SKIPS).map(|(p, why)| format!("[{:.3}, {:.3}, {:.3}] {}", p.x, p.y, p.z, why.replace('_', " "))).collect();
+    let more = skipped.len().saturating_sub(NAMED_SKIPS);
+    let tail = if more > 0 { format!(" and {more} more") } else { String::new() };
+    format!("skipped {} edge{}: {}{tail}", skipped.len(), if skipped.len() == 1 { "" } else { "s" }, named.join(", "))
+}

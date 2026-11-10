@@ -111,7 +111,7 @@ pub struct CommandGroup {
 pub fn groups(tab: &str, panel: &str) -> &'static [CommandGroup] {
     match (tab, panel) {
         ("MODEL", "MODIFY") => &[
-            CommandGroup { label: "Edges", ids: &["solid.fillet", "solid.chamfer"] },
+            CommandGroup { label: "Edges", ids: &["solid.fillet", "solid.chamfer", "solid.dogbone"] },
             CommandGroup {
                 label: "Faces",
                 ids: &["solid.press_pull", "solid.draft", "solid.offset_face", "solid.replace_face", "solid.split_face", "face.delete"],
@@ -921,6 +921,7 @@ mod tests {
             [
                 "solid.fillet",
                 "solid.chamfer",
+                "solid.dogbone",
                 "solid.press_pull",
                 "solid.draft",
                 "solid.offset_face",

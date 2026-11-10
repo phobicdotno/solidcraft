@@ -35,6 +35,7 @@ mod component_clone_assembly;
 mod construct;
 mod delete;
 pub(crate) mod diagnostics;
+mod dogbone;
 mod edit;
 mod face;
 mod features;
@@ -344,6 +345,7 @@ pub fn command_specs() -> Vec<&'static CommandSpec> {
     v.extend(sketch_modify::COMMANDS.iter());
     v.extend(sketch_project::COMMANDS.iter());
     v.extend(features::COMMANDS.iter());
+    v.extend(dogbone::COMMANDS.iter());
     v.extend(features_more::COMMANDS.iter());
     v.extend(mesh::COMMANDS.iter());
     v.extend(construct::COMMANDS.iter());
