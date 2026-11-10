@@ -22,7 +22,10 @@ fn refused(e: &FlatError) -> KernelError {
 pub fn slice_body(body: &Body, settings: &FabSettings) -> Result<std::result::Result<FabResult, FlatError>> {
     crate::guard("slice for laser / CNC", || {
         let record = crate::native::brep_record(body)?;
-        let (ops_body, _) = solidcore_ops::body::Body::from_record(&record, true).map_err(|e| KernelError::Failed(format!("slicing the body: {e}")))?;
+        // a record the kernel refuses as it stands (an imported part) is let through its healer
+        let (ops_body, _) = solidcore_ops::body::Body::from_record(&record, true)
+            .or_else(|_| solidcore_ops::body::Body::from_record(&record, false))
+            .map_err(|e| KernelError::Failed(format!("reading the body to slice it: {e}")))?;
         solidcore_ops::fab::slice_body(&ops_body, settings).map_err(|e| KernelError::Failed(format!("slicing the body: {e}")))
     })
 }
