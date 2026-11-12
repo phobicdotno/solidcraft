@@ -12,6 +12,8 @@
 //! the plane by [`NUDGES`] (at most 0.023 mm, far less than a laser kerf) to the first offset
 //! that keeps [`VERTEX_CLEARANCE`] from every vertex. A planar face bounded only by edges
 //! without vertices is not detected; such faces are rare in practice.
+//!
+//! Deviations: none (no upstream counterpart). No recursion.
 
 use crate::curve::curve::Curve;
 use crate::geom::vector3d::{Point3, Vec3};

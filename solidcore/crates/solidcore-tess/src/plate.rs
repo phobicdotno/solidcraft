@@ -3,6 +3,8 @@
 //! polygons on a flat page (a sheet's cut rings). The faces are the constrained Delaunay
 //! triangulation the face mesher uses for planar faces; the walls are one quad per side. A display
 //! mesh only: nothing is decided from it.
+//!
+//! Deviations: none (no upstream counterpart). No recursion.
 
 use solidcore_record::{Vec2, Vec3};
 

@@ -20,6 +20,8 @@
 //! (built as a union of edge bands); the polygon engine here (iOverlay, MIT OR Apache-2.0) does
 //! it in well under a millisecond. Section outlines come from the exact section curves, sampled
 //! within the caller's chord tolerance.
+//!
+//! Deviations: none (no upstream counterpart). No recursion.
 
 pub mod finish;
 pub mod font;
