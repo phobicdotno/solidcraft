@@ -56,7 +56,28 @@ enum Field {
     },
 }
 
+/// Most corners a face's trace may evaluate a free-form tool surface at. Each evaluation is a
+/// nearest-point search on the surface; past this the trace is refused (an error, not a hang).
+const MAX_SURFACE_CORNERS: usize = 200_000;
+
 impl Field {
+    /// [`Field::eval`], warm-started for a free-form surface: the nearest-point search starts at
+    /// `hint` (the previous point's parameters) and only falls back to a cold search, which
+    /// presearches a whole grid over the surface, when that does not converge.
+    fn eval_near(&self, p: Vec3, hint: &mut Option<(f64, f64)>) -> f64 {
+        let Field::Surface(s) = self else { return self.eval(p) };
+        let found = hint.and_then(|h| s.search_nearest_parameter(p3(p), Some(h), 50)).or_else(|| s.search_nearest_parameter(p3(p), None, 50));
+        *hint = found;
+        match found {
+            Some((u, v)) => {
+                let q = from_p3(s.subs(u, v));
+                let n = s.normal(u, v);
+                (p - q).dot(Vec3::new(n.x, n.y, n.z))
+            }
+            None => f64::NAN,
+        }
+    }
+
     fn eval(&self, p: Vec3) -> f64 {
         match self {
             Field::Plane { o, n } => (p - *o).dot(*n),
@@ -219,7 +240,13 @@ fn trace(face: &mt::Face, g: &Field, size: f64) -> Result<Vec<Chain>> {
             return Err(KernelError::Failed("the face is too finely divided to trace".into()));
         }
     }
-    let gv: Vec<f64> = corner_uv.iter().map(|uv| g.eval(from_p3(surface.subs(uv.0, uv.1)))).collect();
+    // A free-form tool costs a nearest-point search per corner: refuse a trace that would run
+    // for minutes (it ran on the UI thread for an hour) rather than hang.
+    if matches!(g, Field::Surface(_)) && corner_uv.len() > MAX_SURFACE_CORNERS {
+        return Err(KernelError::Failed("the face is too finely divided to trace against a curved surface".into()));
+    }
+    let mut hint = None;
+    let gv: Vec<f64> = corner_uv.iter().map(|uv| g.eval_near(from_p3(surface.subs(uv.0, uv.1)), &mut hint)).collect();
     if gv.iter().any(|x| !x.is_finite()) {
         return Err(KernelError::Failed("the splitting tool cannot be evaluated on the face".into()));
     }
