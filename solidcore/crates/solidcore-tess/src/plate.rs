@@ -7,7 +7,7 @@
 use solidcore_record::{Vec2, Vec3};
 
 use crate::mesh::Mesh;
-use crate::mesher::cdt::{triangulate, Fill};
+use crate::mesher::cdt::{Fill, triangulate};
 use crate::vec::VecExt as _;
 
 /// Where a plate sits: its point `(x, y)` is at `origin + x u + y v`, and the slab reaches
@@ -109,7 +109,12 @@ fn polygons(rings: &[Vec<[f64; 2]>]) -> Option<Vec<Vec<[f64; 2]>>> {
                 pts.push(p);
             }
         }
-        if pts.len() > 1 && pts.first().zip(pts.last()).is_some_and(|(a, b)| !apart(*a, *b)) {
+        if pts.len() > 1
+            && pts
+                .first()
+                .zip(pts.last())
+                .is_some_and(|(a, b)| !apart(*a, *b))
+        {
             pts.pop();
         }
         if pts.len() < 3 {
@@ -270,8 +275,14 @@ mod tests {
             .positions
             .iter()
             .fold(Vec3::new(f64::MIN, f64::MIN, f64::MIN), |m, p| m.max(*p));
-        assert!((lo.y + 10.0).abs() < 1e-9 && (hi.y + 4.0).abs() < 1e-9, "{lo:?} {hi:?}");
-        assert!((lo.x - 5.0).abs() < 1e-9 && (hi.z - 32.0).abs() < 1e-9, "{lo:?} {hi:?}");
+        assert!(
+            (lo.y + 10.0).abs() < 1e-9 && (hi.y + 4.0).abs() < 1e-9,
+            "{lo:?} {hi:?}"
+        );
+        assert!(
+            (lo.x - 5.0).abs() < 1e-9 && (hi.z - 32.0).abs() < 1e-9,
+            "{lo:?} {hi:?}"
+        );
     }
 
     #[test]
@@ -294,25 +305,39 @@ mod tests {
     fn hostile_rings_make_no_plate() {
         let f = frame();
         assert!(plate(&[], &f, 3.0).triangles.is_empty());
-        assert!(plate(&[vec![[0.0, 0.0], [1.0, 0.0]]], &f, 3.0)
-            .triangles
-            .is_empty());
-        assert!(plate(&[square(0.0, 0.0, 1.0)], &f, 0.0).triangles.is_empty());
-        assert!(plate(&[square(0.0, 0.0, 1.0)], &f, f64::NAN)
-            .triangles
-            .is_empty());
         assert!(
-            plate(&[vec![[0.0, 0.0], [f64::INFINITY, 0.0], [1.0, 1.0]]], &f, 1.0)
+            plate(&[vec![[0.0, 0.0], [1.0, 0.0]]], &f, 3.0)
                 .triangles
                 .is_empty()
+        );
+        assert!(
+            plate(&[square(0.0, 0.0, 1.0)], &f, 0.0)
+                .triangles
+                .is_empty()
+        );
+        assert!(
+            plate(&[square(0.0, 0.0, 1.0)], &f, f64::NAN)
+                .triangles
+                .is_empty()
+        );
+        assert!(
+            plate(
+                &[vec![[0.0, 0.0], [f64::INFINITY, 0.0], [1.0, 1.0]]],
+                &f,
+                1.0
+            )
+            .triangles
+            .is_empty()
         );
         let flat = PlateFrame {
             n: Vec3::new(0.0, 0.0, 0.0),
             ..f
         };
-        assert!(plate(&[square(0.0, 0.0, 1.0)], &flat, 1.0)
-            .triangles
-            .is_empty());
+        assert!(
+            plate(&[square(0.0, 0.0, 1.0)], &flat, 1.0)
+                .triangles
+                .is_empty()
+        );
         let many = vec![square(0.0, 0.0, 1.0); MAX_PLATE_CORNERS / 4 + 1];
         assert!(fill(&many).is_empty());
     }

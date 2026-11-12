@@ -48,7 +48,7 @@ pub use mesh::Mesh;
 pub use mesher::{MAX_ANGLE_BOUNDARY, plan};
 pub use par::guarded;
 pub use plan::{FacePlan, TessPlan};
-pub use plate::{fill, plate, PlateFrame, MAX_PLATE_CORNERS};
+pub use plate::{MAX_PLATE_CORNERS, PlateFrame, fill, plate};
 pub use pole::{AveragedPole, PoleNode, PoleRule};
 pub use stats::{Cap, CappedEdge, EdgeCap, OverTolerance, PlanStats, RefusedEdge, RefusedFace};
 pub use tolerance::{DISPLAY_ANGLE, MeshTolerance};
