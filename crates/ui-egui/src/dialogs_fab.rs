@@ -574,8 +574,10 @@ fn read_vec(v: &Value) -> Option<Vec3> {
     Some(Vec3::new(v.get(0)?.as_f64()?, v.get(1)?.as_f64()?, v.get(2)?.as_f64()?))
 }
 
-/// Every copy of every part as a plate where it sits, and each sheet's fill.
+/// Every copy of every part as a plate where it sits, and each sheet's fill. A plate or a fill
+/// the kernel fails on is not drawn.
 fn shapes(v: &Value) -> (Vec<(Mesh, bool)>, Vec<Vec<[Vec2; 3]>>) {
+    use solidcraft_engine::kernel;
     let thickness = v["thickness"].as_f64().unwrap_or(0.0);
     let mut plates = Vec::new();
     let mut triangles = 0;
@@ -588,7 +590,10 @@ fn shapes(v: &Value) -> (Vec<(Mesh, bool)>, Vec<Vec<[Vec2; 3]>>) {
             else {
                 continue;
             };
-            let mesh = solidcore_tess::plate(&rings, &PlateFrame { origin, u, v: w, n }, thickness);
+            let frame = PlateFrame { origin, u, v: w, n };
+            let Ok(mesh) = kernel::guard("plate of a flat part", || Ok(solidcore_tess::plate(&rings, &frame, thickness))) else {
+                continue;
+            };
             triangles += mesh.triangles.len();
             if triangles > MAX_TRIANGLES {
                 break 'parts;
@@ -596,7 +601,15 @@ fn shapes(v: &Value) -> (Vec<(Mesh, bool)>, Vec<Vec<[Vec2; 3]>>) {
             plates.push((mesh, slice));
         }
     }
-    let fills = v["sheets"].as_array().into_iter().flatten().map(|sheet| solidcore_tess::fill(&read_rings(&sheet["cut_rings"]))).collect();
+    let fills = v["sheets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|sheet| {
+            let rings = read_rings(&sheet["cut_rings"]);
+            kernel::guard("fill of a sheet", || Ok(solidcore_tess::fill(&rings))).unwrap_or_default()
+        })
+        .collect();
     (plates, fills)
 }
 
