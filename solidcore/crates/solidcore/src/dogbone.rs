@@ -7,7 +7,8 @@
 //! that the bit reaches (or nearly reaches) the sharp corner. [`edge_relief`] decides, for one
 //! such edge as the caller reads it from a solid, whether it is an inside corner and which
 //! cylinder relieves it. For the caller's choice of edges, [`outward`] gives a planar face's
-//! outward normal and [`Edge::lean`] how far an edge leans from the bit's axis.
+//! outward normal and [`Edge::lean`] how far an edge leans from the bit's axis. The corner
+//! reliefs of the flat parts of [`crate::flat`] are placed by the same wedge computation.
 //!
 //! A corner is described from the void's side: `a` and `b` are the unit directions of its two
 //! walls away from the edge, square to it, the void (where the bit runs) is the wedge between
@@ -38,7 +39,7 @@ const MAX_SIZE: f64 = 1.0e6;
 
 /// Two unit directions closer to parallel than this (radians, or its sine) are in line: a turn
 /// this small is no corner.
-const STRAIGHT: f64 = 1.0e-9;
+pub(crate) const STRAIGHT: f64 = 1.0e-9;
 
 /// Angular slack (radians) on the largest corner angle relieved, so a corner computed at 90°
 /// plus rounding is still a 90° corner.
@@ -47,7 +48,7 @@ const ANGLE_SLACK: f64 = 1.0e-6;
 /// Relative to the radius, a crossing this near the corner is at the corner: a circle through
 /// the corner crosses both walls there, and the rounding of the crossing's root leaves it a few
 /// ulps of the radius off, far below the kernel's numeric zero.
-const AT_CORNER: f64 = EFF_ZERO;
+pub(crate) const AT_CORNER: f64 = EFF_ZERO;
 
 /// Relative to the radius, the shortest stretch of a wall a circle must cut to bite it. A chord
 /// is `2 r sin φ` long, `φ` the angle at which the circle crosses the wall's line, so a shorter
@@ -145,27 +146,28 @@ pub enum Skip {
 
 /// A relief in a corner, in the corner's own terms: offsets from the corner point.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Wedge {
+pub(crate) struct Wedge {
     /// The corner's (void wedge's) angle, radians in (0, π).
     angle: f64,
     /// The circle's centre less the corner point.
-    centre: Vec3,
+    pub(crate) centre: Vec3,
     /// Where the circle crosses wall `a`, as distances from the corner along it: `[near, far]`
     /// with `0 <= near <= far`, or `None` where it doesn't cut into that wall. For a circle
     /// through the corner, `near` is 0.
-    bite_a: Option<[f64; 2]>,
+    pub(crate) bite_a: Option<[f64; 2]>,
     /// The same on wall `b`.
-    bite_b: Option<[f64; 2]>,
+    pub(crate) bite_b: Option<[f64; 2]>,
 }
 
 /// The relief of the corner whose walls leave it in directions `a` and `b`, the void the wedge
 /// between them (`a` and `b` need not be exactly unit: they are normalised), walls `la` and `lb`
-/// long (only a T-bone reads them, to choose its side).
+/// long (only a T-bone reads them, to choose its side). Works in a plane (z = 0) and in space
+/// alike.
 ///
 /// # Errors
 /// [`SolidError::InvalidInput`] for options out of range or a direction or length that is not
 /// finite.
-fn wedge_relief(
+pub(crate) fn wedge_relief(
     a: Vec3,
     b: Vec3,
     la: f64,
