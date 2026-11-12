@@ -93,6 +93,17 @@ pub enum FlatError {
         /// The kernel's error.
         error: crate::SolidError,
     },
+    /// The section of the body by the plane `axis = at` does not close: an outline's ends stay
+    /// `gap` mm apart, more than the section curves' ends may be and still join.
+    #[error("the section of the body at {axis:?} = {at} mm does not close: a {gap:.3} mm gap")]
+    OpenSection {
+        /// The axis the plane is square to.
+        axis: slice::Axis,
+        /// Where the plane crosses that axis (mm).
+        at: f64,
+        /// How far apart the open outline's ends are (mm).
+        gap: f64,
+    },
     /// The kernel failed reading the body (its vertices or its bounding box).
     #[error(transparent)]
     Kernel(#[from] crate::SolidError),
