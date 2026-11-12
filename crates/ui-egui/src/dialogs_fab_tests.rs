@@ -253,6 +253,32 @@ fn warnings_follow_the_language() {
 }
 
 #[test]
+fn a_part_too_big_for_the_sheet_is_worded_by_the_window() {
+    let mut h = Harness::new();
+    let mut v = result();
+    v["sheets_error"] = json!("fab.slice: L1 (100.2 x 60.2 mm) does not fit on a 80 x 80 mm sheet with a 5 mm margin");
+    v["does_not_fit"] =
+        json!({"part": "L1", "width_mm": 100.15, "height_mm": 60.15, "sheet_width_mm": 80.0, "sheet_height_mm": 80.0, "margin_mm": 5.0});
+    let mm = |v: f64| crate::prefs::show_mm(&h.app, v, 1);
+    let want = format!(
+        "L1 ({} x {}) does not fit on a {} x {} sheet with a {} margin: use a bigger sheet",
+        mm(100.15),
+        mm(60.15),
+        mm(80.0),
+        mm(80.0),
+        mm(5.0)
+    );
+    assert_eq!(sheets_error(&h.app, &v).as_deref(), Some(want.as_str()));
+    h.app.preferences.language = "de".into();
+    let de = sheets_error(&h.app, &v).unwrap();
+    assert!(de.contains("L1") && de != want, "{de}");
+    // any other reason is the command's own words
+    v["does_not_fit"] = Value::Null;
+    v["sheets_error"] = json!("fab.slice: too much to cut: parts");
+    assert_eq!(sheets_error(&h.app, &v).as_deref(), Some("fab.slice: too much to cut: parts"));
+}
+
+#[test]
 fn the_export_stem_drops_the_sheet_extension() {
     assert_eq!(stem("/tmp/a/vase-sheets.dxf"), "/tmp/a/vase-sheets");
     assert_eq!(stem("C:\\x\\Vase.SVG"), "C:\\x\\Vase");

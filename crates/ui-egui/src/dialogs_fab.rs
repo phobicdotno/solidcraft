@@ -357,8 +357,8 @@ fn report(app: &SolveApp, ui: &mut egui::Ui) {
     match &app.fab.result {
         Some(Ok(v)) => {
             ui_kit::text(ui, &summary(app, v), ui_kit::Text::Report("fab_summary", false));
-            if let Some(e) = v["sheets_error"].as_str() {
-                ui_kit::status_line(ui, e, ui_kit::StatusTone::Error);
+            if let Some(e) = sheets_error(app, v) {
+                ui_kit::status_line(ui, &e, ui_kit::StatusTone::Error);
             }
             for line in warnings(app, v) {
                 ui_kit::status_line(ui, &line, ui_kit::StatusTone::Warning);
@@ -369,6 +369,29 @@ fn report(app: &SolveApp, ui: &mut egui::Ui) {
         }
         None => {}
     }
+}
+
+/// Why the parts could not be packed: a part too big for the sheet in the window's language, from
+/// the reply's `does_not_fit`; any other reason in the command's English words.
+pub(crate) fn sheets_error(app: &SolveApp, v: &Value) -> Option<String> {
+    let f = &v["does_not_fit"];
+    if !f.is_object() {
+        return v["sheets_error"].as_str().map(str::to_string);
+    }
+    let locale = solidcraft_ui_text::Locale::for_language(&app.preferences.language);
+    let length = |key: &str| f[key].as_f64().map_or_else(|| f[key].to_string(), |mm| crate::prefs::show_mm(app, mm, 1));
+    let part = f["part"].as_str().unwrap_or_default();
+    Some(locale.format(
+        "fab.does_not_fit",
+        &[
+            ("part", part),
+            ("width", &length("width_mm")),
+            ("height", &length("height_mm")),
+            ("sheet_width", &length("sheet_width_mm")),
+            ("sheet_height", &length("sheet_height_mm")),
+            ("margin", &length("margin_mm")),
+        ],
+    ))
 }
 
 /// "N parts (a slices, 1 plate, b spacer rings) on M sheets", in the window's language.
