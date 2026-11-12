@@ -6,6 +6,8 @@
 //! end to end into closed loops, simplified and filled even-odd, so a loop inside another is a
 //! hole. Tracing, sampling and simplifying each take a share of the caller's chord tolerance,
 //! the shares adding up to all of it, so the outline stays within it of the exact section.
+//! Curves whose ends do not join into closed loops leave the section incomplete, and it is
+//! refused ([`FlatError::OpenSection`]).
 //!
 //! A plane through a vertex of the body, or lying in one of its planar faces, has no
 //! well-defined section (a face in the plane is material on one side only; a sphere's pole
@@ -166,7 +168,8 @@ impl Sectioner for BrepSection<'_> {
 /// # Errors
 /// [`FlatError::Setting`] for `at` not finite or a chord out of range; [`FlatError::TooBig`]
 /// past [`MAX_SECTION_CURVES`] or [`MAX_SECTION_SAMPLES`]; [`FlatError::Section`] for the
-/// kernel's section and evaluation errors.
+/// kernel's section and evaluation errors; [`FlatError::OpenSection`] for section curves that
+/// do not close into outlines.
 pub fn plane_section(
     k: &Kernel,
     b: &mut Brep,
@@ -206,13 +209,24 @@ fn section_at(
             pieces.push(flat);
         }
     }
+    let rings = outlines(pieces, axis, at, chord)?;
+    Ok(region::from_rings(&rings, true))
+}
+
+/// The sampled pieces of the section by the plane `axis = at` as its outlines: copies left
+/// out, chained into closed rings and simplified within `SIMPLIFY_SHARE` of `chord`.
+///
+/// # Errors
+/// [`FlatError::OpenSection`] with the gap when the pieces do not close into rings within
+/// the join tolerance: the section is incomplete.
+fn outlines(pieces: Vec<Ring>, axis: Axis, at: f64, chord: f64) -> FlatResult<Vec<Ring>> {
     let tol = join_tolerance(chord);
-    let pieces = dedupe(pieces, tol);
-    let rings: Vec<Ring> = chain(pieces, tol)
+    let rings =
+        chain(dedupe(pieces, tol), tol).map_err(|gap| FlatError::OpenSection { axis, at, gap })?;
+    Ok(rings
         .into_iter()
         .map(|r| region::simplify_ring(&r, chord * SIMPLIFY_SHARE))
-        .collect();
-    Ok(region::from_rings(&rings, true))
+        .collect())
 }
 
 /// The kernel's exact section curves of body `b` by the plane `axis = at` through `centre`
@@ -335,9 +349,11 @@ fn dedupe(pieces: Vec<Ring>, tol: f64) -> Vec<Ring> {
 
 /// The polylines joined end to end into closed rings. A polyline that closes on itself is a
 /// ring; otherwise the nearest free end within `tol` is joined (either direction). A chain
-/// that does not close within `tol` is closed anyway when its gap is under a millimetre (a
-/// curve the kernel left short), and dropped otherwise.
-fn chain(mut pieces: Vec<Ring>, tol: f64) -> Vec<Ring> {
+/// that closes with fewer than three points encloses nothing and gives no ring.
+///
+/// # Errors
+/// The gap (mm) between the ends of the first chain that does not close within `tol`.
+fn chain(mut pieces: Vec<Ring>, tol: f64) -> Result<Vec<Ring>, f64> {
     // taken from the front so the result follows the kernel's curve order
     pieces.reverse();
     let mut rings: Vec<Ring> = Vec::new();
@@ -361,16 +377,15 @@ fn chain(mut pieces: Vec<Ring>, tol: f64) -> Vec<Ring> {
         let (Some(&start), Some(&end)) = (cur.first(), cur.last()) else {
             continue;
         };
-        if near(start, end, tol) {
-            cur.pop();
-        } else if !near(start, end, 1.0) {
-            continue;
+        if !near(start, end, tol) {
+            return Err((start[0] - end[0]).hypot(start[1] - end[1]));
         }
+        cur.pop();
         if cur.len() >= 3 {
             rings.push(cur);
         }
     }
-    rings
+    Ok(rings)
 }
 
 /// The free polyline whose start (or end, `true`) is nearest to `p`, within `tol`.
@@ -627,15 +642,54 @@ mod tests {
         let copy: Ring = vec![[1.0, 0.0], [0.0, 0.0]];
         let pieces = dedupe(vec![a, b, c, copy], 1e-3);
         assert_eq!(pieces.len(), 3);
-        let rings = chain(pieces, 1e-3);
+        let rings = chain(pieces, 1e-3).unwrap();
         assert_eq!(rings.len(), 1);
         assert_eq!(rings[0].len(), 4);
         assert!(close(region::ring_area(&rings[0]).abs(), 1.0, 1e-12));
-        // a far-open chain is dropped, a slightly short one closed
-        assert!(chain(vec![vec![[0.0, 0.0], [5.0, 0.0], [5.0, 5.0]]], 1e-3).is_empty());
+        // a closed chain of fewer than three points encloses nothing
         assert_eq!(
-            chain(vec![vec![[0.0, 0.0], [5.0, 0.0], [0.0, 0.5]]], 1e-3).len(),
-            1
+            chain(vec![vec![[0.0, 0.0], [1.0, 0.0], [0.0, 0.0]]], 1e-3),
+            Ok(Vec::new())
+        );
+    }
+
+    #[test]
+    fn a_chain_that_does_not_close_is_refused_with_its_gap() {
+        // far open, and only a little short: both refused, whatever the gap
+        let gap = |pieces: Vec<Ring>| chain(pieces, 1e-3).unwrap_err();
+        assert!(close(
+            gap(vec![vec![[0.0, 0.0], [5.0, 0.0], [5.0, 5.0]]]),
+            50f64.sqrt(),
+            1e-12
+        ));
+        assert!(close(
+            gap(vec![vec![[0.0, 0.0], [5.0, 0.0], [0.0, 0.5]]]),
+            0.5,
+            1e-12
+        ));
+        // a ring and an open chain: the section is incomplete
+        let square: Ring = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.0, 0.0]];
+        let open: Ring = vec![[3.0, 0.0], [4.0, 0.0], [4.0, 1.0]];
+        assert!(close(gap(vec![square, open]), 2f64.sqrt(), 1e-12));
+        // the outlines of a section carry the plane and the gap
+        let err = outlines(
+            vec![vec![[0.0, 0.0], [5.0, 0.0], [0.0, 0.5]]],
+            Axis::Y,
+            12.5,
+            CHORD,
+        );
+        assert_eq!(
+            err,
+            Err(FlatError::OpenSection {
+                axis: Axis::Y,
+                at: 12.5,
+                gap: 0.5
+            })
+        );
+        let text = err.unwrap_err().to_string();
+        assert!(
+            text.contains("Y = 12.5 mm") && text.contains("0.500 mm"),
+            "{text}"
         );
     }
 
