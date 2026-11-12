@@ -250,9 +250,40 @@ fn exported_sheets_read_back_with_cuts_red_and_engraving_blue() {
     // ten layers, each an outline and two dowel holes; each named
     assert_eq!(cuts, 30, "{ents:?}");
     assert!(engraved >= 10, "{engraved}");
-    // the cut outlines are the parts grown by half the kerf each side: 100.2 x 60.2
-    let geoms = solidcraft_io::read_dxf(&dxf).unwrap();
-    assert!(!geoms.is_empty());
+    // the cut outlines are the parts grown by half the kerf each side: 100.2 x 60.2. The reader
+    // gives each polyline as its segments in order, so a closed outline is a run of segments back
+    // to its first point; the 600 x 400 sheet is one of them.
+    let mut boxes: Vec<[f64; 4]> = Vec::new();
+    let mut run: Vec<solidcore_record::Vec2> = Vec::new();
+    for g in solidcraft_io::read_dxf(&dxf).unwrap() {
+        let solidcraft_io::Geom2::Line(a, b) = g else {
+            run.clear();
+            continue;
+        };
+        if run.last() != Some(&a) {
+            run = vec![a];
+        }
+        run.push(b);
+        if run.len() > 3 && run.first() == Some(&b) {
+            let (xs, ys) = (run.iter().map(|p| p.x), run.iter().map(|p| p.y));
+            boxes.push([
+                xs.clone().fold(f64::MAX, f64::min),
+                ys.clone().fold(f64::MAX, f64::min),
+                xs.fold(f64::MIN, f64::max),
+                ys.fold(f64::MIN, f64::max),
+            ]);
+            run.clear();
+        }
+    }
+    let sizes: Vec<(f64, f64)> = boxes.iter().map(|b| (b[2] - b[0], b[3] - b[1])).collect();
+    assert_eq!(sizes.iter().filter(|&&(w, h)| close(w, 600.0, 1e-9) && close(h, 400.0, 1e-9)).count(), 1, "{sizes:?}");
+    let (w, h) = sizes
+        .iter()
+        .copied()
+        .filter(|&(w, h)| !(close(w, 600.0, 1e-9) && close(h, 400.0, 1e-9)))
+        .fold((0.0, 0.0), |a, s| if s.0 * s.1 > a.0 * a.1 { s } else { a });
+    // the nesting may turn a part by 90°
+    assert!(close(w.max(h), 100.2, 1e-3) && close(w.min(h), 60.2, 1e-3), "{w} x {h}");
     let svg = std::fs::read_to_string(files[1]["path"].as_str().unwrap()).unwrap();
     assert!(svg.contains(r#"width="600mm" height="400mm""#));
     assert!(svg.contains(r##"stroke="#ff0000""##) && svg.contains(r##"stroke="#0000ff""##));
