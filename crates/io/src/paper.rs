@@ -3,3 +3,5 @@
 mod svg;
 
 pub use svg::{SvgReport, paper_svg};
+/// The SVG number writer, shared with the sheets of `fab_out`.
+pub(crate) use svg::{nano, number, push_number};
