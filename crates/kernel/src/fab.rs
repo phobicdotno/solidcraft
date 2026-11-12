@@ -11,14 +11,16 @@ use crate::{Body, KernelError, Result};
 
 /// `body` cut into flat parts as `settings` say: the outer error when the kernel fails, the inner
 /// one when the slicing refuses (callers report the [`FlatError`] itself). `body` is unchanged.
+///
+/// # Errors
+/// [`KernelError::Invalid`] for a mesh body; [`KernelError::Failed`] for a body the kernel cannot
+/// take as it stands (its record converted once, as every face query converts it) or a slicing
+/// it fails; [`KernelError::Internal`] for a panic in the kernel.
 pub fn slice_body(body: &Body, settings: &FabSettings) -> Result<std::result::Result<FabResult, FlatError>> {
+    body.require_brep("Slice for Laser / CNC")?;
     crate::guard("slice for laser / CNC", || {
-        let record = crate::native::brep_record(body)?;
-        // a record the kernel refuses as it stands (an imported part) is let through its healer
-        let (ops_body, _) = solidcore_ops::body::Body::from_record(&record, true)
-            .or_else(|_| solidcore_ops::body::Body::from_record(&record, false))
-            .map_err(|e| KernelError::Failed(format!("reading the body to slice it: {e}")))?;
-        solidcore_ops::fab::slice_body(&ops_body, settings).map_err(|e| KernelError::Failed(format!("slicing the body: {e}")))
+        let (ops_body, _) = body.ops_body().ok_or_else(|| KernelError::Failed("slicing: the kernel cannot take this body".into()))?;
+        solidcore_ops::fab::slice_body(ops_body, settings).map_err(|e| KernelError::Failed(format!("slicing the body: {e}")))
     })
 }
 
