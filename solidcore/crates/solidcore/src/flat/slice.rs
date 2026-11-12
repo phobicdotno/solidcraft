@@ -84,7 +84,6 @@ impl Axis {
 
 /// The settings of a slicing.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
 pub struct FabSettings {
     /// How the model is built back up.
     pub style: Style,
@@ -118,28 +117,6 @@ pub struct FabSettings {
     pub min_area: f64,
     /// How far section outlines may stray from the model's exact section (mm).
     pub chord: f64,
-}
-
-impl Default for FabSettings {
-    fn default() -> Self {
-        FabSettings {
-            style: Style::Stacked,
-            axis: Axis::Z,
-            thickness: 3.0,
-            spacing: 0.0,
-            count: 0,
-            clearance: 0.2,
-            rod_diameter: 8.0,
-            rod_at: None,
-            dowels: 2,
-            dowel_diameter: 6.0,
-            wall: 4.0,
-            plate_margin: 10.0,
-            guide_outline: true,
-            min_area: 4.0,
-            chord: 0.01,
-        }
-    }
 }
 
 /// The most slices one set may have.
@@ -1424,10 +1401,24 @@ mod tests {
 
     // ---- helpers ------------------------------------------------------------------------
 
+    /// The settings these tests start from, for `style`.
     fn settings(style: Style) -> FabSettings {
         FabSettings {
             style,
-            ..FabSettings::default()
+            axis: Axis::Z,
+            thickness: 3.0,
+            spacing: 0.0,
+            count: 0,
+            clearance: 0.2,
+            rod_diameter: 8.0,
+            rod_at: None,
+            dowels: 2,
+            dowel_diameter: 6.0,
+            wall: 4.0,
+            plate_margin: 10.0,
+            guide_outline: true,
+            min_area: 4.0,
+            chord: 0.01,
         }
     }
 
@@ -1769,7 +1760,7 @@ mod tests {
     fn bad_settings_are_refused() {
         let s = FabSettings {
             thickness: 0.0,
-            ..FabSettings::default()
+            ..settings(Style::Stacked)
         };
         assert_eq!(
             make(&mut test_box(), &s),
@@ -2102,7 +2093,7 @@ mod tests {
             thickness: 3.0,
             count,
             spacing,
-            ..FabSettings::default()
+            ..settings(Style::Stacked)
         };
         assert_eq!(
             positions(0.0, 100.0, &s(4, 12.0), false).unwrap(),
@@ -2238,7 +2229,7 @@ mod tests {
                 count,
                 thickness: 6.0,
                 dowels: 0,
-                ..FabSettings::default()
+                ..settings(Style::Stacked)
             };
             let res = make(&mut model, &s).unwrap();
             assert_sound(&res);
