@@ -490,6 +490,8 @@ crates/solidcore/src/eval/uv.rs	Starts::of	with_capacity	1	open	Vec::with_capaci
 crates/solidcore/src/eval/uv.rs	clamped	windows	1	proven	windows(2)	constant non-zero size
 crates/solidcore/src/eval/uv.rs	starts_along	windows	1	proven	windows(2)	constant non-zero size
 crates/solidcore/src/eval/uv.rs	wrap_into	f64::clamp	1	open	clamp(a, b)	
+crates/solidcore/src/flat/region.rs	circle_sides	Ord::clamp	1	proven	clamp(fewest, most)	constant bounds CIRCLE_SIDES: 24 <= 1440
+crates/solidcore/src/flat/section.rs	join_tolerance	f64::clamp	1	proven	clamp(JOIN_RANGE.0, JOIN_RANGE.1)	constant bounds JOIN_RANGE: 1e-3 <= 0.05
 crates/solidcore/src/geom/a_object.rs	reverse_knots	int-div	1	proven	m / 2	constant non-zero divisor
 crates/solidcore/src/geom/assert_array.rs	AssertArray::remove_at	Vec::remove	1	proven	remove(index)	returns None when index >= reports.len()
 crates/solidcore/src/geom/attribute.rs	AttributeStore::remove_attribute	Vec::remove	1	proven	remove(pos)	pos is position() in the same Vec
