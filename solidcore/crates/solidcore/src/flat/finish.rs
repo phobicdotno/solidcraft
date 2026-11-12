@@ -11,6 +11,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::region::{self, Join};
+use super::relief::{self, Corner};
 use super::slice::{FabResult, PartKind};
 use super::{FlatError, FlatResult, Region, Ring, Shape, P2};
 
@@ -136,7 +137,7 @@ pub fn relieve_corners(shape: &Shape, tool_diameter: f64) -> Shape {
     }
     let spliced: Option<Vec<Ring>> = norm
         .rings()
-        .map(|r| crate::dogbone::relieved_ring(r, &options, RELIEF_CHORD).ok())
+        .map(|r| relief::relieved_ring(r, &options, RELIEF_CHORD).ok())
         .collect();
     if let Some(rings) = spliced {
         return largest(region::from_rings(&rings, true));
@@ -145,11 +146,11 @@ pub fn relieve_corners(shape: &Shape, tool_diameter: f64) -> Shape {
     // each a polygon round the circle so the corner itself is cut
     let mut circles: Region = Vec::new();
     for ring in norm.rings() {
-        let Ok(corners) = crate::dogbone::ring_reliefs(ring, &options) else {
+        let Ok(corners) = relief::ring_reliefs(ring, &options) else {
             return norm.clone();
         };
         for c in corners {
-            if let crate::dogbone::Corner2::Relief(r) = c {
+            if let Corner::Relief(r) = c {
                 circles.extend(region::disk(
                     r.centre,
                     r.radius + RELIEF_CHORD,
@@ -721,15 +722,11 @@ mod tests {
         ] {
             assert!(contains(&material(&out), p), "{p:?}");
         }
-        // what goes is two lenses, the primitive's closed form for a square corner each
+        // what goes is two lenses: a normal relief of a square corner takes two circular
+        // segments, cut off by the walls at r sin 45° from its centre, (π/2 − 1) r² together
         let r = 2.0;
         let removed = shape_area(&s) - shape_area(&out);
-        let opts = crate::dogbone::Options {
-            radius: r,
-            style: crate::dogbone::Style::Normal,
-            max_angle: RELIEF_MAX_ANGLE,
-        };
-        let each = crate::dogbone::removed_area(std::f64::consts::FRAC_PI_2, &opts).unwrap();
+        let each = (std::f64::consts::FRAC_PI_2 - 1.0) * r * r;
         // each arc is a polygon within RELIEF_CHORD inside its circle: about 2/3 of the chord
         // times the arc's length less per relief
         assert!(

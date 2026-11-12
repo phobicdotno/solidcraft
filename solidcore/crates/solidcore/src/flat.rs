@@ -10,6 +10,8 @@
 //!   slices on a rod, on a base plate or a back plate, a waffle grid);
 //! - [`finish`]: a part as a machine cuts it (laser kerf, router corner reliefs) and its
 //!   engraved labels;
+//! - `relief`: the router's corner reliefs spliced into a part's rings, placed by the wedge
+//!   computation of [`crate::dogbone`];
 //! - [`font`]: single-stroke lettering for those labels;
 //! - [`nest`]: parts packed onto sheets.
 //!
@@ -31,6 +33,7 @@ pub mod finish;
 pub mod font;
 pub mod nest;
 pub mod region;
+mod relief;
 pub mod section;
 pub mod slice;
 
