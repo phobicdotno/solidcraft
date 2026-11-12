@@ -41,11 +41,12 @@ pub fn plate(rings: &[Vec<[f64; 2]>], frame: &PlateFrame, thickness: f64) -> Mes
     let Some(n) = frame.n.normalized() else {
         return mesh;
     };
-    if !(thickness.is_finite() && thickness > 0.0)
-        || !frame.origin.is_finite()
-        || !frame.u.is_finite()
-        || !frame.v.is_finite()
-    {
+    let sound = thickness.is_finite()
+        && thickness > 0.0
+        && frame.origin.is_finite()
+        && frame.u.is_finite()
+        && frame.v.is_finite();
+    if !sound {
         return mesh;
     }
     let Some(loops) = polygons(rings) else {
