@@ -14,8 +14,8 @@ use solidcraft_kernel::fab::{self as kfab, FabResult, FabSettings, FlatError, Ma
 use super::CommandSpec;
 use crate::params::bad;
 use crate::schema::fab::{
-    FabAxis, FabExportParams, FabExportResult, FabFile, FabFormat, FabMachine, FabPartInfo, FabSettingsParams, FabSheetInfo, FabSliceParams,
-    FabSliceResult, FabStyle, FabWarning, read,
+    FabAxis, FabDoesNotFit, FabExportParams, FabExportResult, FabFile, FabFormat, FabMachine, FabPartInfo, FabSettingsParams, FabSheetInfo,
+    FabSliceParams, FabSliceResult, FabStyle, FabWarning, read,
 };
 use crate::schema::{TypedContract, output_schema_for};
 use crate::{EngineError, Result, Session};
@@ -134,6 +134,26 @@ fn param_name(setting: &str) -> &str {
     }
 }
 
+/// The name of the part at `index` of a slicing's parts (`part 1`, ... without the slicing).
+fn part_name(res: Option<&FabResult>, index: usize) -> String {
+    res.and_then(|r| r.parts.get(index)).map_or_else(|| format!("part {}", index + 1), |p| p.name.clone())
+}
+
+/// A packing's refusal for a part too big for the sheet, as data for the reply.
+fn does_not_fit(e: &FlatError, res: &FabResult, ss: &SheetSettings) -> Option<FabDoesNotFit> {
+    let FlatError::DoesNotFit { part, width, height } = *e else {
+        return None;
+    };
+    Some(FabDoesNotFit {
+        part: part_name(Some(res), part),
+        width_mm: width,
+        height_mm: height,
+        sheet_width_mm: ss.width,
+        sheet_height_mm: ss.height,
+        margin_mm: ss.margin,
+    })
+}
+
 /// A slicing's refusal as the command's error, in the parameters' words.
 fn refusal(cmd: &str, e: &FlatError, res: Option<&FabResult>, ss: &SheetSettings) -> EngineError {
     match e {
@@ -141,7 +161,7 @@ fn refusal(cmd: &str, e: &FlatError, res: Option<&FabResult>, ss: &SheetSettings
         FlatError::Nothing => bad(cmd, "nothing to cut: the slices miss the body"),
         FlatError::TooBig(what) => bad(cmd, format!("too much to cut: {what}")),
         FlatError::DoesNotFit { part, width, height } => {
-            let name = res.and_then(|r| r.parts.get(*part)).map_or_else(|| format!("part {}", part + 1), |p| p.name.clone());
+            let name = part_name(res, *part);
             bad(
                 cmd,
                 format!(
@@ -266,7 +286,7 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let (sheets, sheets_error) = if args.sheets.unwrap_or(true) {
+    let (sheets, sheets_error, does_not_fit) = if args.sheets.unwrap_or(true) {
         match kfab::layout_sheets(&res, &ss).map_err(|e| kernel(cmd, e))? {
             Ok(sheets) => (
                 sheets
@@ -280,12 +300,15 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
                     })
                     .collect(),
                 None,
+                None,
             ),
-            Err(e @ (FlatError::DoesNotFit { .. } | FlatError::TooBig(_))) => (Vec::new(), Some(refusal(cmd, &e, Some(&res), &ss).to_string())),
+            Err(e @ (FlatError::DoesNotFit { .. } | FlatError::TooBig(_))) => {
+                (Vec::new(), Some(refusal(cmd, &e, Some(&res), &ss).to_string()), does_not_fit(&e, &res, &ss))
+            }
             Err(e) => return Err(refusal(cmd, &e, Some(&res), &ss)),
         }
     } else {
-        (Vec::new(), None)
+        (Vec::new(), None, None)
     };
     let reply = FabSliceResult {
         body: name,
@@ -297,6 +320,7 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
         sheet_size: [ss.width, ss.height],
         sheets,
         sheets_error,
+        does_not_fit,
         param_warnings: Vec::new(),
     };
     serde_json::to_value(reply).map_err(|e| EngineError::Other(e.to_string()))

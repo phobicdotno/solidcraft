@@ -183,6 +183,13 @@ fn a_part_bigger_than_the_sheet_is_named() {
     let e = r["sheets_error"].as_str().unwrap();
     assert!(e.contains("L1") && e.contains("does not fit"), "{e}");
     assert!(r["sheets"].as_array().unwrap().is_empty());
+    // the same as data: the 100 x 60 layer grown by half the 0.15 kerf on each side
+    let f = &r["does_not_fit"];
+    assert_eq!(f["part"], "L1", "{f}");
+    assert!(close(f["width_mm"].as_f64().unwrap(), 100.15, 1e-4) && close(f["height_mm"].as_f64().unwrap(), 60.15, 1e-4), "{f}");
+    assert_eq!((f["sheet_width_mm"].as_f64(), f["sheet_height_mm"].as_f64(), f["margin_mm"].as_f64()), (Some(80.0), Some(80.0), Some(5.0)), "{f}");
+    let r = run(&mut s, "fab.slice", json!({"thickness": 4}));
+    assert!(r["sheets_error"].is_null() && r["does_not_fit"].is_null(), "{r}");
     let e = s.execute("fab.export_sheets", &json!({"thickness": 4, "sheet_width": 80, "sheet_height": 80})).unwrap_err().to_string();
     assert!(e.contains("does not fit"), "{e}");
 }
