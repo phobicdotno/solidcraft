@@ -16,7 +16,8 @@
 //! - [`Mesh`]: an indexed triangle mesh with its edge polylines and their display flags;
 //! - [`curve_points`]: a free curve's points at a [`MeshTolerance`], by the edge rules;
 //! - [`simplify`]: display levels of detail of a large mesh;
-//! - [`preview`]: a bounded coarse mesh of a decoded body.
+//! - [`preview`]: a bounded coarse mesh of a decoded body;
+//! - [`plate()`]: a flat part drawn as a slab of sheet stock, and [`fill()`] for polygons on a page.
 //!
 //! A display mesh decides nothing a model depends on: it is drawn, never measured.
 //!
@@ -35,6 +36,7 @@ mod mesh;
 mod mesher;
 mod par;
 mod plan;
+mod plate;
 mod pole;
 pub mod preview;
 mod ring;
@@ -50,6 +52,7 @@ pub use mesh::Mesh;
 pub use mesher::{MAX_ANGLE_BOUNDARY, plan};
 pub use par::guarded;
 pub use plan::{FacePlan, TessPlan};
+pub use plate::{MAX_PLATE_CORNERS, PlateFrame, fill, plate};
 pub use pole::{AveragedPole, PoleNode, PoleRule};
 pub use spec::{MAX_MESH_MIN_ANGLE, MESH_MIN_ANGLE, MeshSpec, WeldedMesh, mesh};
 pub use stats::{
