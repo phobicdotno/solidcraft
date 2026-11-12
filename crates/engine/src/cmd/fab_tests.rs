@@ -319,3 +319,47 @@ fn the_slicing_settings_reach_the_kernel_with_their_defaults() {
     assert_eq!(fs.axis, solidcraft_kernel::fab::Axis::Z);
     assert_eq!(ss.machine, solidcraft_kernel::fab::Machine::Router { tool_diameter: 3.175 });
 }
+
+/// The words the params text gives as a default: after `default` in the clause that starts with
+/// `start`, up to the next comma or bracket.
+fn documented_default(start: &str) -> String {
+    let doc = settings_doc!();
+    let clause = doc.split(';').map(str::trim).find(|c| c.starts_with(start)).unwrap_or_else(|| panic!("no `{start}` in: {doc}"));
+    let (_, words) = clause.split_once("default ").unwrap_or_else(|| panic!("no default in `{clause}`"));
+    words.split([',', ')']).next().unwrap_or_default().trim().to_string()
+}
+
+/// Each default the params text states is the one a slicing starts from: the recipe's, through
+/// `solidcraft_kernel::fab`, and for the axis the one `settings` picks for the style.
+#[test]
+fn the_params_text_states_the_recipes_defaults() {
+    use solidcraft_kernel::fab::{DEFAULT_KERF, DEFAULT_SETTINGS as D, DEFAULT_SHEETS as S, DEFAULT_TOOL_DIAMETER};
+    for (start, value) in [
+        ("thickness?", D.thickness.to_string()),
+        ("clearance?", D.clearance.to_string()),
+        ("rod_diameter?", D.rod_diameter.to_string()),
+        ("dowels?", D.dowels.to_string()),
+        ("dowel_diameter?", D.dowel_diameter.to_string()),
+        ("wall?", D.wall.to_string()),
+        ("plate_margin?", D.plate_margin.to_string()),
+        ("guide_outline?", D.guide_outline.to_string()),
+        ("kerf?", DEFAULT_KERF.to_string()),
+        ("tool_diameter?", DEFAULT_TOOL_DIAMETER.to_string()),
+        ("sheet_width?, sheet_height?", format!("{} x {}", S.width, S.height)),
+        ("gap?", S.gap.to_string()),
+        ("margin?", S.margin.to_string()),
+        ("labels?", S.labels.to_string()),
+        ("label_height?", S.label_height.to_string()),
+    ] {
+        assert_eq!(documented_default(start), value, "{start}");
+    }
+    let settings = |p: Value| super::settings(&serde_json::from_value(p).unwrap());
+    let style = documented_default("style?");
+    assert_eq!(settings(json!({"style": style})).0.style, D.style, "style: {style}");
+    let machine = documented_default("machine?");
+    assert_eq!(settings(json!({"machine": machine})).1.machine, S.machine, "machine: {machine}");
+    for (start, style) in [("axis?", "stacked"), ("rod:", "rod"), ("base and back:", "base"), ("base and back:", "back")] {
+        let axis = documented_default(start);
+        assert_eq!(settings(json!({"style": style, "axis": axis})).0.axis, settings(json!({"style": style})).0.axis, "{style}: {axis}");
+    }
+}
