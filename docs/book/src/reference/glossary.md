@@ -301,7 +301,7 @@ A part to cut from sheet stock, one sheet thick: an outline with holes, made fro
 for Laser / CNC.
 
 - **In SolidCraft:** the `parts` of `fab.slice` (kind `slice`, `plate` or `spacer`).
-- **Don't use:** part (alone, see *Words with more than one meaning*), piece.
+- **Don't use:** part (alone, outside Slice for Laser / CNC's own messages), piece.
 - **Elsewhere:** flat part, cut part, profile.
 - **For translators:** not a standard part and not a sheet metal body.
 
@@ -631,6 +631,7 @@ share a catalogue entry. Each meaning below gets its own term and, in time, its 
 | Part | a standard part | *standard part* | `parts.*` |
 | | a body, an occurrence or the design | *body*, *occurrence*, *design* | catalogue texts that say "part" |
 | | a design property | *part number* | Design Properties |
+| | a part cut from sheet stock | *flat part* | Slice for Laser / CNC, `parts` of `fab.slice` |
 | Profile | a closed region of a sketch that a feature uses | profile | `solid.extrude`, `solid.revolve` |
 | | the cross-section a frame member follows | frame profile | `frame.profile.*` |
 | | a named set of preferences | *settings profile* | `settings.profile.*`, Preferences › General |
