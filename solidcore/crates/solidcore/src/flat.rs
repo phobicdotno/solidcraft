@@ -24,8 +24,8 @@
 //! 66 ms, and the polygon engine here (iOverlay, MIT OR Apache-2.0) about 0.05 ms; cutting ten
 //! slots and four holes from a 200 x 120 mm plate takes the exact 2D boolean
 //! ([`boolean_2d`](crate::boolean::api_brep::boolean_2d)) about 12 ms, and this engine about
-//! 0.05 ms. Section outlines come from the exact section curves, sampled within the caller's
-//! chord tolerance.
+//! 0.05 ms. Section outlines are made from the exact section curves and stay within the
+//! caller's chord tolerance of the exact section.
 //!
 //! Deviations: none (no upstream counterpart). No recursion.
 
