@@ -181,7 +181,7 @@ fn a_part_bigger_than_the_sheet_is_named() {
     let mut s = block();
     let r = run(&mut s, "fab.slice", json!({"thickness": 4, "sheet_width": 80, "sheet_height": 80}));
     let e = r["sheets_error"].as_str().unwrap();
-    assert!(e.contains("L1") && e.contains("does not fit"), "{e}");
+    assert!(e.contains("L1") && e.contains("does not fit") && e.ends_with(": use a bigger sheet"), "{e}");
     assert!(r["sheets"].as_array().unwrap().is_empty());
     // the same as data: the 100 x 60 layer grown by half the 0.15 kerf on each side
     let f = &r["does_not_fit"];
@@ -191,7 +191,7 @@ fn a_part_bigger_than_the_sheet_is_named() {
     let r = run(&mut s, "fab.slice", json!({"thickness": 4}));
     assert!(r["sheets_error"].is_null() && r["does_not_fit"].is_null(), "{r}");
     let e = s.execute("fab.export_sheets", &json!({"thickness": 4, "sheet_width": 80, "sheet_height": 80})).unwrap_err().to_string();
-    assert!(e.contains("does not fit"), "{e}");
+    assert!(e.contains("does not fit") && e.ends_with(": use a bigger sheet"), "{e}");
 }
 
 #[test]
