@@ -165,7 +165,7 @@ fn refusal(cmd: &str, e: &FlatError, res: Option<&FabResult>, ss: &SheetSettings
             bad(
                 cmd,
                 format!(
-                    "{name} ({width:.1} x {height:.1} mm) does not fit on a {} x {} mm sheet with a {} mm margin: use a bigger sheet, thinner slices or fewer of them",
+                    "{name} ({width:.1} x {height:.1} mm) does not fit on a {} x {} mm sheet with a {} mm margin: use a bigger sheet",
                     ss.width, ss.height, ss.margin
                 ),
             )
