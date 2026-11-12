@@ -86,29 +86,31 @@ pub struct Fab {
 }
 
 impl Fab {
-    /// The commands' defaults, in the design's length unit.
+    /// The commands' defaults (the recipe's, `solidcraft_kernel::fab`), in the design's length
+    /// unit.
     pub fn new(doc: &solidcraft_engine::doc::Document) -> Fab {
+        use solidcraft_engine::kernel::fab::{DEFAULT_KERF, DEFAULT_SETTINGS as D, DEFAULT_SHEETS as S, DEFAULT_TOOL_DIAMETER};
         let len = |mm: f64| crate::length_input::model(doc, mm);
         Fab {
             style: STACKED,
             axis: 2,
-            thickness: len(3.0),
+            thickness: len(D.thickness),
             spacing: String::new(),
-            count: "0".into(),
-            clearance: len(0.2),
-            rod_diameter: len(8.0),
-            dowels: "2".into(),
-            dowel_diameter: len(6.0),
-            guide_outline: true,
-            wall: len(4.0),
-            plate_margin: len(10.0),
+            count: D.count.to_string(),
+            clearance: len(D.clearance),
+            rod_diameter: len(D.rod_diameter),
+            dowels: D.dowels.to_string(),
+            dowel_diameter: len(D.dowel_diameter),
+            guide_outline: D.guide_outline,
+            wall: len(D.wall),
+            plate_margin: len(D.plate_margin),
             machine: 0,
-            kerf: len(0.15),
-            tool_diameter: len(3.175),
-            sheet_width: len(600.0),
-            sheet_height: len(400.0),
-            gap: len(3.0),
-            labels: true,
+            kerf: len(DEFAULT_KERF),
+            tool_diameter: len(DEFAULT_TOOL_DIAMETER),
+            sheet_width: len(S.width),
+            sheet_height: len(S.height),
+            gap: len(S.gap),
+            labels: S.labels,
             view: 0,
             picks_body: false,
         }
