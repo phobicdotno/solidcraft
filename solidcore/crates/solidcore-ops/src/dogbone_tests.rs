@@ -1,4 +1,4 @@
-use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, PI};
+use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2};
 
 use solidcore_record::brep::{Brep, Curve, Loop, Surface};
 
@@ -417,26 +417,6 @@ fn hostile_plans_are_refused() {
         plan(&r, &[], &[], &options(Style::Normal)).unwrap(),
         Plan::default()
     );
-}
-
-#[test]
-fn rings_pass_the_kernels_answer_on() {
-    let hole = [[0.0, 0.0], [0.0, 12.0], [20.0, 12.0], [20.0, 0.0]];
-    let o = Options {
-        radius: R,
-        style: Style::Normal,
-        max_angle: PI,
-    };
-    assert_eq!(
-        ring_reliefs(&hole, &o).unwrap(),
-        solidcore::dogbone::ring_reliefs(&hole, &o).unwrap()
-    );
-    assert_eq!(
-        relieved_ring(&hole, &o, 1e-3).unwrap(),
-        solidcore::dogbone::relieved_ring(&hole, &o, 1e-3).unwrap()
-    );
-    assert!(ring_reliefs(&hole[..2], &o).is_err());
-    assert!(relieved_ring(&hole, &o, 0.0).is_err());
 }
 
 /// The face of `r` on a cylinder.

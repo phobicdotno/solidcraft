@@ -1,62 +1,38 @@
-//! Dogbone reliefs: the recipe that finds the inside corners of a body (or of a planar loop) a
-//! router's round tool cannot cut sharp, and the relief each gets, from the kernel's
-//! [`solidcore::dogbone`] primitive (which computes every point, direction and length).
+//! Dogbone reliefs: the recipe that finds the inside corners of a body a router's round bit
+//! cannot cut sharp, and the relief each gets, from the kernel's [`solidcore::dogbone`]
+//! primitive (which computes every point, direction and length).
 //!
-//! For a body, [`plan`] reads its record: each straight edge picked (or each straight edge along
-//! a picked planar face's normal that meets the face, such as the walls of a pocket on its
-//! floor) between two planar faces; the kernel says whether it is an inside corner and, if so,
-//! the cylinder that relieves it. A relief runs the edge's length, past an end only where the
-//! face there faces on along the edge (open: the top of a pocket or both ends of a slot through
-//! the plate), so it never cuts below a blind pocket's floor. The application cuts the
-//! cylinders from the body; [`plan`] says which edges it skipped and why. [`faces_at`] says
-//! which face a picked point means, on the exact faces.
-//!
-//! For a planar loop, [`ring_reliefs`] and [`relieved_ring`] pass the kernel's answer on.
+//! [`plan`] reads the body's record: each straight edge picked (or each straight edge along a
+//! picked planar face's normal that meets the face, such as the walls of a pocket on its floor)
+//! between two planar faces, with the faces' planes, the wall edges beside it and the faces at
+//! its ends; the kernel says whether it is an inside corner and, if so, the cylinder that
+//! relieves it. A relief runs the edge's length, past an end only where the faces there face on
+//! along the edge (open: the top of a pocket or both ends of a slot through the plate), so it
+//! never cuts below a blind pocket's floor. The application cuts the cylinders from the body;
+//! [`plan`] says which edges it skipped and why. [`faces_at`] says which face a picked point
+//! means, on the exact faces.
 
 use solidcore::dogbone as k;
-use solidcore_record::brep::{Brep, Curve, Loop, Shell, Surface};
+use solidcore::Vec3;
+use solidcore_record::brep::{Brep, Curve, Loop, Shell};
 
 use crate::error::status;
 use crate::{Body, Error, Order, Result};
 
-pub use solidcore::dogbone::{
-    Corner2, EdgeCorner, Options, Relief2, ReliefCylinder, Side, Skip, Style, ANGLE_SLACK,
-};
+pub use solidcore::dogbone::{Options, Side, Skip, Style};
 
-/// How far (radians) an edge may lean from the tool axis and still run along it.
+/// How far (radians) an edge may lean from the bit's axis and still run along it.
 pub const AXIS_TOLERANCE: f64 = 1.0e-6;
 
 /// Most edges and faces one plan takes.
 pub const MAX_PICKS: usize = 10_000;
 
-/// The reliefs (or why none) at each vertex of planar loop `ring`, the material on its left
-/// ([`k::ring_reliefs`]).
-///
-/// # Errors
-/// [`Error::Status`] (input refused) for options or points out of range.
-pub fn ring_reliefs(ring: &[[f64; 2]], options: &Options) -> Result<Vec<Corner2>> {
-    k::ring_reliefs(ring, options).map_err(status)
-}
-
-/// `ring` with its reliefs cut in, arcs to within `chord_tolerance` ([`k::relieved_ring`]).
-///
-/// # Errors
-/// [`Error::Status`] (input refused) for options or points out of range, or a relief that runs
-/// past its edge.
-pub fn relieved_ring(
-    ring: &[[f64; 2]],
-    options: &Options,
-    chord_tolerance: f64,
-) -> Result<Vec<[f64; 2]>> {
-    k::relieved_ring(ring, options, chord_tolerance).map_err(status)
-}
-
 /// What a body's reliefs are cut with, and which edges get one.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BodyOptions {
-    /// The tool and the style.
+    /// The bit and the style.
     pub relief: Options,
-    /// The tool's axis: a picked edge not along it is skipped. `None`: any direction. A picked
+    /// The bit's axis: a picked edge not along it is skipped. `None`: any direction. A picked
     /// face's corners are always along its normal.
     pub along: Option<[f64; 3]>,
 }
@@ -74,10 +50,25 @@ pub enum Why {
     NotTwoFaces,
     /// A face at the edge (or the picked face) is not planar.
     NotPlanar,
-    /// The edge does not run along the tool's axis.
+    /// The edge does not run along the bit's axis.
     NotAlong,
     /// The picked face has no straight edge along its normal at its corners.
     NoCorners,
+}
+
+/// The cylinder a relief is cut with ([`k::ReliefCylinder`]), in the record's points.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cylinder {
+    /// The centre of its base circle.
+    pub base: [f64; 3],
+    /// Its unit axis, from the base.
+    pub axis: [f64; 3],
+    /// Its radius: the bit's.
+    pub radius: f64,
+    /// Its length along the axis.
+    pub height: f64,
+    /// The corner's (void wedge's) angle, radians.
+    pub angle: f64,
 }
 
 /// A relief to cut: the edge it relieves and the cylinder.
@@ -88,7 +79,7 @@ pub struct Tool {
     /// The middle of that edge.
     pub at: [f64; 3],
     /// The cylinder to cut.
-    pub cylinder: ReliefCylinder,
+    pub cylinder: Cylinder,
 }
 
 /// An edge or a picked face that got no relief.
@@ -128,6 +119,7 @@ pub fn plan(body: &Brep, edges: &[usize], faces: &[usize], options: &BodyOptions
     {
         return Err(Error::Argument);
     }
+    let along = options.along.map(vec3);
     let mut out = Plan::default();
     let mut seen: Vec<usize> = Vec::new();
     for e in edges {
@@ -135,7 +127,7 @@ pub fn plan(body: &Brep, edges: &[usize], faces: &[usize], options: &BodyOptions
             continue;
         }
         seen.push(*e);
-        relieve(body, *e, options.along, &relief, &mut out)?;
+        relieve(body, *e, along, &relief, &mut out)?;
     }
     for f in faces {
         let Some(axis) = face_outward(body, *f)? else {
@@ -203,22 +195,24 @@ pub fn faces_at(
     Ok(best.into_iter().map(|b| b.map(|(_, f)| f)).collect())
 }
 
-/// The relief of edge `e`, or why none, added to `out`.
+/// The relief of edge `e`, or why none, added to `out`: the record read here, the corner and
+/// its cylinder decided by the kernel ([`k::edge_relief`]).
 fn relieve(
     body: &Brep,
     e: usize,
-    along: Option<[f64; 3]>,
+    along: Option<Vec3>,
     options: &Options,
     out: &mut Plan,
 ) -> Result<()> {
-    let Some((start, end)) = ends(body, e) else {
+    let Some(line) = ends(body, e) else {
         return Err(Error::Argument);
     };
+    let at = record_vec3(line.middle());
     let skip = |why: Why, out: &mut Plan| {
         out.skipped.push(Skipped {
             edge: Some(e),
             face: None,
-            at: k::midpoint(start, end),
+            at,
             why,
         });
     };
@@ -230,7 +224,7 @@ fn relieve(
         return Ok(());
     }
     if let Some(axis) = along {
-        if !k::is_along(start, end, axis, AXIS_TOLERANCE).map_err(status)? {
+        if line.lean(axis).map_err(status)? > AXIS_TOLERANCE {
             skip(Why::NotAlong, out);
             return Ok(());
         }
@@ -242,65 +236,59 @@ fn relieve(
             return Ok(());
         }
     };
-    let (Some(fa), Some(fb)) = (edge_face(body, first, e)?, edge_face(body, second, e)?) else {
+    let (sides_a, sides_b) = (wall_sides(body, first, e), wall_sides(body, second, e));
+    let (Some(wa), Some(wb)) = (
+        wall(body, first, e, &sides_a)?,
+        wall(body, second, e, &sides_b)?,
+    ) else {
         skip(Why::NotPlanar, out);
         return Ok(());
     };
-    let (walls, _) = match k::edge_corner(start, end, [fa, fb]).map_err(status)? {
-        EdgeCorner::Concave { walls, angle } => (walls, angle),
-        EdgeCorner::Convex => {
-            skip(Why::Corner(Skip::Convex), out);
-            return Ok(());
-        }
-        EdgeCorner::Smooth => {
-            skip(Why::Smooth, out);
-            return Ok(());
-        }
-    };
-    let lengths = [wall_length(body, first, e), wall_length(body, second, e)];
     let [v0, v1] = edge.vertices;
-    let extend = [
-        extension(
-            body,
-            v0 as usize,
-            [first, second],
-            end,
-            start,
-            options.radius,
-        )?,
-        extension(
-            body,
-            v1 as usize,
-            [first, second],
-            start,
-            end,
-            options.radius,
-        )?,
-    ];
-    match k::edge_relief(start, end, walls, lengths, extend, options).map_err(status)? {
-        Ok(cylinder) => out.tools.push(Tool {
+    let at_start = end_faces(body, v0 as usize, [first, second])?;
+    let at_end = end_faces(body, v1 as usize, [first, second])?;
+    let ends = [at_start.as_slice(), at_end.as_slice()];
+    match k::edge_relief(&line, &[wa, wb], ends, options).map_err(status)? {
+        k::EdgeRelief::Relief(c) => out.tools.push(Tool {
             edge: e,
-            at: k::midpoint(start, end),
-            cylinder,
+            at,
+            cylinder: Cylinder {
+                base: record_vec3(c.base),
+                axis: record_vec3(c.axis),
+                radius: c.radius,
+                height: c.height,
+                angle: c.angle,
+            },
         }),
-        Err(why) => skip(Why::Corner(why), out),
+        k::EdgeRelief::Smooth => skip(Why::Smooth, out),
+        k::EdgeRelief::Skipped(why) => skip(Why::Corner(why), out),
     }
     Ok(())
 }
 
-/// The points of edge `e`'s start and end vertices.
-fn ends(body: &Brep, e: usize) -> Option<([f64; 3], [f64; 3])> {
-    let edge = body.edges.get(e)?;
-    let [a, b] = edge.vertices;
-    Some((
-        body.vertices.get(a as usize)?.point,
-        body.vertices.get(b as usize)?.point,
-    ))
+/// A record point or direction as the kernel's.
+fn vec3(p: [f64; 3]) -> Vec3 {
+    Vec3::new(p[0], p[1], p[2])
 }
 
-/// Face `f` as [`k::edge_corner`] reads it along edge `e`: `None` when it is not planar or not
-/// used once by one shell.
-fn edge_face(body: &Brep, f: usize, e: usize) -> Result<Option<k::EdgeFace>> {
+/// A kernel point or direction as the record's.
+fn record_vec3(v: Vec3) -> [f64; 3] {
+    [v.x, v.y, v.z]
+}
+
+/// Edge `e` from its start vertex's point to its end vertex's.
+fn ends(body: &Brep, e: usize) -> Option<k::Edge> {
+    let edge = body.edges.get(e)?;
+    let [a, b] = edge.vertices;
+    Some(k::Edge {
+        start: vec3(body.vertices.get(a as usize)?.point),
+        end: vec3(body.vertices.get(b as usize)?.point),
+    })
+}
+
+/// Face `f` as a wall of edge `e` beside its straight edges `sides` ([`k::Wall`]); `None` when
+/// it is not planar or not used once by one shell.
+fn wall<'a>(body: &Brep, f: usize, e: usize, sides: &'a [k::Edge]) -> Result<Option<k::Wall<'a>>> {
     let Some(outward) = face_outward(body, f)? else {
         return Ok(None);
     };
@@ -310,33 +298,28 @@ fn edge_face(body: &Brep, f: usize, e: usize) -> Result<Option<k::EdgeFace>> {
     };
     // Loops run counter-clockwise about the natural normal, the face on their left; the outward
     // normal is the natural one when the shell uses the face forward.
-    Ok(Some(k::EdgeFace {
+    Ok(Some(k::Wall {
         outward,
         left: loop_forward == shell_forward,
+        sides,
     }))
 }
 
-/// Face `f`'s outward unit normal, if it is planar and one shell uses it once.
-fn face_outward(body: &Brep, f: usize) -> Result<Option<[f64; 3]>> {
+/// Face `f`'s outward unit normal ([`k::outward`]), if it is planar and one shell uses it once.
+fn face_outward(body: &Brep, f: usize) -> Result<Option<Vec3>> {
     let Some(face) = body.faces.get(f) else {
         return Err(Error::Argument);
     };
     if face.nurbs.is_some() {
         return Ok(None);
     }
-    let natural = match &face.surface {
-        Surface::Plane { u_axis, v_axis, .. } => k::plane_normal(*u_axis, *v_axis),
-        Surface::PlaneThrough {
-            origin,
-            u_point,
-            v_point,
-        } => k::plane_normal_through(*origin, *u_point, *v_point),
-        _ => return Ok(None),
-    };
-    let Ok(natural) = natural else {
+    let Some(forward) = shell_sense(body, f) else {
         return Ok(None);
     };
-    Ok(shell_sense(body, f).map(|forward| k::flipped(natural, !forward)))
+    let Ok(surface) = solidcore_convert::surface(&face.surface) else {
+        return Ok(None);
+    };
+    Ok(k::outward(&surface, forward))
 }
 
 /// Whether the one shell using face `f` uses it along its natural normal; `None` when no shell,
@@ -374,16 +357,13 @@ fn loop_sense(body: &Brep, f: usize, e: usize) -> Option<bool> {
     found
 }
 
-/// How long the wall face `f` is beside edge `e`: the longest straight edge of its loop that
-/// meets `e` at a vertex (the wall's edges along the floor and the top); 0 when none is straight.
-fn wall_length(body: &Brep, f: usize, e: usize) -> f64 {
-    let Some(edge) = body.edges.get(e) else {
-        return 0.0;
+/// The straight edges of face `f`'s loops, other than `e`, that meet `e` at a vertex (the wall's
+/// edges along the floor and the top): the kernel takes the wall's length beside `e` from them.
+fn wall_sides(body: &Brep, f: usize, e: usize) -> Vec<k::Edge> {
+    let mut out = Vec::new();
+    let (Some(edge), Some(face)) = (body.edges.get(e), body.faces.get(f)) else {
+        return out;
     };
-    let Some(face) = body.faces.get(f) else {
-        return 0.0;
-    };
-    let mut longest = 0.0;
     for lp in &face.loops {
         let Loop::Edges { edges } = lp else { continue };
         for oe in edges.iter().filter(|oe| oe.edge as usize != e) {
@@ -394,41 +374,25 @@ fn wall_length(body: &Brep, f: usize, e: usize) -> f64 {
             if !meets || !matches!(other.curve, Curve::Line { .. }) {
                 continue;
             }
-            if let Some((a, b)) = ends(body, oe.edge as usize) {
-                let l = k::distance(a, b);
-                if l > longest {
-                    longest = l;
-                }
+            if let Some(side) = ends(body, oe.edge as usize) {
+                out.push(side);
             }
         }
     }
-    longest
+    out
 }
 
-/// How far a relief runs past vertex `v` of an edge (its point `here`, the other end's `there`): `radius` when every face at `v` other than the walls is planar and faces on along
-/// the edge (open), else 0 (a blind end, such as a pocket's floor).
-fn extension(
-    body: &Brep,
-    v: usize,
-    walls: [usize; 2],
-    there: [f64; 3],
-    here: [f64; 3],
-    radius: f64,
-) -> Result<f64> {
-    let mut any = false;
+/// The outward normals of the faces at vertex `v` other than `walls` (`None` for a face that is
+/// not planar): the kernel reads from them whether a relief runs on past `v` (open) or stops
+/// there (blind, such as a pocket's floor).
+fn end_faces(body: &Brep, v: usize, walls: [usize; 2]) -> Result<Vec<Option<Vec3>>> {
+    let mut out = Vec::new();
     for f in faces_at_vertex(body, v) {
-        if walls.contains(&f) {
-            continue;
+        if !walls.contains(&f) {
+            out.push(face_outward(body, f)?);
         }
-        let Some(outward) = face_outward(body, f)? else {
-            return Ok(0.0);
-        };
-        if !k::end_is_open(there, here, outward).map_err(status)? {
-            return Ok(0.0);
-        }
-        any = true;
     }
-    Ok(if any { radius } else { 0.0 })
+    Ok(out)
 }
 
 /// The faces with an edge ending at vertex `v`, each once.
@@ -452,7 +416,7 @@ fn faces_at_vertex(body: &Brep, v: usize) -> Vec<usize> {
 
 /// The straight edges along `axis` with a vertex on face `f`, not on it: the corners of a
 /// pocket's walls on its floor, or of a slot's through a plate's face.
-fn face_corners(body: &Brep, f: usize, axis: [f64; 3]) -> Result<Vec<usize>> {
+fn face_corners(body: &Brep, f: usize, axis: Vec3) -> Result<Vec<usize>> {
     let Some(face) = body.faces.get(f) else {
         return Err(Error::Argument);
     };
@@ -480,10 +444,10 @@ fn face_corners(body: &Brep, f: usize, axis: [f64; 3]) -> Result<Vec<usize>> {
         if !matches!(ed.curve, Curve::Line { .. }) || ed.nurbs.is_some() {
             continue;
         }
-        let Some((a, b)) = ends(body, i) else {
+        let Some(line) = ends(body, i) else {
             continue;
         };
-        if k::is_along(a, b, axis, AXIS_TOLERANCE).map_err(status)? {
+        if line.lean(axis).map_err(status)? <= AXIS_TOLERANCE {
             out.push(i);
         }
     }
