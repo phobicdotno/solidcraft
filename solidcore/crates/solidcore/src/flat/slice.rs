@@ -10,6 +10,8 @@
 //! - [`Style::Back`]: the same into a back plate behind the model (wall mounted);
 //! - [`Style::Waffle`]: two sets of upright slices at right angles, slotted half way so they
 //!   slide together.
+//!
+//! Deviations: none (no upstream counterpart). No recursion.
 
 use serde::{Deserialize, Serialize};
 

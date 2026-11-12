@@ -5,6 +5,8 @@
 //! may overlap themselves; rings with a point that is not finite, or fewer than three points,
 //! are left out. The booleans and offsets run on iOverlay's integer engine, scaled to the
 //! operands' bounds (a 1 m part resolves to about a nanometre).
+//!
+//! Deviations: none (no upstream counterpart). No recursion.
 
 use i_overlay::core::fill_rule::FillRule;
 use i_overlay::core::overlay_rule::OverlayRule;

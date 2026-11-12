@@ -1,6 +1,8 @@
 //! Single-stroke lettering for engraving part names: each stroke is cut once, where outline text
 //! would cut both sides of every letter. The glyphs are this project's own, drawn on a grid of
 //! capital height 1.
+//!
+//! Deviations: none (no upstream counterpart). No recursion.
 
 use super::Ring;
 

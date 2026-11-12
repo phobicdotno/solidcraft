@@ -5,6 +5,8 @@
 //! it. A router bit is round, so it leaves a fillet in every inside corner and a mating part
 //! does not seat in a slot: [`relieve_corners`] cuts a relief into each of those corners.
 //! Labels are single-stroke text ([`super::font`]) placed where they fit inside the part.
+//!
+//! Deviations: none (no upstream counterpart). No recursion.
 
 use serde::{Deserialize, Serialize};
 

@@ -20,6 +20,8 @@
 //! of the candidate's raster blocks the positions whose window over a sheet row holds a used
 //! cell, so one row of positions costs a few word operations per raster row. The sheet margin is
 //! applied exactly from the part's real bounding box.
+//!
+//! Deviations: none (no upstream counterpart). No recursion.
 
 use serde::{Deserialize, Serialize};
 
