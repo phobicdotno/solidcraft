@@ -214,7 +214,7 @@ fn warning(w: &Warning) -> FabWarning {
             (
                 "gaps_not_whole",
                 format!(
-                    "The gaps between slices are no whole number of sheets: use a spacing that is a multiple of {thickness} mm for exact spacers"
+                    "The gaps between slices are not a whole number of sheets: use a spacing that is a multiple of {thickness} mm for exact spacers"
                 ),
             )
         }
