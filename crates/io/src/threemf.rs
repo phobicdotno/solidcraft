@@ -71,7 +71,9 @@ impl MeshObject {
     }
 }
 
-fn esc(s: &str) -> String {
+/// Text with `&`, `<`, `>`, `"` and `'` written as XML entities and the control characters XML
+/// cannot hold (all under U+0020 but tab, line feed and carriage return) left out.
+pub(crate) fn esc(s: &str) -> String {
     let mut o = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
