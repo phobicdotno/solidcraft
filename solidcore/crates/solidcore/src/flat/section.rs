@@ -1,10 +1,11 @@
 //! The section of a B-rep by a plane square to a model axis, as a polygonal [`Region`].
 //!
 //! The kernel's exact planar section curves
-//! ([`create_planar_section_curves`]) are sampled within the caller's chord tolerance by the
-//! kernel's tessellation ([`Curve::tessellate`]), projected to the slice's `(u, v)` of
-//! [`Axis::directions`], chained end to end into closed loops and filled even-odd, so a loop
-//! inside another is a hole.
+//! ([`create_planar_section_curves`]) are sampled by the kernel's tessellation
+//! ([`Curve::tessellate`]), projected to the slice's `(u, v)` of [`Axis::directions`], chained
+//! end to end into closed loops, simplified and filled even-odd, so a loop inside another is a
+//! hole. Tracing, sampling and simplifying each take a share of the caller's chord tolerance,
+//! the shares adding up to all of it, so the outline stays within it of the exact section.
 //!
 //! A plane through a vertex of the body, or lying in one of its planar faces, has no
 //! well-defined section (a face in the plane is material on one side only; a sphere's pole
@@ -44,6 +45,15 @@ pub const VERTEX_CLEARANCE: f64 = 0.002;
 
 /// The smallest and largest chord tolerances (mm) a section accepts.
 const CHORD_RANGE: (f64, f64) = (1e-4, 10.0);
+
+// The three steps from the exact section to an outline share the chord tolerance: the kernel
+// traces the section curves within `TRACE_SHARE` of it, the samples' chords stay within
+// `SAMPLE_SHARE` of the traced curves, and simplifying keeps the outline within
+// `SIMPLIFY_SHARE` of the samples. Their errors add up, so the shares add up to 1 and the
+// outline stays within the chord of the exact section.
+const TRACE_SHARE: f64 = 0.1;
+const SAMPLE_SHARE: f64 = 0.85;
+const SIMPLIFY_SHARE: f64 = 0.05;
 
 fn chord_ok(chord: f64) -> bool {
     chord.is_finite() && (CHORD_RANGE.0..=CHORD_RANGE.1).contains(&chord)
@@ -182,8 +192,8 @@ fn section_at(
     let mut budget = MAX_SECTION_SAMPLES;
     let mut pieces: Vec<Ring> = Vec::new();
     for c in &curves {
-        let samples =
-            sample_curve(k, c, chord).map_err(|error| FlatError::Section { axis, at, error })?;
+        let samples = sample_curve(k, c, chord * SAMPLE_SHARE)
+            .map_err(|error| FlatError::Section { axis, at, error })?;
         take(&mut budget, samples.points.len())?;
         let flat: Ring = samples
             .points
@@ -200,13 +210,13 @@ fn section_at(
     let pieces = dedupe(pieces, tol);
     let rings: Vec<Ring> = chain(pieces, tol)
         .into_iter()
-        .map(|r| region::simplify_ring(&r, chord * 0.05))
+        .map(|r| region::simplify_ring(&r, chord * SIMPLIFY_SHARE))
         .collect();
     Ok(region::from_rings(&rings, true))
 }
 
 /// The kernel's exact section curves of body `b` by the plane `axis = at` through `centre`
-/// moved onto the plane (see [`section_at`]), traced to a tenth of `chord`.
+/// moved onto the plane (see [`section_at`]), traced within `TRACE_SHARE` of `chord`.
 fn section_curves(
     k: &Kernel,
     b: &mut Brep,
@@ -231,8 +241,7 @@ fn section_curves(
         *p = at;
     }
     let opts = PlanarSectionOptions {
-        // the section curves themselves stay well inside the outline's chord budget
-        approx_tol_3d: Some((chord * 0.1).max(1e-6)),
+        approx_tol_3d: Some(chord * TRACE_SHARE),
         outputs: SectionOutputs {
             curves_3d: true,
             ..SectionOutputs::default()
@@ -663,7 +672,9 @@ mod tests {
     fn samples_of_circles_and_splines_stay_within_the_chord() {
         let mut k = Kernel::default();
         // across a cylinder's axis the section is a circle; a torus cut parallel to its axis,
-        // 30 mm from it, gives spiric curves, which the kernel traces as B-splines
+        // 30 mm from it, gives spiric curves, which the kernel traces as B-splines. The samples
+        // stay within their share of the outline's chord.
+        let tol = CHORD * SAMPLE_SHARE;
         let mut cylinder = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
         let mut torus = create_torus(&mut k, Point3::ZERO, 40.0, 15.0).unwrap();
         for (b, axis, at, spline) in [
@@ -681,13 +692,52 @@ mod tests {
                 );
             }
             for c in &curves {
-                let s = sample_curve(&k, c, CHORD).unwrap();
+                let s = sample_curve(&k, c, tol).unwrap();
                 assert!(s.points.len() > 8, "{axis:?} = {at}: {}", s.points.len());
                 let far = largest_chord_error(&k, c, &s);
-                assert!(
-                    far <= CHORD,
-                    "{axis:?} = {at}: {far} over the chord {CHORD}"
-                );
+                assert!(far <= tol, "{axis:?} = {at}: {far} over the share {tol}");
+            }
+        }
+    }
+
+    /// The farthest the points of `ring` and the middles of its sides are from the circle of
+    /// radius `r` about `c`.
+    fn off_circle(ring: &Ring, c: P2, r: f64) -> f64 {
+        let off = |p: P2| ((p[0] - c[0]).hypot(p[1] - c[1]) - r).abs();
+        ring.iter()
+            .zip(ring.iter().cycle().skip(1))
+            .map(|(a, b)| off(*a).max(off([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0])))
+            .fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn a_finished_outline_stays_within_the_chord_of_the_exact_circle() {
+        // traced, sampled, chained and simplified: a cylinder across its axis and a sphere
+        // across two axes, at a fine chord and a coarse one
+        let mut k = Kernel::default();
+        for chord in [CHORD, 0.5] {
+            let mut cylinder = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
+            let mut sphere = create_sphere(&mut k, Point3::new(0.0, 0.0, 50.0), 50.0).unwrap();
+            for (b, cuts) in [
+                (&mut cylinder, vec![(Axis::Z, 15.0, [0.0, 0.0], 10.0)]),
+                (
+                    &mut sphere,
+                    vec![
+                        (Axis::Z, 80.0, [0.0, 0.0], 40.0),
+                        (Axis::X, 30.0, [0.0, 50.0], 40.0),
+                    ],
+                ),
+            ] {
+                let mut s = BrepSection::new(&k, b, chord).unwrap();
+                for (axis, at, centre, radius) in cuts {
+                    let r = s.section(axis, at).unwrap();
+                    assert!(
+                        r.len() == 1 && r[0].holes.is_empty(),
+                        "{axis:?} = {at}: {r:?}"
+                    );
+                    let off = off_circle(&r[0].outer, centre, radius);
+                    assert!(off <= chord, "{axis:?} = {at}, chord {chord}: {off} off");
+                }
             }
         }
     }
