@@ -77,7 +77,17 @@ pub enum FlatError {
     /// More geometry than the budget allows (points, parts, slices).
     #[error("too much geometry: {0}")]
     TooBig(&'static str),
-    /// The kernel failed (the section of the body).
+    /// The kernel failed to section the body by the plane `axis = at`.
+    #[error("the kernel cannot section the body at {axis:?} = {at} mm: {error}")]
+    Section {
+        /// The axis the plane is square to.
+        axis: slice::Axis,
+        /// Where the plane crosses that axis (mm).
+        at: f64,
+        /// The kernel's error.
+        error: crate::SolidError,
+    },
+    /// The kernel failed reading the body (its vertices or its bounding box).
     #[error(transparent)]
     Kernel(#[from] crate::SolidError),
 }
