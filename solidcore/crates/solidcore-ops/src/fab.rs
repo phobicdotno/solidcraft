@@ -9,6 +9,9 @@
 //! Each call answers twice: the outer [`Result`] fails when the session or the kernel does, the
 //! inner one when the slicing itself refuses (a setting out of range, nothing to cut, a part that
 //! fits on no sheet), with the [`FlatError`] that says which.
+//!
+//! The settings a slicing starts from are chosen here ([`DEFAULT_SETTINGS`], [`DEFAULT_SHEETS`]
+//! and the machines' [`DEFAULT_KERF`] and [`DEFAULT_TOOL_DIAMETER`]); the kernel holds none.
 
 use solidcore::flat::{finish, section, slice};
 
@@ -22,6 +25,42 @@ pub use solidcore::flat::{FlatError, Region, Ring, Shape, P2};
 use crate::body::Body;
 use crate::session::{with_body, Answer};
 use crate::Result;
+
+/// The slicing settings a slicing starts from: stacked layers along Z from 3 mm sheet.
+pub const DEFAULT_SETTINGS: FabSettings = FabSettings {
+    style: Style::Stacked,
+    axis: Axis::Z,
+    thickness: 3.0,
+    spacing: 0.0,
+    count: 0,
+    clearance: 0.2,
+    rod_diameter: 8.0,
+    rod_at: None,
+    dowels: 2,
+    dowel_diameter: 6.0,
+    wall: 4.0,
+    plate_margin: 10.0,
+    guide_outline: true,
+    min_area: 4.0,
+    chord: 0.01,
+};
+
+/// A laser's kerf when none is given (mm).
+pub const DEFAULT_KERF: f64 = 0.15;
+
+/// A CNC router bit's diameter when none is given (mm): an eighth of an inch.
+pub const DEFAULT_TOOL_DIAMETER: f64 = 3.175;
+
+/// The sheets and machine a layout starts from: 600 x 400 mm sheets cut by a laser.
+pub const DEFAULT_SHEETS: SheetSettings = SheetSettings {
+    width: 600.0,
+    height: 400.0,
+    gap: 3.0,
+    margin: 5.0,
+    machine: Machine::Laser { kerf: DEFAULT_KERF },
+    labels: true,
+    label_height: 5.0,
+};
 
 /// A slicing or its refusal, as a kernel call answers inside the session.
 struct Out<T>(std::result::Result<T, FlatError>);
@@ -101,7 +140,7 @@ mod tests {
                 axis,
                 thickness: 5.0,
                 count: 5,
-                ..FabSettings::default()
+                ..DEFAULT_SETTINGS
             };
             let res = slice_body(&ball, &s).unwrap().unwrap();
             let slices = res
@@ -125,14 +164,14 @@ mod tests {
                 assert!(part_size(&p.shape).is_some_and(|[w, h]| w > 0.0 && h > 0.0));
             }
             for machine in [
-                Machine::Laser { kerf: 0.15 },
+                Machine::Laser { kerf: DEFAULT_KERF },
                 Machine::Router {
-                    tool_diameter: 3.175,
+                    tool_diameter: DEFAULT_TOOL_DIAMETER,
                 },
             ] {
                 let ss = SheetSettings {
                     machine,
-                    ..SheetSettings::default()
+                    ..DEFAULT_SHEETS
                 };
                 let sheets = layout_sheets(&res, &ss).unwrap();
                 let placed: usize = sheets.iter().map(|sh| sh.parts.len()).sum();
@@ -147,7 +186,7 @@ mod tests {
         let ball = crate::body::make_sphere([0.0, 0.0, 0.0], 10.0).unwrap();
         let s = FabSettings {
             thickness: -1.0,
-            ..FabSettings::default()
+            ..DEFAULT_SETTINGS
         };
         assert_eq!(
             slice_body(&ball, &s).unwrap().unwrap_err(),
@@ -155,7 +194,7 @@ mod tests {
         );
         let s = FabSettings {
             chord: 0.0,
-            ..FabSettings::default()
+            ..DEFAULT_SETTINGS
         };
         assert!(matches!(
             slice_body(&ball, &s).unwrap(),
