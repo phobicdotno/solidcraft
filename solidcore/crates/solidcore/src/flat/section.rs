@@ -66,9 +66,8 @@ pub struct BrepSection<'a> {
 impl<'a> BrepSection<'a> {
     /// The sectioner of body `b`, its outlines within `chord` mm of the exact section.
     ///
-    /// The bounds are the kernel's tight bounding box (its loose box, which also encloses the
-    /// body, when the tight one fails); a body without geometry has bounds that are not finite,
-    /// which [`super::slice::make`] reads as nothing to cut.
+    /// The bounds are the kernel's tight bounding box; a body without geometry has bounds that
+    /// are not finite, which [`super::slice::make`] reads as nothing to cut.
     ///
     /// # Errors
     /// [`FlatError::Setting`] for a chord not finite or outside `1e-4..=10` mm; the kernel's
@@ -77,10 +76,7 @@ impl<'a> BrepSection<'a> {
         if !chord_ok(chord) {
             return Err(FlatError::Setting("chord"));
         }
-        let ext = match brep_bounding_box(k, b, true) {
-            Ok(e) => e,
-            Err(_) => brep_bounding_box(k, b, false)?,
-        };
+        let ext = brep_bounding_box(k, b, true)?;
         let bounds = if ext.is_defined() {
             [
                 ext.min_at(0),
@@ -150,26 +146,10 @@ impl Sectioner for BrepSection<'_> {
         self.bounds
     }
 
-    /// The section at the nudged position; when the kernel refuses that plane (a face whose
-    /// surface it cannot cut there), the other nudges are tried, then the same planes with the
-    /// section curves traced to half the chord instead of a tenth: the first that works.
+    /// The section at the nudged position ([`BrepSection::nudged`]).
     fn section(&mut self, axis: Axis, at: f64) -> FlatResult<Region> {
-        let first = self.nudged(axis, at);
-        let mut tries = vec![first];
-        tries.extend(NUDGES.iter().map(|d| at + d).filter(|c| *c != first));
-        let mut error = None;
-        for loose in [false, true] {
-            for &c in &tries {
-                match section_at(self.k, self.b, axis, c, self.chord, self.centre, loose) {
-                    Ok(r) => return Ok(r),
-                    Err(e @ (FlatError::Setting(_) | FlatError::TooBig(_))) => return Err(e),
-                    Err(e) => {
-                        error.get_or_insert(e);
-                    }
-                }
-            }
-        }
-        Err(error.unwrap_or(FlatError::Nothing))
+        let at = self.nudged(axis, at);
+        section_at(self.k, self.b, axis, at, self.chord, self.centre)
     }
 }
 
@@ -178,8 +158,8 @@ impl Sectioner for BrepSection<'_> {
 ///
 /// # Errors
 /// [`FlatError::Setting`] for `at` not finite or a chord out of range; [`FlatError::TooBig`]
-/// past [`MAX_SECTION_CURVES`] or [`MAX_SECTION_SAMPLES`]; the kernel's section and evaluation
-/// errors.
+/// past [`MAX_SECTION_CURVES`] or [`MAX_SECTION_SAMPLES`]; [`FlatError::Section`] for the
+/// kernel's section and evaluation errors.
 pub fn plane_section(
     k: &Kernel,
     b: &mut Brep,
@@ -187,12 +167,11 @@ pub fn plane_section(
     at: f64,
     chord: f64,
 ) -> FlatResult<Region> {
-    section_at(k, b, axis, at, chord, [0.0; 3], false)
+    section_at(k, b, axis, at, chord, [0.0; 3])
 }
 
 /// [`plane_section`] with the plane's point taken at `centre` moved onto the plane (the body's
-/// middle, so the kernel's bounded plane sits over the body however far it is from the origin),
-/// and with `loose` the section curves traced to half the chord instead of a tenth.
+/// middle, so the kernel's bounded plane sits over the body however far it is from the origin).
 fn section_at(
     k: &Kernel,
     b: &mut Brep,
@@ -200,7 +179,6 @@ fn section_at(
     at: f64,
     chord: f64,
     centre: [f64; 3],
-    loose: bool,
 ) -> FlatResult<Region> {
     if !at.is_finite() || at.abs() >= 1e6 {
         return Err(FlatError::Setting("section position"));
@@ -219,20 +197,22 @@ fn section_at(
     }
     let opts = PlanarSectionOptions {
         // the section curves themselves stay well inside the outline's chord budget
-        approx_tol_3d: Some((chord * if loose { 0.5 } else { 0.1 }).max(1e-6)),
+        approx_tol_3d: Some((chord * 0.1).max(1e-6)),
         outputs: SectionOutputs {
             curves_3d: true,
             ..SectionOutputs::default()
         },
         ..PlanarSectionOptions::default()
     };
+    let failed = move |error| FlatError::Section { axis, at, error };
     let made = create_planar_section_curves(
         k,
         b,
         Point3::new(point[0], point[1], point[2]),
         Vec3::new(n[0], n[1], n[2]),
         &opts,
-    )?;
+    )
+    .map_err(failed)?;
     let curves = made.curves_3d.unwrap_or_default();
     if curves.len() > MAX_SECTION_CURVES {
         return Err(FlatError::TooBig("section curves"));
@@ -240,7 +220,10 @@ fn section_at(
     let mut budget = MAX_SECTION_SAMPLES;
     let mut pieces: Vec<Ring> = Vec::new();
     for c in &curves {
-        let pts = sample_curve(k, c, chord, &mut budget)?;
+        let pts = sample_curve(k, c, chord, &mut budget).map_err(|e| match e {
+            FlatError::Kernel(error) => failed(error),
+            other => other,
+        })?;
         let flat: Ring = pts
             .iter()
             .map(|p| [dot(*p, u), dot(*p, v)])
