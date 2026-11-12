@@ -83,6 +83,8 @@ engine.describe                   the command registry itself
 explode.delete                    exploded views: display offsets
 explode.list                      exploded views: display offsets
 expr.evaluate                     expression evaluation
+fab.export_sheets                 writes the flat parts' sheets as DXF/SVG, no B-rep result; tested in crates/engine/src/cmd/fab_tests.rs and crates/io/src/fab_out.rs
+fab.slice                         flat parts for sheet stock, no B-rep result; unit tests in solidcore/crates/solidcore/src/flat/*.rs, tested in crates/engine/src/cmd/fab_tests.rs
 file.import_cache_clear           clears a cache of imported files
 file.open_in_easyprint            hands the file to another program
 file.save                         saving the design
