@@ -2,8 +2,21 @@
 //! `fab.export_sheets` (Slice for Laser / CNC).
 
 use schemars::JsonSchema;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::Result;
+use crate::params::bad;
+
+/// The parameters of `cmd` as its contract reads them, with the contract's own words for a value
+/// of the wrong shape (so a call refused in strict mode gets the same error with the check off).
+/// Keys the contract does not list are left to the parameter check (warned or refused there).
+pub(crate) fn read<P: DeserializeOwned>(cmd: &str, p: &Value) -> Result<P> {
+    let empty = Value::Object(serde_json::Map::new());
+    let p = if p.is_null() { &empty } else { p };
+    serde_path_to_error::deserialize::<_, P>(p).map_err(|e| bad(cmd, super::check::parse_issue(&e).message))
+}
 
 /// How the model is built back up from flat parts.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
@@ -41,10 +54,10 @@ pub enum FabMachine {
     Cnc,
 }
 
-/// The settings both commands read. Every length is in mm; a key left out takes its default.
+/// The slicing and sheet settings both commands read. Every length is in mm; a key left out
+/// takes its default.
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct FabParams {
+pub struct FabSettingsParams {
     /// The body to slice, by name. Default: the design's only solid body.
     #[serde(default)]
     pub body: Option<String>,
@@ -113,19 +126,37 @@ pub struct FabParams {
     /// The capital height of the engraved names. Default 5.
     #[serde(default)]
     pub label_height: Option<f64>,
-    /// `fab.slice`: also pack the parts onto sheets. Default true.
+}
+
+/// What `fab.slice` reads: the settings, and what to return besides the parts.
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct FabSliceParams {
+    /// The slicing and sheet settings.
+    #[serde(flatten)]
+    pub settings: FabSettingsParams,
+    /// Also pack the parts onto sheets. Default true.
     #[serde(default)]
     pub sheets: Option<bool>,
-    /// `fab.slice`: include each part's outline and holes, its 3D frame and places, and each
+    /// Include each part's outline and holes, its 3D frame and places, and each
     /// sheet's cut and engraved lines, for a preview. Default false.
     #[serde(default)]
     pub geometry: Option<bool>,
-    /// `fab.export_sheets`: where to write, as a path without extension: one file per sheet and
+}
+
+/// What `fab.export_sheets` reads: the settings, and where and how to write the sheets.
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct FabExportParams {
+    /// The slicing and sheet settings.
+    #[serde(flatten)]
+    pub settings: FabSettingsParams,
+    /// Where to write, as a path without extension: one file per sheet and
     /// format, `<path>-sheet1.dxf`, `<path>-sheet1.svg`, ... Without it the files' texts are
     /// returned.
     #[serde(default)]
     pub path: Option<String>,
-    /// `fab.export_sheets`: the formats to write, `dxf` and/or `svg`. Default both.
+    /// The formats to write, `dxf` and/or `svg`. Default both.
     #[serde(default)]
     #[schemars(length(min = 1, max = 2))]
     pub formats: Option<Vec<FabFormat>>,
@@ -256,3 +287,7 @@ pub struct FabExportResult {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub param_warnings: Vec<String>,
 }
+
+#[cfg(test)]
+#[path = "fab_tests.rs"]
+mod tests;

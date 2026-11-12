@@ -349,7 +349,7 @@ fn off_chord(p: Point3, a: Point3, b: Point3) -> f64 {
 
 /// The polyline without points that repeat their predecessor.
 fn drop_repeats(r: Ring) -> Ring {
-    let mut out: Ring = Vec::with_capacity(r.len());
+    let mut out: Ring = Vec::new();
     for p in r {
         if out.last().is_none_or(|q| !near(*q, p, 1e-9)) {
             out.push(p);
@@ -404,7 +404,10 @@ fn chain(mut pieces: Vec<Ring>, tol: f64) -> Vec<Ring> {
             let Some((i, reversed)) = nearest_end(&pieces, end, tol) else {
                 break;
             };
-            let mut next = pieces.remove(i);
+            // taken in place: an empty piece has no ends to find and is skipped when its turn comes
+            let Some(mut next) = pieces.get_mut(i).map(std::mem::take) else {
+                break;
+            };
             if reversed {
                 next.reverse();
             }

@@ -215,11 +215,7 @@ const MAX_TRIES: usize = 2000;
 fn depth(r: &[Shape], p: P2) -> f64 {
     let mut best = f64::INFINITY;
     for ring in r.iter().flat_map(Shape::rings) {
-        let n = ring.len();
-        for (i, a) in ring.iter().enumerate() {
-            let Some(b) = ring.get((i + 1) % n) else {
-                continue;
-            };
+        for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
             let (ex, ey) = (b[0] - a[0], b[1] - a[1]);
             let ll = (ex * ex + ey * ey).max(1e-24);
             let t = (((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / ll).clamp(0.0, 1.0);
@@ -319,14 +315,16 @@ fn place_box(room: &[Shape], b: [f64; 4], w: f64, t: f64) -> Option<P2> {
     }
     let take = total.min(MAX_CANDIDATES);
     let mut cands: Vec<(f64, P2)> = (0..take)
-        .map(|k| {
+        .filter_map(|k| {
             // evenly strided over the row-major grid when there are too many
             let j = if total > MAX_CANDIDATES {
                 k * total / MAX_CANDIDATES
             } else {
                 k
             };
-            [gx0 + (j % nx) as f64 * step, gy0 + (j / nx) as f64 * step]
+            // nx is not zero (total is not)
+            let (col, row) = (j.checked_rem(nx)?, j.checked_div(nx)?);
+            Some([gx0 + col as f64 * step, gy0 + row as f64 * step])
         })
         .filter(|&p| region::contains(room, p))
         .map(|p| (depth(room, p), p))

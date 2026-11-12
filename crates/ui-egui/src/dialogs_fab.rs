@@ -12,10 +12,10 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use egui::{Align2, FontId, Pos2, Rect, Stroke, pos2, vec2};
 use serde_json::{Value, json};
 use solidcore_record::{Vec2, Vec3};
+use solidcore_tess::PlateFrame;
 use solidcraft_engine::Sel;
 use solidcraft_engine::Session;
 use solidcraft_engine::doc::expr::Kind as ValueKind;
-use solidcraft_engine::geom::plate::{PlateFrame, fill_triangles, plate_mesh};
 use solidcraft_engine::geom::prelude::*;
 use solidcraft_engine::geom::{Aabb3, Mesh};
 use solidcraft_theme::Tokens;
@@ -465,7 +465,7 @@ pub(crate) fn stem(path: &str) -> String {
     let lower = path.to_ascii_lowercase();
     for ext in [".dxf", ".svg"] {
         if lower.ends_with(ext) {
-            return path[..path.len() - ext.len()].to_string();
+            return path.get(..path.len().saturating_sub(ext.len())).unwrap_or(path).to_string();
         }
     }
     path.to_string()
@@ -588,7 +588,7 @@ fn shapes(v: &Value) -> (Vec<(Mesh, bool)>, Vec<Vec<[Vec2; 3]>>) {
             else {
                 continue;
             };
-            let mesh = plate_mesh(&rings, &PlateFrame { origin, u, v: w, n }, thickness);
+            let mesh = solidcore_tess::plate(&rings, &PlateFrame { origin, u, v: w, n }, thickness);
             triangles += mesh.triangles.len();
             if triangles > MAX_TRIANGLES {
                 break 'parts;
@@ -596,7 +596,7 @@ fn shapes(v: &Value) -> (Vec<(Mesh, bool)>, Vec<Vec<[Vec2; 3]>>) {
             plates.push((mesh, slice));
         }
     }
-    let fills = v["sheets"].as_array().into_iter().flatten().map(|sheet| fill_triangles(&read_rings(&sheet["cut_rings"]))).collect();
+    let fills = v["sheets"].as_array().into_iter().flatten().map(|sheet| solidcore_tess::fill(&read_rings(&sheet["cut_rings"]))).collect();
     (plates, fills)
 }
 
@@ -679,7 +679,9 @@ fn poll(app: &mut SolveApp) {
         let done = match rx.try_recv() {
             Ok(done) => Some(done),
             Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => Some(Computed { result: Err("the slicing stopped".into()), plates: Vec::new(), fills: Vec::new() }),
+            Err(TryRecvError::Disconnected) => {
+                Some(Computed { result: Err(app.tr("fab.slicing_stopped").to_string()), plates: Vec::new(), fills: Vec::new() })
+            }
         };
         if let Some(done) = done
             && let Some((key, _)) = app.fab.running.take()
@@ -693,7 +695,7 @@ fn poll(app: &mut SolveApp) {
         let done = match rx.try_recv() {
             Ok(done) => Some(done),
             Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => Some(Err("the export stopped".into())),
+            Err(TryRecvError::Disconnected) => Some(Err(app.tr("fab.export_stopped").to_string())),
         };
         if let Some(done) = done {
             app.fab.exporting = None;

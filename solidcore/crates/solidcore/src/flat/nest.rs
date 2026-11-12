@@ -600,7 +600,7 @@ pub fn nest(
     let cells = g.gw * g.gh;
     let angles: &[u16] = if rotate { &[0, 90, 180, 270] } else { &[0] };
 
-    let mut all = Vec::with_capacity(outlines.len());
+    let mut all = Vec::new();
     for (k, ring) in outlines.iter().enumerate() {
         let ps = poses(ring, angles, &g);
         if ps.is_empty() {
@@ -1255,16 +1255,14 @@ mod tests {
         let parts: Vec<Ring> = (0..100)
             .map(|k| blob(rng.uniform(15.0, 45.0), 300, f64::from(k), 1.5))
             .collect();
-        let t = std::time::Instant::now();
         let pl = nest(&parts, 600.0, 400.0, 3.0, 5.0, true).unwrap();
-        let took = t.elapsed();
         let per = check(&parts, &pl, 600.0, 400.0, 3.0, 5.0);
         let area: f64 = parts
             .iter()
             .map(|r| super::super::region::ring_area(r).abs())
             .sum();
         println!(
-            "100 parts of 300 points: {took:?}, sheets {per:?}, part area {:.0}% of the sheets",
+            "100 parts of 300 points: sheets {per:?}, part area {:.0}% of the sheets",
             100.0 * area / (590.0 * 390.0 * per.len() as f64)
         );
         // the parts cover about 4 usable sheets; a true-shape packer needs few more

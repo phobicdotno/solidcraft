@@ -165,13 +165,10 @@ pub fn offset(r: &[Shape], delta: f64, join: Join) -> Region {
 /// The signed area of a ring (mm², positive counter-clockwise).
 #[must_use]
 pub fn ring_area(ring: &[P2]) -> f64 {
-    let n = ring.len();
-    let mut a = 0.0;
-    for (i, p) in ring.iter().enumerate() {
-        if let Some(q) = ring.get((i + 1) % n) {
-            a += p[0] * q[1] - q[0] * p[1];
-        }
-    }
+    let a = ring
+        .iter()
+        .zip(ring.iter().cycle().skip(1))
+        .fold(0.0, |a, (p, q)| a + (p[0] * q[1] - q[0] * p[1]));
     a / 2.0
 }
 
@@ -200,6 +197,13 @@ pub fn ring_bounds<'a>(rings: impl IntoIterator<Item = &'a Ring>) -> Option<[f64
     b
 }
 
+/// The width and height `[w, h]` of a shape's outline in its own frame (mm), `None` without
+/// points.
+#[must_use]
+pub fn shape_size(s: &Shape) -> Option<[f64; 2]> {
+    ring_bounds([&s.outer]).map(|[x0, y0, x1, y1]| [x1 - x0, y1 - y0])
+}
+
 /// The bounds `[xmin, ymin, xmax, ymax]` of a region's outlines, `None` when it is empty.
 #[must_use]
 pub fn bounds(r: &[Shape]) -> Option<[f64; 4]> {
@@ -209,12 +213,8 @@ pub fn bounds(r: &[Shape]) -> Option<[f64; 4]> {
 /// The winding number of `ring` around `p` (counter-clockwise positive); a point on the ring
 /// may count either way.
 fn winding(ring: &[P2], p: P2) -> i32 {
-    let n = ring.len();
     let mut w = 0;
-    for (i, a) in ring.iter().enumerate() {
-        let Some(b) = ring.get((i + 1) % n) else {
-            continue;
-        };
+    for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
         let cross = (b[0] - a[0]) * (p[1] - a[1]) - (p[0] - a[0]) * (b[1] - a[1]);
         if a[1] <= p[1] {
             if b[1] > p[1] && cross > 0.0 {
@@ -334,11 +334,7 @@ pub fn spans_at_x(r: &[Shape], x: f64) -> Vec<(f64, f64)> {
     // the running winding is not zero (half-open in x, so a vertex on the line counts once)
     let mut hits: Vec<(f64, i32)> = Vec::new();
     for ring in r.iter().flat_map(Shape::rings) {
-        let n = ring.len();
-        for (i, a) in ring.iter().enumerate() {
-            let Some(b) = ring.get((i + 1) % n) else {
-                continue;
-            };
+        for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
             if (a[0] <= x) != (b[0] <= x) {
                 let t = (x - a[0]) / (b[0] - a[0]);
                 let y = a[1] + t * (b[1] - a[1]);
@@ -483,6 +479,16 @@ mod tests {
 
     fn close(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() <= tol
+    }
+
+    #[test]
+    fn a_shape_measures_its_outline_not_its_holes() {
+        let s = Shape {
+            outer: vec![[-3.0, 1.0], [7.0, 1.0], [7.0, 5.0], [-3.0, 5.0]],
+            holes: vec![vec![[0.0, 2.0], [0.0, 30.0], [1.0, 2.0]]],
+        };
+        assert_eq!(shape_size(&s), Some([10.0, 4.0]));
+        assert_eq!(shape_size(&Shape::default()), None);
     }
 
     #[test]

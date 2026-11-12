@@ -12,7 +12,7 @@
 
 use solidcore::flat::{finish, section, slice};
 
-pub use solidcore::flat::finish::{Finished, Machine, Sheet, SheetSettings};
+pub use solidcore::flat::finish::{Machine, Sheet, SheetSettings};
 pub use solidcore::flat::nest::Placement;
 pub use solidcore::flat::slice::{
     Axis, FabPart, FabResult, FabSettings, Frame, Mark, PartKind, Style, Warning,
@@ -61,24 +61,17 @@ pub fn layout_sheets(
     finish::layout(result, sheets)
 }
 
-/// One part finished for the machine of `sheets`: what is cut and what is engraved, in the
-/// part's own frame.
-#[must_use]
-pub fn finish_part(part: &FabPart, sheets: &SheetSettings) -> Finished {
-    finish::finish(part, sheets)
-}
-
 /// The area of a part's material (mm²): its outline less its holes.
 #[must_use]
 pub fn part_area(shape: &Shape) -> f64 {
     solidcore::flat::region::shape_area(shape)
 }
 
-/// The bounds `[xmin, ymin, xmax, ymax]` of a part's outline in its own frame, `None` without
+/// The width and height `[w, h]` of a part's outline in its own frame (mm), `None` without
 /// points.
 #[must_use]
-pub fn part_bounds(shape: &Shape) -> Option<[f64; 4]> {
-    solidcore::flat::region::ring_bounds(std::iter::once(&shape.outer))
+pub fn part_size(shape: &Shape) -> Option<[f64; 2]> {
+    solidcore::flat::region::shape_size(shape)
 }
 
 #[cfg(test)]
@@ -129,7 +122,7 @@ mod tests {
             );
             for p in &res.parts {
                 assert!(part_area(&p.shape) > 0.0);
-                assert!(part_bounds(&p.shape).is_some());
+                assert!(part_size(&p.shape).is_some_and(|[w, h]| w > 0.0 && h > 0.0));
             }
             for machine in [
                 Machine::Laser { kerf: 0.15 },

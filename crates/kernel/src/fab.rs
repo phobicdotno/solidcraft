@@ -1,20 +1,10 @@
 //! Slice for Laser / CNC: a body cut into flat parts for sheet stock and those parts packed onto
-//! sheets, through solidcore's recipe ([`solidcore_ops::fab`]). Nothing here computes geometry.
+//! sheets, through solidcore's recipe ([`solidcore_ops::fab`]). Nothing here computes geometry;
+//! every call into solidcore runs under [`crate::guard`].
 
-pub use solidcore_ops::fab::{
-    Axis, FabPart, FabResult, FabSettings, Finished, FlatError, Frame, Machine, Mark, P2, PartKind, Ring, Shape, Sheet, SheetSettings, Style, Warning,
-};
+pub use solidcore_ops::fab::{Axis, FabResult, FabSettings, FlatError, Frame, Machine, PartKind, Shape, Sheet, SheetSettings, Style, Warning};
 
 use crate::{Body, KernelError, Result};
-
-/// What a slicing refuses (bad settings, nothing to cut, a part that fits on no sheet) as the
-/// kernel's error, with the words the refusal gives.
-fn refused(e: &FlatError) -> KernelError {
-    match e {
-        FlatError::Kernel(k) => KernelError::Failed(format!("slicing the body: {k}")),
-        other => KernelError::Invalid(other.to_string()),
-    }
-}
 
 /// `body` cut into flat parts as `settings` say: the outer error when the kernel fails, the inner
 /// one when the slicing refuses (callers report the [`FlatError`] itself). `body` is unchanged.
@@ -29,27 +19,20 @@ pub fn slice_body(body: &Body, settings: &FabSettings) -> Result<std::result::Re
     })
 }
 
-/// The parts of `result` finished for the machine of `sheets` and packed onto sheets.
-pub fn layout_sheets(result: &FabResult, sheets: &SheetSettings) -> std::result::Result<Vec<Sheet>, FlatError> {
-    solidcore_ops::fab::layout_sheets(result, sheets)
-}
-
-/// One part finished for the machine of `sheets`, in its own frame.
-pub fn finish_part(part: &FabPart, sheets: &SheetSettings) -> Finished {
-    solidcore_ops::fab::finish_part(part, sheets)
+/// The parts of `result` finished for the machine of `sheets` and packed onto sheets: the outer
+/// error when the kernel fails, the inner one when the packing refuses (a part that fits on no
+/// sheet).
+pub fn layout_sheets(result: &FabResult, sheets: &SheetSettings) -> Result<std::result::Result<Vec<Sheet>, FlatError>> {
+    crate::guard("packing parts onto sheets", || Ok(solidcore_ops::fab::layout_sheets(result, sheets)))
 }
 
 /// The area of a part's material (mm²).
-pub fn part_area(shape: &Shape) -> f64 {
-    solidcore_ops::fab::part_area(shape)
+pub fn part_area(shape: &Shape) -> Result<f64> {
+    crate::guard("the area of a flat part", || Ok(solidcore_ops::fab::part_area(shape)))
 }
 
-/// The bounds `[xmin, ymin, xmax, ymax]` of a part's outline in its own frame.
-pub fn part_bounds(shape: &Shape) -> Option<[f64; 4]> {
-    solidcore_ops::fab::part_bounds(shape)
-}
-
-/// The refusal as the kernel's error, for callers that need one.
-pub fn refusal(e: &FlatError) -> KernelError {
-    refused(e)
+/// The width and height `[w, h]` of a part's outline in its own frame (mm), `None` without
+/// points.
+pub fn part_size(shape: &Shape) -> Result<Option<[f64; 2]>> {
+    crate::guard("the size of a flat part", || Ok(solidcore_ops::fab::part_size(shape)))
 }

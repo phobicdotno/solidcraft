@@ -168,7 +168,6 @@ fn refusals_say_which_setting_and_change_nothing() {
         (json!({"kerf": -0.5}), "kerf"),
         (json!({"sheet_width": 0}), "sheet_width"),
         (json!({"count": "lots"}), "lots"),
-        (json!({"colour": "red"}), "colour"),
         (json!({"body": "Nope"}), "Nope"),
     ] {
         let e = s.execute("fab.export_sheets", &p).unwrap_err().to_string();
@@ -271,13 +270,13 @@ fn without_a_path_the_texts_come_back_and_a_router_cuts_true_size() {
 
 #[test]
 fn the_slicing_settings_reach_the_kernel_with_their_defaults() {
-    let p: crate::schema::fab::FabParams = serde_json::from_value(json!({"style": "rod"})).unwrap();
+    let p: crate::schema::fab::FabSettingsParams = serde_json::from_value(json!({"style": "rod"})).unwrap();
     let (fs, ss) = super::settings(&p);
     assert_eq!(fs.axis, solidcraft_kernel::fab::Axis::X);
     assert_eq!(fs.thickness, 3.0);
     assert_eq!(ss.width, 600.0);
     assert_eq!(ss.machine, solidcraft_kernel::fab::Machine::Laser { kerf: 0.15 });
-    let p: crate::schema::fab::FabParams = serde_json::from_value(json!({"machine": "cnc"})).unwrap();
+    let p: crate::schema::fab::FabSettingsParams = serde_json::from_value(json!({"machine": "cnc"})).unwrap();
     let (fs, ss) = super::settings(&p);
     assert_eq!(fs.axis, solidcraft_kernel::fab::Axis::Z);
     assert_eq!(ss.machine, solidcraft_kernel::fab::Machine::Router { tool_diameter: 3.175 });

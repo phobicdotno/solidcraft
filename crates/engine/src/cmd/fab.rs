@@ -14,13 +14,14 @@ use solidcraft_kernel::fab::{self as kfab, FabResult, FabSettings, FlatError, Ma
 use super::CommandSpec;
 use crate::params::bad;
 use crate::schema::fab::{
-    FabAxis, FabExportResult, FabFile, FabFormat, FabMachine, FabParams, FabPartInfo, FabSheetInfo, FabSliceResult, FabStyle, FabWarning,
+    FabAxis, FabExportParams, FabExportResult, FabFile, FabFormat, FabMachine, FabPartInfo, FabSettingsParams, FabSheetInfo, FabSliceParams,
+    FabSliceResult, FabStyle, FabWarning, read,
 };
-use crate::schema::{Contract, TypedContract, output_schema_for};
+use crate::schema::{TypedContract, output_schema_for};
 use crate::{EngineError, Result, Session};
 
-const SLICE_CONTRACT: TypedContract<FabParams> = TypedContract::new();
-const EXPORT_CONTRACT: TypedContract<FabParams> = TypedContract::new();
+const SLICE_CONTRACT: TypedContract<FabSliceParams> = TypedContract::new();
+const EXPORT_CONTRACT: TypedContract<FabExportParams> = TypedContract::new();
 
 /// The keys every slicing reads, for the params text.
 macro_rules! settings_doc {
@@ -61,16 +62,6 @@ pub static COMMANDS: &[CommandSpec] = &[
         )),
 ];
 
-/// The parameters as their contract reads them, unknown keys refused.
-fn params(p: &Value, cmd: &str) -> Result<FabParams> {
-    let parsed: FabParams = serde_json::from_value(p.clone()).map_err(|e| bad(cmd, e.to_string()))?;
-    let allowed = SLICE_CONTRACT.allowed_keys();
-    if let Some(key) = p.as_object().and_then(|o| o.keys().find(|k| !allowed.contains(k.as_str()))) {
-        return Err(bad(cmd, format!("unknown parameter `{key}`")));
-    }
-    Ok(parsed)
-}
-
 fn axis(a: FabAxis) -> kfab::Axis {
     match a {
         FabAxis::X => kfab::Axis::X,
@@ -80,7 +71,7 @@ fn axis(a: FabAxis) -> kfab::Axis {
 }
 
 /// The slicing and sheet settings, defaults filled in; the ranges are the kernel's to check.
-pub(crate) fn settings(p: &FabParams) -> (FabSettings, SheetSettings) {
+pub(crate) fn settings(p: &FabSettingsParams) -> (FabSettings, SheetSettings) {
     let d = FabSettings::default();
     let style = p.style.unwrap_or_default();
     let default_axis = match style {
@@ -123,6 +114,14 @@ pub(crate) fn settings(p: &FabParams) -> (FabSettings, SheetSettings) {
         label_height: p.label_height.unwrap_or(sd.label_height),
     };
     (fs, ss)
+}
+
+/// The kernel's failure (not a refusal) as the command's error: internal for a panic it caught.
+fn kernel(cmd: &str, e: solidcraft_kernel::KernelError) -> EngineError {
+    match EngineError::from(e) {
+        EngineError::Other(m) => EngineError::Other(format!("{cmd}: {m}")),
+        other => other,
+    }
 }
 
 /// The parameter a kernel setting's name stands for.
@@ -216,7 +215,7 @@ fn frame_json(f: &kfab::Frame) -> Value {
 }
 
 /// The body to slice: the one named, else the design's only solid body.
-fn body_of(s: &Session, p: &FabParams, cmd: &str) -> Result<(String, solidcraft_kernel::Body)> {
+fn body_of(s: &Session, p: &FabSettingsParams, cmd: &str) -> Result<(String, solidcraft_kernel::Body)> {
     let world = s.world_state()?;
     let body = match p.body.as_deref().filter(|b| !b.trim().is_empty()) {
         Some(name) => world.body(name).ok_or_else(|| bad(cmd, format!("no body `{name}`")))?,
@@ -236,38 +235,38 @@ fn body_of(s: &Session, p: &FabParams, cmd: &str) -> Result<(String, solidcraft_
 }
 
 /// The body cut into parts.
-fn run_slice(s: &Session, p: &FabParams, cmd: &str) -> Result<(String, FabResult, SheetSettings)> {
+fn run_slice(s: &Session, p: &FabSettingsParams, cmd: &str) -> Result<(String, FabResult, SheetSettings)> {
     let (name, body) = body_of(s, p, cmd)?;
     let (fs, ss) = settings(p);
-    let res = kfab::slice_body(&body, &fs).map_err(|e| EngineError::Other(format!("{cmd}: {e}")))?.map_err(|e| refusal(cmd, &e, None, &ss))?;
+    let res = kfab::slice_body(&body, &fs).map_err(|e| kernel(cmd, e))?.map_err(|e| refusal(cmd, &e, None, &ss))?;
     Ok((name, res, ss))
 }
 
 fn slice(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "fab.slice";
-    let args = params(p, cmd)?;
-    let (name, res, ss) = run_slice(s, &args, cmd)?;
+    let args: FabSliceParams = read(cmd, p)?;
+    let (name, res, ss) = run_slice(s, &args.settings, cmd)?;
     let geometry = args.geometry.unwrap_or(false);
     let parts = res
         .parts
         .iter()
         .map(|part| {
-            let b = part_bounds(&part.shape);
-            FabPartInfo {
+            let [width_mm, height_mm] = kfab::part_size(&part.shape).map_err(|e| kernel(cmd, e))?.unwrap_or([0.0; 2]);
+            Ok(FabPartInfo {
                 name: part.name.clone(),
                 kind: kind_name(part.kind).into(),
                 copies: part.copies,
-                area_mm2: kfab::part_area(&part.shape),
-                width_mm: b[2] - b[0],
-                height_mm: b[3] - b[1],
+                area_mm2: kfab::part_area(&part.shape).map_err(|e| kernel(cmd, e))?,
+                width_mm,
+                height_mm,
                 rings: geometry.then(|| part.shape.rings().cloned().collect()),
                 places: geometry
                     .then(|| if part.places.is_empty() { vec![frame_json(&part.frame)] } else { part.places.iter().map(frame_json).collect() }),
-            }
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>>>()?;
     let (sheets, sheets_error) = if args.sheets.unwrap_or(true) {
-        match kfab::layout_sheets(&res, &ss) {
+        match kfab::layout_sheets(&res, &ss).map_err(|e| kernel(cmd, e))? {
             Ok(sheets) => (
                 sheets
                     .iter()
@@ -289,7 +288,7 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
     };
     let reply = FabSliceResult {
         body: name,
-        style: args.style.unwrap_or_default(),
+        style: args.settings.style.unwrap_or_default(),
         thickness: res.thickness,
         count: res.count(),
         parts,
@@ -302,21 +301,16 @@ fn slice(s: &mut Session, p: &Value) -> Result<Value> {
     serde_json::to_value(reply).map_err(|e| EngineError::Other(e.to_string()))
 }
 
-/// `[xmin, ymin, xmax, ymax]` of a part's outline, zeros when it has none.
-fn part_bounds(shape: &kfab::Shape) -> [f64; 4] {
-    kfab::part_bounds(shape).unwrap_or([0.0; 4])
-}
-
 fn export_sheets(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "fab.export_sheets";
-    let args = params(p, cmd)?;
+    let args: FabExportParams = read(cmd, p)?;
     let formats = args.formats.clone().unwrap_or_else(|| vec![FabFormat::Dxf, FabFormat::Svg]);
     if formats.is_empty() {
         return Err(bad(cmd, "`formats` must name dxf and/or svg"));
     }
     let path = args.path.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
-    let (name, res, ss) = run_slice(s, &args, cmd)?;
-    let sheets = kfab::layout_sheets(&res, &ss).map_err(|e| refusal(cmd, &e, Some(&res), &ss))?;
+    let (name, res, ss) = run_slice(s, &args.settings, cmd)?;
+    let sheets = kfab::layout_sheets(&res, &ss).map_err(|e| kernel(cmd, e))?.map_err(|e| refusal(cmd, &e, Some(&res), &ss))?;
     // every file is made before the first is written
     let mut made = Vec::new();
     for (i, sh) in sheets.iter().enumerate() {
