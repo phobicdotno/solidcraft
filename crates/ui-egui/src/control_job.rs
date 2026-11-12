@@ -115,9 +115,18 @@ const AHEAD_AREAS: &[&str] = &[
 /// Parameters that name a file or folder: a command given one runs here, as before.
 const NAMES_A_FILE: &[&str] = &["path", "paths", "file", "files", "dir", "folder", "url", "out"];
 
-/// Commands that change nothing in the design and write a file: they run on a copy.
-const ANSWERED_ON_A_COPY: &[&str] =
-    &["file.export", "file.export_3mf", "file.export_obj", "file.export_step", "file.export_stl", "file.export_urdf", "file.save_mesh"];
+/// Commands that change nothing in the design and write a file: they run on a copy. Writing the
+/// sheets for laser or CNC slices the body again first, seconds on a detailed one.
+const ANSWERED_ON_A_COPY: &[&str] = &[
+    "fab.export_sheets",
+    "file.export",
+    "file.export_3mf",
+    "file.export_obj",
+    "file.export_step",
+    "file.export_stl",
+    "file.export_urdf",
+    "file.save_mesh",
+];
 
 /// Commands that only read the design, which can take long on a large one (a measure of every
 /// body, an inspection that measures them, #4604; a clearance or interference check of every pair
@@ -134,6 +143,8 @@ const READ_ON_A_COPY: &[&str] = &[
     // Physical properties of a component or placement: every body of every placement (#8706).
     "component.properties",
     "occurrence.properties",
+    // Slicing a body into flat parts and packing them onto sheets: seconds on a detailed body.
+    "fab.slice",
 ];
 
 /// Exports and readings computing at once; more run here.

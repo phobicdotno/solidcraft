@@ -13,6 +13,7 @@ pub mod design_lock;
 mod design_metadata;
 mod dxf;
 mod dxf_out;
+pub mod fab_out;
 pub mod formats;
 mod glb;
 pub use design::{
