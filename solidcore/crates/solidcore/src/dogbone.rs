@@ -38,7 +38,7 @@ const MAX_SIZE: f64 = 1.0e6;
 
 /// Two unit directions closer to parallel than this (radians, or its sine) are in line: a turn
 /// this small is no corner.
-const STRAIGHT: f64 = 1.0e-9;
+pub(crate) const STRAIGHT: f64 = 1.0e-9;
 
 /// Angular slack (radians) on the largest corner angle relieved, so a corner computed at 90°
 /// plus rounding is still a 90° corner.
@@ -145,11 +145,11 @@ pub enum Skip {
 
 /// A relief in a corner, in the corner's own terms: offsets from the corner point.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Wedge {
+pub(crate) struct Wedge {
     /// The corner's (void wedge's) angle, radians in (0, π).
     angle: f64,
     /// The circle's centre less the corner point.
-    centre: Vec3,
+    pub(crate) centre: Vec3,
     /// Where the circle crosses wall `a`, as distances from the corner along it: `[near, far]`
     /// with `0 <= near <= far`, or `None` where it doesn't cut into that wall. For a circle
     /// through the corner, `near` is 0.
@@ -165,7 +165,7 @@ struct Wedge {
 /// # Errors
 /// [`SolidError::InvalidInput`] for options out of range or a direction or length that is not
 /// finite.
-fn wedge_relief(
+pub(crate) fn wedge_relief(
     a: Vec3,
     b: Vec3,
     la: f64,
