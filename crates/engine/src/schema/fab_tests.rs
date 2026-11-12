@@ -109,3 +109,34 @@ fn slicings_and_exports_reply_with_their_schemas() {
     let e = block(ParamCheck::Strict).execute("fab.slice", &json!({"thickness": 5, "colour": "red"})).unwrap_err().to_string();
     assert!(e.contains("colour"), "{e}");
 }
+
+/// Each setting's description gives the default a slicing starts from: the recipe's, through
+/// `solidcraft_kernel::fab`.
+#[test]
+fn the_documented_defaults_are_the_recipes() {
+    use solidcraft_kernel::fab::{DEFAULT_KERF, DEFAULT_SETTINGS as D, DEFAULT_SHEETS as S, DEFAULT_TOOL_DIAMETER};
+    let schema = input_schema_for::<FabSliceParams>();
+    for (key, value) in [
+        ("thickness", D.thickness.to_string()),
+        ("spacing", D.spacing.to_string()),
+        ("count", D.count.to_string()),
+        ("clearance", D.clearance.to_string()),
+        ("rod_diameter", D.rod_diameter.to_string()),
+        ("dowels", D.dowels.to_string()),
+        ("dowel_diameter", D.dowel_diameter.to_string()),
+        ("wall", D.wall.to_string()),
+        ("plate_margin", D.plate_margin.to_string()),
+        ("guide_outline", D.guide_outline.to_string()),
+        ("kerf", DEFAULT_KERF.to_string()),
+        ("tool_diameter", DEFAULT_TOOL_DIAMETER.to_string()),
+        ("sheet_width", S.width.to_string()),
+        ("sheet_height", S.height.to_string()),
+        ("gap", S.gap.to_string()),
+        ("margin", S.margin.to_string()),
+        ("labels", S.labels.to_string()),
+        ("label_height", S.label_height.to_string()),
+    ] {
+        let text = schema.as_value()["properties"][key]["description"].as_str().unwrap_or_default();
+        assert!(text.contains(&format!("Default: {value}.")), "{key}: {text}");
+    }
+}

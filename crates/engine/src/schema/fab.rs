@@ -61,69 +61,72 @@ pub struct FabSettingsParams {
     /// The body to slice, by name. Default: the design's only solid body.
     #[serde(default)]
     pub body: Option<String>,
-    /// How the model is built back up. Default stacked.
+    /// How the model is built back up. Default: stacked.
     #[serde(default)]
     pub style: Option<FabStyle>,
-    /// The slicing axis: the stacking direction (stacked, default Z), the rod's direction (rod,
-    /// default X), the slicing axis of a base or back plate (X or Y, default X). A waffle always
-    /// slices across X and Y.
+    /// The slicing axis: the stacking direction (stacked), the rod's direction (rod), the slicing
+    /// axis of a base or back plate (X or Y only). Default: Z for stacked, X for the other styles.
+    /// Ignored for a waffle, which always slices across X and Y.
     #[serde(default)]
     pub axis: Option<FabAxis>,
-    /// Sheet thickness. Default 3.
+    /// Sheet thickness (mm). Default: 3.
     #[serde(default)]
     pub thickness: Option<f64>,
-    /// Centre-to-centre distance of upright or rod slices; 0 for automatic (default).
+    /// Centre-to-centre distance of upright or rod slices (mm); 0 for automatic. Default: 0.
+    /// Ignored for stacked layers, which are one sheet apart, and when `count` is above 0.
     #[serde(default)]
     pub spacing: Option<f64>,
-    /// The number of upright or rod slices; overrides `spacing` when above 0. Default 0.
+    /// The number of upright or rod slices (per direction in a waffle); overrides `spacing` when
+    /// above 0. Default: 0. Ignored for stacked layers.
     #[serde(default)]
     pub count: Option<u32>,
-    /// Play in slots and holes. Default 0.2.
+    /// Play in slots and holes (mm), from 0 to the sheet thickness. Default: 0.2.
     #[serde(default)]
     pub clearance: Option<f64>,
-    /// Rod: the rod's diameter. Default 8.
+    /// Rod: the rod's diameter (mm). Default: 8.
     #[serde(default)]
     pub rod_diameter: Option<f64>,
-    /// Stacked: dowel holes through every layer, 0 for none. Default 2.
+    /// Stacked: dowel holes through every layer, 0 for none. Default: 2.
     #[serde(default)]
     pub dowels: Option<u32>,
-    /// Stacked: the dowels' diameter. Default 6.
+    /// Stacked: the dowels' diameter (mm). Default: 6.
     #[serde(default)]
     pub dowel_diameter: Option<f64>,
-    /// Material kept around holes, and the width of spacer rings. Default 4.
+    /// Material kept around holes, and the width of spacer rings (mm). Default: 4.
     #[serde(default)]
     pub wall: Option<f64>,
-    /// Base or back: how far the plate reaches past the slices. Default 10.
+    /// Base or back: how far the plate reaches past the slices (mm). Default: 10.
     #[serde(default)]
     pub plate_margin: Option<f64>,
-    /// Stacked: engrave where the smaller neighbouring layer goes. Default true.
+    /// Stacked: engrave where the smaller neighbouring layer goes. Default: true.
     #[serde(default)]
     pub guide_outline: Option<bool>,
-    /// The machine. Default laser.
+    /// The machine. Default: laser.
     #[serde(default)]
     pub machine: Option<FabMachine>,
-    /// Laser: the kerf, the width of the line the beam burns. Default 0.15.
+    /// Laser: the kerf, the width of the line the beam burns (mm). Default: 0.15. Ignored with
+    /// `machine` cnc.
     #[serde(default)]
     pub kerf: Option<f64>,
-    /// CNC router: the bit's diameter. Default 3.175.
+    /// CNC router: the bit's diameter (mm). Default: 3.175. Ignored with `machine` laser.
     #[serde(default)]
     pub tool_diameter: Option<f64>,
-    /// Sheet width. Default 600.
+    /// Sheet width (mm). Default: 600.
     #[serde(default)]
     pub sheet_width: Option<f64>,
-    /// Sheet height. Default 400.
+    /// Sheet height (mm). Default: 400.
     #[serde(default)]
     pub sheet_height: Option<f64>,
-    /// The least distance between parts on a sheet. Default 3.
+    /// The least distance between parts on a sheet (mm). Default: 3.
     #[serde(default)]
     pub gap: Option<f64>,
-    /// The least distance from a sheet's edge. Default 5.
+    /// The least distance from a sheet's edge (mm). Default: 5.
     #[serde(default)]
     pub margin: Option<f64>,
-    /// Engrave each part's name on it. Default true.
+    /// Engrave each part's name on it. Default: true.
     #[serde(default)]
     pub labels: Option<bool>,
-    /// The capital height of the engraved names. Default 5.
+    /// The capital height of the engraved names (mm). Default: 5.
     #[serde(default)]
     pub label_height: Option<f64>,
 }
@@ -135,11 +138,11 @@ pub struct FabSliceParams {
     /// The slicing and sheet settings.
     #[serde(flatten)]
     pub settings: FabSettingsParams,
-    /// Also pack the parts onto sheets. Default true.
+    /// Also pack the parts onto sheets. Default: true.
     #[serde(default)]
     pub sheets: Option<bool>,
     /// Include each part's outline and holes, its 3D frame and places, and each
-    /// sheet's cut and engraved lines, for a preview. Default false.
+    /// sheet's cut and engraved lines, for a preview. Default: false.
     #[serde(default)]
     pub geometry: Option<bool>,
 }
@@ -156,7 +159,7 @@ pub struct FabExportParams {
     /// returned.
     #[serde(default)]
     pub path: Option<String>,
-    /// The formats to write, `dxf` and/or `svg`. Default both.
+    /// The formats to write, `dxf` and/or `svg`. Default: both.
     #[serde(default)]
     #[schemars(length(min = 1, max = 2))]
     pub formats: Option<Vec<FabFormat>>,
