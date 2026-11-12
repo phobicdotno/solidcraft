@@ -70,9 +70,10 @@ fn axis(a: FabAxis) -> kfab::Axis {
     }
 }
 
-/// The slicing and sheet settings, defaults filled in; the ranges are the kernel's to check.
+/// The slicing and sheet settings, the recipe's defaults ([`kfab::DEFAULT_SETTINGS`],
+/// [`kfab::DEFAULT_SHEETS`]) filled in; the ranges are the kernel's to check.
 pub(crate) fn settings(p: &FabSettingsParams) -> (FabSettings, SheetSettings) {
-    let d = FabSettings::default();
+    let d = kfab::DEFAULT_SETTINGS;
     let style = p.style.unwrap_or_default();
     let default_axis = match style {
         FabStyle::Stacked => kfab::Axis::Z,
@@ -99,10 +100,10 @@ pub(crate) fn settings(p: &FabSettingsParams) -> (FabSettings, SheetSettings) {
         guide_outline: p.guide_outline.unwrap_or(d.guide_outline),
         ..d
     };
-    let sd = SheetSettings::default();
+    let sd = kfab::DEFAULT_SHEETS;
     let machine = match p.machine.unwrap_or_default() {
-        FabMachine::Laser => Machine::Laser { kerf: p.kerf.unwrap_or(0.15) },
-        FabMachine::Cnc => Machine::Router { tool_diameter: p.tool_diameter.unwrap_or(3.175) },
+        FabMachine::Laser => Machine::Laser { kerf: p.kerf.unwrap_or(kfab::DEFAULT_KERF) },
+        FabMachine::Cnc => Machine::Router { tool_diameter: p.tool_diameter.unwrap_or(kfab::DEFAULT_TOOL_DIAMETER) },
     };
     let ss = SheetSettings {
         width: p.sheet_width.unwrap_or(sd.width),
