@@ -26,7 +26,8 @@ pub enum Join {
     Miter,
     /// Round: an arc of the offset's radius, within `chord` (mm) of the true arc.
     Round {
-        /// The largest distance between the arc and its chords (mm).
+        /// The largest distance between the arc and its chords (mm); an offset with one that is
+        /// not a positive finite number is empty.
         chord: f64,
     },
 }
@@ -34,9 +35,6 @@ pub enum Join {
 /// The sharpest corner (radians) a mitred offset keeps sharp: about 29°, where a miter reaches
 /// four times the offset from the corner.
 pub const MITER_MIN_ANGLE: f64 = 0.505;
-
-/// The chord tolerance (mm) of arcs this module makes when the caller gives none.
-pub const DEFAULT_CHORD: f64 = 0.005;
 
 /// Finite and at most a kilometre from the origin.
 fn sane(p: P2) -> bool {
@@ -137,11 +135,14 @@ pub fn normalize(r: &[Shape]) -> Region {
 
 /// The region grown by `delta` mm (shrunk for a negative `delta`): outlines move out, holes
 /// shrink. Mitred corners stay sharp, so a square stays a square of side `+ 2 delta`; round
-/// corners follow arcs of radius `|delta|`. A region shrunk to nothing is empty.
+/// corners follow arcs of radius `|delta|`. A region shrunk to nothing is empty, and so is the
+/// offset by a `delta` that is not finite or with a round join whose `chord` is not a positive
+/// finite number.
 #[must_use]
 pub fn offset(r: &[Shape], delta: f64, join: Join) -> Region {
     let shapes = shapes_of(r);
-    if shapes.is_empty() || !delta.is_finite() {
+    let bad_chord = matches!(join, Join::Round { chord } if !(chord.is_finite() && chord > 0.0));
+    if shapes.is_empty() || !delta.is_finite() || bad_chord {
         return Vec::new();
     }
     if delta == 0.0 {
@@ -152,12 +153,7 @@ pub fn offset(r: &[Shape], delta: f64, join: Join) -> Region {
         Join::Round { chord } => {
             // iOverlay's arc step is the largest segment length over the radius: a chord within
             // `chord` of a radius-`|delta|` arc spans at most 2 sqrt(2 chord / |delta|) radians
-            let c = if chord.is_finite() && chord > 0.0 {
-                chord
-            } else {
-                DEFAULT_CHORD
-            };
-            LineJoin::Round((8.0 * c / delta.abs()).sqrt().clamp(0.005, 1.0))
+            LineJoin::Round((8.0 * chord / delta.abs()).sqrt().clamp(0.005, 1.0))
         }
     };
     let style = OutlineStyle::new(delta).line_join(lj);
@@ -255,35 +251,37 @@ pub fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Region {
 }
 
 /// The number of sides of a polygon inscribed in a circle of radius `r` whose sides stay within
-/// `chord` of the circle: at least 24, at most 1440.
+/// `chord` of the circle: at least 24, at most 1440. `None` for a `chord` that is not a positive
+/// finite number.
 #[must_use]
-pub fn circle_sides(r: f64, chord: f64) -> usize {
-    let c = if chord.is_finite() && chord > 0.0 {
-        chord
-    } else {
-        DEFAULT_CHORD
-    };
-    if !(r.is_finite() && r > c) {
-        return 24;
+pub fn circle_sides(r: f64, chord: f64) -> Option<usize> {
+    if !(chord.is_finite() && chord > 0.0) {
+        return None;
     }
-    let half = (1.0 - c / r).clamp(-1.0, 1.0).acos();
+    if !(r.is_finite() && r > chord) {
+        return Some(24);
+    }
+    let half = (1.0 - chord / r).clamp(-1.0, 1.0).acos();
     let n = (std::f64::consts::PI / half).ceil();
     if n.is_finite() {
-        (n as usize).clamp(24, 1440)
+        Some((n as usize).clamp(24, 1440))
     } else {
-        1440
+        Some(1440)
     }
 }
 
 /// A disc of radius `r` about `c`: a polygon inscribed in the circle, its sides within `chord`
-/// of it, with a vertex at angle 0. Empty for a radius that is not positive.
+/// of it, with a vertex at angle 0. Empty for a radius that is not positive, and for a `chord`
+/// that is not a positive finite number.
 #[must_use]
 pub fn disk(c: P2, r: f64, chord: f64) -> Region {
     let ok = r.is_finite() && r > 0.0 && sane(c);
     if !ok {
         return Vec::new();
     }
-    let n = circle_sides(r, chord);
+    let Some(n) = circle_sides(r, chord) else {
+        return Vec::new();
+    };
     let outer = (0..n)
         .map(|i| {
             let a = std::f64::consts::TAU * i as f64 / n as f64;
@@ -564,7 +562,7 @@ mod tests {
         let r = 10.0;
         let d = disk([1.0, 2.0], r, 0.01);
         let n = d[0].outer.len();
-        assert_eq!(n, circle_sides(r, 0.01));
+        assert_eq!(Some(n), circle_sides(r, 0.01));
         // inscribed polygon: n/2 r² sin(2π/n)
         let want = n as f64 / 2.0 * r * r * (std::f64::consts::TAU / n as f64).sin();
         assert!(close(area(&d), want, 1e-9));
@@ -636,15 +634,14 @@ mod tests {
     #[test]
     fn circle_sides_follow_the_chord() {
         // pi / acos(1 - 0.01 / 10) = 70.24...: 71 sides
-        assert_eq!(circle_sides(10.0, 0.01), 71);
-        assert_eq!(circle_sides(10.0, -1.0), circle_sides(10.0, DEFAULT_CHORD));
-        assert_eq!(
-            circle_sides(10.0, f64::NAN),
-            circle_sides(10.0, DEFAULT_CHORD)
-        );
-        assert_eq!(circle_sides(f64::INFINITY, 0.01), 24);
-        assert_eq!(circle_sides(0.001, 0.01), 24);
-        assert_eq!(circle_sides(1e6, 1e-6), 1440);
+        assert_eq!(circle_sides(10.0, 0.01), Some(71));
+        assert_eq!(circle_sides(f64::INFINITY, 0.01), Some(24));
+        assert_eq!(circle_sides(0.001, 0.01), Some(24));
+        assert_eq!(circle_sides(1e6, 1e-6), Some(1440));
+        // a chord that is not a positive finite number has no answer
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(circle_sides(10.0, bad), None, "{bad}");
+        }
     }
 
     #[test]
@@ -752,24 +749,21 @@ mod tests {
     }
 
     #[test]
-    fn an_offset_that_is_not_a_number_is_empty_and_a_bad_chord_takes_the_default() {
+    fn an_offset_by_no_number_or_with_a_bad_chord_is_empty() {
         let sq = square(0.0, 0.0, 10.0);
         assert!(offset(&sq, f64::NAN, Join::Miter).is_empty());
         assert!(offset(&sq, f64::INFINITY, Join::Round { chord: 0.01 }).is_empty());
-        let default = offset(
-            &sq,
-            2.0,
-            Join::Round {
-                chord: DEFAULT_CHORD,
-            },
-        );
-        for bad in [0.0, -1.0, f64::NAN] {
-            assert_eq!(
-                offset(&sq, 2.0, Join::Round { chord: bad }),
-                default,
-                "{bad}"
-            );
+        assert!(!offset(&sq, 2.0, Join::Round { chord: 0.01 }).is_empty());
+        // a round join's chord that is not a positive finite number: nothing, at any delta;
+        // a disk with it is empty too
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            for delta in [2.0, -2.0, 0.0] {
+                assert!(
+                    offset(&sq, delta, Join::Round { chord: bad }).is_empty(),
+                    "{bad} {delta}"
+                );
+            }
+            assert!(disk([0.0, 0.0], 10.0, bad).is_empty(), "{bad}");
         }
-        assert_eq!(circle_sides(10.0, 0.0), circle_sides(10.0, DEFAULT_CHORD));
     }
 }
