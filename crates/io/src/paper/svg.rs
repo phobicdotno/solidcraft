@@ -70,14 +70,14 @@ pub fn paper_svg(scene: &Prepared) -> Result<(Vec<u8>, SvgReport)> {
 }
 
 /// A value in millimetres as whole nanometres.
-fn nano(v: f64) -> Result<i64> {
+pub(crate) fn nano(v: f64) -> Result<i64> {
     let n = (v * 1e6).round();
     if n.abs() <= MAX_NUMBER_MM * 1e6 { Ok(n as i64) } else { Err(IoError::Invalid("a number too large (or not a number) for the SVG".into())) }
 }
 
 /// Nanometres written as millimetres onto `out`: the integer part, then up to six decimals
 /// without trailing zeros.
-fn push_number(out: &mut String, n: i64) {
+pub(crate) fn push_number(out: &mut String, n: i64) {
     let (sign, n) = if n < 0 { ("-", n.unsigned_abs()) } else { ("", n.unsigned_abs()) };
     let (whole, mut part, mut digits) = (n / 1_000_000, n % 1_000_000, 6);
     let _ = write!(out, "{sign}{whole}");
@@ -90,7 +90,7 @@ fn push_number(out: &mut String, n: i64) {
 }
 
 /// [`push_number`] as its own text, for the numbers written once per document or arc.
-fn number(n: i64) -> String {
+pub(crate) fn number(n: i64) -> String {
     let mut text = String::new();
     push_number(&mut text, n);
     text

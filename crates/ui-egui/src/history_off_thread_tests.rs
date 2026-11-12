@@ -1057,6 +1057,37 @@ fn a_clearance_check_reads_a_copy_off_the_window_thread() {
     assert!(h.app.control_answering.is_empty());
 }
 
+/// Slicing a body for laser or CNC only reads the design: an agent's `fab.slice` reads a copy off
+/// the window thread, preference or not, and answers as running it here does. Writing the sheets
+/// changes nothing in the design and writes files: it runs on a copy like any export.
+#[test]
+fn slicing_for_laser_reads_a_copy_and_writing_the_sheets_runs_on_one() {
+    let (mut h, tx) = agent_harness();
+    h.app.preferences.agent_off_thread = false;
+    let here = h.app.run("fab.slice", json!({"thickness": 5})).unwrap();
+    let features = h.app.session.doc.features.len();
+    let slice = ask(&tx, "engine.execute", json!({"command": "fab.slice", "params": {"thickness": 5}}));
+    let view = ask(&tx, "ui.inspect", json!({}));
+    h.frames(1);
+    assert!(view.try_recv().is_ok_and(|v| v["ok"] == true), "ui.* answered meanwhile");
+    assert_eq!(h.app.control_answering.len(), 1, "read a copy");
+    let r = reply_to(&mut h, &slice);
+    assert_eq!(r["result"], here, "{r}");
+    h.app.preferences.agent_off_thread = true;
+    let dir = std::env::temp_dir().join(format!("sc-agent-fab-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let stem = dir.join("part").to_string_lossy().to_string();
+    let export = ask(&tx, "engine.execute", json!({"command": "fab.export_sheets", "params": {"thickness": 5, "path": stem, "formats": ["svg"]}}));
+    h.frames(1);
+    assert_eq!(h.app.control_answering.len(), 1, "on a copy");
+    let r = reply_to(&mut h, &export);
+    assert_eq!(r["ok"], true, "{r}");
+    assert!(std::fs::metadata(format!("{stem}-sheet1.svg")).is_ok_and(|m| m.len() > 0), "written");
+    assert!(h.app.control_answering.is_empty());
+    assert_eq!(h.app.session.doc.features.len(), features, "the design is unchanged");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// With the preference off (Preferences > AI, the default) an agent's design change runs on the
 /// window thread, as before: answered in the frame it arrives.
 #[test]
