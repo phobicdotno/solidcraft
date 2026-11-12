@@ -1,4 +1,4 @@
-//! Dogbone reliefs: the bite a router's round tool cuts into an inside corner so that a square
+//! Dogbone reliefs: the bite a router's round bit cuts into an inside corner so that a square
 //! part seats in it, through `solidcore_ops::dogbone` (the recipe) and the kernel's
 //! `solidcore::dogbone` (every point and length). This crate computes nothing of its own here:
 //! it guards the calls and words the refusals.
@@ -7,7 +7,7 @@
 //!   the planar faces at picked points (a pocket's floor), and the edges skipped with the reason.
 //!   The caller cuts the cylinders from the body.
 
-pub use solidcore_ops::dogbone::{BodyOptions, Options, Plan, ReliefCylinder, Side, Skip, Skipped, Style, Tool, Why};
+pub use solidcore_ops::dogbone::{BodyOptions, Cylinder, Options, Plan, Side, Skip, Skipped, Style, Tool, Why};
 
 use solidcore_record::Vec3;
 
