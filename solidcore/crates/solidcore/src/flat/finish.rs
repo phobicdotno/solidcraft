@@ -32,7 +32,6 @@ pub enum Machine {
 
 /// The sheets and the machine.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
 pub struct SheetSettings {
     /// Sheet width (mm).
     pub width: f64,
@@ -48,20 +47,6 @@ pub struct SheetSettings {
     pub labels: bool,
     /// The capital height of the names (mm).
     pub label_height: f64,
-}
-
-impl Default for SheetSettings {
-    fn default() -> Self {
-        SheetSettings {
-            width: 600.0,
-            height: 400.0,
-            gap: 3.0,
-            margin: 5.0,
-            machine: Machine::Laser { kerf: 0.15 },
-            labels: true,
-            label_height: 5.0,
-        }
-    }
 }
 
 /// A part ready to cut: its outline and holes as the machine follows them, and its engraving.
@@ -588,11 +573,24 @@ mod tests {
         }
     }
 
+    /// The sheets these tests start from: 600 x 400 for a laser.
+    fn sheet_settings() -> SheetSettings {
+        SheetSettings {
+            width: 600.0,
+            height: 400.0,
+            gap: 3.0,
+            margin: 5.0,
+            machine: Machine::Laser { kerf: 0.15 },
+            labels: true,
+            label_height: 5.0,
+        }
+    }
+
     fn laser(k: f64, labels: bool) -> SheetSettings {
         SheetSettings {
             machine: Machine::Laser { kerf: k },
             labels,
-            ..SheetSettings::default()
+            ..sheet_settings()
         }
     }
 
@@ -1050,7 +1048,7 @@ mod tests {
             machine: Machine::Router {
                 tool_diameter: 3.175,
             },
-            ..SheetSettings::default()
+            ..sheet_settings()
         };
         let f = finish(&p, &ss);
         assert_eq!(f.shape, relieve_corners(&p.shape, 3.175));
@@ -1071,7 +1069,7 @@ mod tests {
             let ss = SheetSettings {
                 machine: Machine::Router { tool_diameter: v },
                 label_height: v,
-                ..SheetSettings::default()
+                ..sheet_settings()
             };
             let f = finish(&p, &ss);
             assert_eq!(f.shape, p.shape);
@@ -1103,7 +1101,7 @@ mod tests {
             PartKind::Slice,
             solid(sq(0.0, 0.0, 10.0, 10.0, true)),
         )]);
-        let d = SheetSettings::default;
+        let d = sheet_settings;
         let cases: Vec<(SheetSettings, &str)> = vec![
             (SheetSettings { width: 0.0, ..d() }, "width"),
             (
@@ -1236,7 +1234,7 @@ mod tests {
         p.copies = u32::MAX;
         let res = result(vec![p]);
         assert_eq!(
-            layout(&res, &SheetSettings::default()),
+            layout(&res, &sheet_settings()),
             Err(FlatError::TooBig("parts"))
         );
     }
@@ -1244,7 +1242,7 @@ mod tests {
     #[test]
     fn layout_of_no_parts_is_no_sheets_or_a_packer_error() {
         // the packer decides what an empty list gives; it must not panic
-        let _ = layout(&result(Vec::new()), &SheetSettings::default());
+        let _ = layout(&result(Vec::new()), &sheet_settings());
     }
 
     #[test]
@@ -1257,7 +1255,7 @@ mod tests {
             };
             parts.push(part(&format!("L{i}"), PartKind::Slice, s));
         }
-        let ss = SheetSettings::default();
+        let ss = sheet_settings();
         let sheets = layout(&result(parts), &ss).unwrap();
         let names: Vec<&String> = sheets.iter().flat_map(|s| &s.parts).collect();
         assert_eq!(names.len(), 6);
@@ -1280,7 +1278,7 @@ mod tests {
             solid(sq(0.0, 0.0, 20.0, 20.0, true)),
         );
         p.copies = 7;
-        let sheets = layout(&result(vec![p]), &SheetSettings::default()).unwrap();
+        let sheets = layout(&result(vec![p]), &sheet_settings()).unwrap();
         let n: usize = sheets.iter().map(|s| s.parts.len()).sum();
         assert_eq!(n, 7);
         assert!(sheets.iter().all(|s| s.engrave.is_empty()));
@@ -1296,7 +1294,7 @@ mod tests {
             PartKind::Slice,
             solid(sq(0.0, 0.0, 900.0, 900.0, true)),
         );
-        let err = layout(&result(vec![small, copies, big]), &SheetSettings::default());
+        let err = layout(&result(vec![small, copies, big]), &sheet_settings());
         assert!(
             matches!(err, Err(FlatError::DoesNotFit { part: 2, .. })),
             "{err:?}"
