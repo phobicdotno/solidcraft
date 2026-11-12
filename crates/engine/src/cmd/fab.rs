@@ -359,7 +359,9 @@ fn export_sheets(s: &mut Session, p: &Value) -> Result<Value> {
         match &path {
             Some(stem) => {
                 let file = format!("{stem}-sheet{sheet}.{ext}");
-                solidcraft_io::vfs::write(&file, text.as_bytes()).map_err(|e| EngineError::Other(format!("{file}: {e}")))?;
+                solidcraft_io::vfs::check(&file).map_err(|e| EngineError::Other(format!("{file}: {e}")))?;
+                solidcraft_io::write_atomic(std::path::Path::new(&file), text.as_bytes(), false)
+                    .map_err(|e| EngineError::Other(format!("{file}: {e}")))?;
                 files.push(FabFile { sheet, format, path: Some(file), text: None });
             }
             None => files.push(FabFile { sheet, format, path: None, text: Some(text) }),
