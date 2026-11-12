@@ -43,7 +43,10 @@ fn dogbone(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let style = match str_(p, "style") {
         None => DogboneStyle::Normal,
-        Some(x) => DogboneStyle::parse(&x.to_ascii_lowercase()).ok_or_else(|| bad(cmd, "`style` must be normal, minimal or t_bone"))?,
+        Some(x) => {
+            let x = x.to_ascii_lowercase();
+            DogboneStyle::parse(&x).ok_or_else(|| bad(cmd, format!("unknown style `{x}` (normal, minimal or t_bone)")))?
+        }
     };
     let gap = expr(p, "gap");
     if let Some(g) = &gap {
@@ -59,7 +62,10 @@ fn dogbone(s: &mut Session, p: &Value) -> Result<Value> {
     let side = match str_(p, "side") {
         None => DogboneSide::Longer,
         Some(_) if style != DogboneStyle::TBone => return Err(bad(cmd, "`side` is for the t_bone style")),
-        Some(x) => DogboneSide::parse(&x.to_ascii_lowercase()).ok_or_else(|| bad(cmd, "`side` must be longer or shorter"))?,
+        Some(x) => {
+            let x = x.to_ascii_lowercase();
+            DogboneSide::parse(&x).ok_or_else(|| bad(cmd, format!("unknown side `{x}` (longer or shorter)")))?
+        }
     };
     let max_angle = expr(p, "max_angle");
     if let Some(a) = &max_angle {
@@ -71,7 +77,7 @@ fn dogbone(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let along = match p.get("along") {
         None | Some(Value::Null) => None,
-        Some(v) => Some(Dir(super::features::axis_dir_form(v).map_err(|_| bad(cmd, "`along` must be X, Y, Z or a non-zero [x, y, z]"))?)),
+        Some(v) => Some(Dir(super::features::axis_dir_form(v).map_err(|_| bad(cmd, crate::schema::dogbone::ALONG_MESSAGE))?)),
     };
     let kind = FeatureKind::Dogbone {
         edges: picks.map(|e| e.points.into_iter().map(Position).collect()).unwrap_or_default(),

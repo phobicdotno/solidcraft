@@ -500,12 +500,19 @@ fn a_pick_beside_a_round_wall_is_decided_on_the_exact_wall() {
     let (r, order) = body.to_record().unwrap();
     let floor = flat_face(&r, 4.0, [15.0, 10.0], [25.0, 20.0]);
     let wall = cylinder_face(&r);
-    for deg in [0.0_f64, 10.0, 45.0, 100.0, 200.0, 333.0] {
-        let (s, c) = deg.to_radians().sin_cos();
+    // Unit directions from the axis, given as numbers: ops calls no trigonometry.
+    for (c, s) in [
+        (1.0, 0.0),
+        (0.0, 1.0),
+        (0.6, 0.8),
+        (-0.8, 0.6),
+        (-0.6, -0.8),
+        (0.28, -0.96),
+    ] {
         let (x, y) = (20.0 + 4.9 * c, 15.0 + 4.9 * s);
         let at = |z: f64| faces_at(&body, &order, &[[x, y, z]], 2.0).unwrap()[0];
-        assert_eq!(at(4.08), Some(floor), "{deg}°");
-        assert_eq!(at(4.12), Some(wall), "{deg}°");
+        assert_eq!(at(4.08), Some(floor), "towards ({c}, {s})");
+        assert_eq!(at(4.12), Some(wall), "towards ({c}, {s})");
     }
 }
 

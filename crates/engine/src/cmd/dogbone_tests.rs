@@ -3,6 +3,9 @@
 use serde_json::{Value, json};
 use std::f64::consts::{FRAC_PI_2, PI};
 
+use solidcore_record::Vec3;
+use solidcraft_doc::{FacePick, FeatureKind};
+
 use crate::Session;
 
 fn run(s: &mut Session, id: &str, p: Value) -> Value {
@@ -87,16 +90,16 @@ fn bayed() -> Session {
 }
 
 #[test]
-fn a_face_pick_beside_a_round_wall_means_the_face_it_is_exactly_nearest() {
+fn a_face_pick_beside_a_round_wall_relieves_the_face_it_is_exactly_nearest() {
     // The display mesh's facets of the bay's wall lie inside the bay, nearer its axis than the
-    // wall. A point `off` in from the wall and 0.8 `off` above the floor is nearer the floor, yet
-    // nearer a facet of the wall than the floor where a facet bulges in by more than 0.2 `off`:
-    // find one, where the mesh would pick the wall, which no dogbone relieves.
+    // wall. A point `off` in from the wall and 0.8 `off` above the floor is exactly nearer the
+    // floor, yet nearer a facet of the wall than the floor where a facet bulges in by more than
+    // 0.2 `off`: find one, where the display mesh gives the pick to the wall.
     let s = bayed();
     let pick = {
         let st = s.model.state();
         let b = st.body("Plate").unwrap();
-        let mesh_face = |p: [f64; 3]| solidcraft_doc::appearance::nearest_face(b, solidcore_record::Vec3::new(p[0], p[1], p[2])).unwrap().1;
+        let mesh_face = |p: [f64; 3]| solidcraft_doc::appearance::nearest_face(b, Vec3::new(p[0], p[1], p[2])).unwrap().1;
         let floor = mesh_face([20.0, 25.0, 4.0]);
         [0.02, 0.05, 0.1]
             .into_iter()
@@ -107,16 +110,28 @@ fn a_face_pick_beside_a_round_wall_means_the_face_it_is_exactly_nearest() {
                 })
             })
             .find(|p| mesh_face(*p) != floor)
-            .expect("a point the display mesh puts on the bay's wall")
+            .expect("a point the display mesh gives to the bay's wall")
     };
-    // Picked there, the floor is relieved as when picked in the middle of the bay.
-    let mut at = bayed();
-    let out = run(&mut at, "solid.dogbone", json!({"faces": [pick], "diameter": 3}));
     let mut mid = bayed();
     let want = run(&mut mid, "solid.dogbone", json!({"faces": [[20, 25, 4]], "diameter": 3}));
-    assert!(out["relieved"].as_u64().is_some_and(|n| n >= 1), "{out}");
-    assert_eq!(out["relieved_edges"], want["relieved_edges"], "{pick:?}: {out}");
-    assert!(rel(volume(&mut at), volume(&mut mid)) < 1e-12);
+    assert!(want["relieved"].as_u64().is_some_and(|n| n >= 1), "{want}");
+    // The feature's evaluation decides the face on the exact faces: given the pick as it was
+    // made (a design whose feature keeps no face names), it relieves the floor's corners as a
+    // pick in the middle of the bay does.
+    let mut at = bayed();
+    let made = run(&mut at, "solid.dogbone", json!({"faces": [[20, 25, 4]], "diameter": 3}));
+    let id = made["feature"].as_u64().unwrap();
+    if let Some(f) = at.doc_mut().feature_mut(id)
+        && let FeatureKind::Dogbone { faces, .. } = &mut f.kind
+    {
+        *faces = vec![FacePick(Vec3::new(pick[0], pick[1], pick[2]))];
+        f.face_names.clear();
+    }
+    at.refresh();
+    let report = at.model.result(id).and_then(|r| r.state.dogbone_report(id)).cloned().unwrap();
+    let relieved: Vec<[f64; 3]> = report.relieved.iter().map(|v| [v.x, v.y, v.z]).collect();
+    assert_eq!(json!(relieved), want["relieved_edges"], "{pick:?}");
+    assert!(rel(volume(&mut at), volume(&mut mid)) < 1e-12, "{pick:?}");
 }
 
 #[test]

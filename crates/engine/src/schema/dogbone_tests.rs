@@ -27,11 +27,12 @@ fn pocketed(level: ParamCheck) -> Session {
 const CORNER: [f64; 3] = [10.0, 8.0, 7.0];
 
 /// Calls that fail today give the same message in strict, each on a fresh [`pocketed`] plate:
-/// what the contract checks (the picks' form, the diameter's type, the style and side, the axis,
-/// unknown keys) and what it leaves to the handler (no picks, a diameter, gap or angle out of
-/// range or naming no parameter, a gap or side for another style, a body the design lacks, and
-/// picks with nothing to relieve). A call without `diameter` is left out: strict says "`diameter`
-/// is required", as for every missing key.
+/// what the contract checks (the picks' form, the diameter's type, the style and side, the axis)
+/// and what it leaves to the handler (no picks, a diameter, gap or angle out of range or naming
+/// no parameter, a gap or side for another style, a body the design lacks, and picks with
+/// nothing to relieve). Left out: a call without `diameter` (strict says "`diameter` is
+/// required", as for every missing key), and calls that work today but that strict refuses (an
+/// unknown key, a `body` or `gap` of the wrong type, which the handler reads as not given).
 #[test]
 fn strict_keeps_todays_errors() {
     let cases = [
@@ -51,10 +52,8 @@ fn strict_keeps_todays_errors() {
         json!({"edges": [CORNER], "diameter": -3}),
         json!({"edges": [CORNER], "diameter": "30 deg"}),
         json!({"edges": [CORNER], "diameter": 3, "style": "bogus"}),
-        json!({"edges": [CORNER], "diameter": 3, "style": 5}),
         json!({"edges": [CORNER], "diameter": 3, "gap": 0.1}),
         json!({"edges": [CORNER], "diameter": 3, "style": "minimal", "gap": -1}),
-        json!({"edges": [CORNER], "diameter": 3, "style": "minimal", "gap": true}),
         json!({"edges": [CORNER], "diameter": 3, "side": "shorter"}),
         json!({"edges": [CORNER], "diameter": 3, "style": "t_bone", "side": "middle"}),
         json!({"edges": [CORNER], "diameter": 3, "max_angle": "270 deg"}),
@@ -63,12 +62,9 @@ fn strict_keeps_todays_errors() {
         json!({"edges": [CORNER], "diameter": 3, "along": [0, 0, 0]}),
         json!({"edges": [CORNER], "diameter": 3, "along": "W"}),
         json!({"edges": [CORNER], "diameter": 3, "along": true}),
-        json!({"edges": [CORNER], "diameter": 3, "body": 5}),
         json!({"edges": [CORNER], "diameter": 3, "body": "Nope"}),
-        json!({"edges": [CORNER], "diameter": 3, "colour": "red"}),
         json!({"edges": [[0, 0, 5]], "diameter": 3}),
         json!({"edges": [[20, 8, 4]], "diameter": 3, "along": "Z"}),
-        json!({"faces": [[20, 15, 10]], "diameter": 3}),
     ];
     for p in cases {
         let error = |level: ParamCheck| pocketed(level).execute("solid.dogbone", &p).err().map(|e| e.to_string());
@@ -93,6 +89,7 @@ fn the_check_takes_what_the_schema_allows() {
         (json!({"edges": [[0, 0, 0]], "diameter": 3, "style": "t_bone", "side": "shorter"}), true),
         (json!({"edges": [[0, 0, 0]], "diameter": 3, "max_angle": "120 deg", "along": "Z"}), true),
         (json!({"edges": [[0, 0, 0]], "diameter": 3, "along": [0, 0, 1]}), true),
+        (json!({"edges": null, "faces": [[0, 0, 0]], "diameter": 3, "style": "tbone", "side": "long"}), true),
         (
             json!({"edges": [[0, 0, 0]], "diameter": 3, "style": null, "gap": null, "side": null, "max_angle": null, "along": null, "body": null}),
             true,
@@ -105,8 +102,10 @@ fn the_check_takes_what_the_schema_allows() {
         (json!({"faces": 5, "diameter": 3}), false),
         (json!({"edges": [[0, 0, 0]], "diameter": true}), false),
         (json!({"edges": [[0, 0, 0]], "diameter": 3, "style": "bogus"}), false),
+        (json!({"edges": [[0, 0, 0]], "diameter": 3, "style": 5}), false),
         (json!({"edges": [[0, 0, 0]], "diameter": 3, "side": "middle"}), false),
-        (json!({"edges": [[0, 0, 0]], "diameter": 3, "along": "W"}), false),
+        (json!({"edges": [[0, 0, 0]], "diameter": 3, "along": true}), false),
+        (json!({"edges": [[0, 0, 0]], "diameter": 3, "along": [0, 0]}), false),
         (json!({"edges": [[0, 0, 0]], "diameter": 3, "body": 5}), false),
         (json!({"edges": [[0, 0, 0]], "diameter": 3, "colour": "red"}), false),
     ] {
@@ -130,6 +129,7 @@ fn dogbone_replies_match_its_output_schema() {
         json!({"faces": [[20, 15, 4]], "diameter": 3, "style": "minimal", "gap": "0.2 mm"}),
         json!({"faces": [[20, 15, 4]], "diameter": 3, "style": "Minimal"}),
         json!({"edges": corners, "diameter": 3, "style": "t_bone", "side": "shorter"}),
+        json!({"edges": corners, "diameter": 3, "style": "TBone", "side": "Long"}),
         json!({"edges": [CORNER], "diameter": 3, "max_angle": "120 deg", "along": "Z"}),
         json!({"edges": [CORNER, [0, 0, 5]], "diameter": 3}),
         json!({"edges": [CORNER], "faces": null, "diameter": 3, "style": null, "gap": null, "side": null, "max_angle": null, "along": null, "body": null}),

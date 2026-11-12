@@ -1,32 +1,25 @@
 //! Contract and result type for `solid.dogbone` (`cmd/dogbone.rs`).
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
+use solidcore_record::Vec3;
 
 use super::features::FeatureResult;
-use super::types::{AngleExpr, AxisDir, EdgeRefs, FaceRefs, FeatureCommon, LengthExpr, feature_common, present};
+use super::types::{AngleExpr, AxisDir, DogboneSideParam, DogboneStyleParam, EdgeRefs, FaceRefs, FeatureCommon, LengthExpr, feature_common};
 
-/// Where a relief sits in its corner.
-#[derive(Clone, Copy, Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum DogboneStyleParam {
-    /// On the corner's bisector, the circle through the sharp corner.
-    #[default]
-    Normal,
-    /// On the bisector, stopping `gap` short of the sharp corner.
-    Minimal,
-    /// Along one wall, the circle through the corner: the bite goes into that wall only.
-    TBone,
-}
+/// The bit's axis, read as [`AxisDir`] is (X, Y or Z in any case, or a non-zero `[x, y, z]`),
+/// with the handler's message, which names `along`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AlongDir(pub Vec3);
 
-/// Which wall a T-bone relief bites.
-#[derive(Clone, Copy, Debug, Default, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum DogboneSideParam {
-    /// The longer wall at each corner.
-    #[default]
-    Longer,
-    /// The shorter wall at each corner.
-    Shorter,
+/// What `solid.dogbone` says about an `along` it cannot read.
+pub(crate) const ALONG_MESSAGE: &str = "`along` must be X, Y, Z or a non-zero [x, y, z]";
+
+impl<'de> Deserialize<'de> for AlongDir {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        crate::cmd::axis_dir_form(&Value::deserialize(d)?).map(AlongDir).map_err(|_| D::Error::custom(super::check::whole(ALONG_MESSAGE)))
+    }
 }
 
 /// Cut dogbone reliefs into inside corners. Give `edges`, `faces`, or both.
@@ -34,11 +27,11 @@ pub enum DogboneSideParam {
 #[schemars(deny_unknown_fields)]
 pub struct DogboneParams {
     /// The inside corner edges to relieve: a point on each, or `{body, index}`.
-    #[serde(default, deserialize_with = "present")]
+    #[serde(default)]
     pub edges: Option<EdgeRefs>,
     /// Planar faces (a pocket's floor, a plate's face a slot runs through) whose inside corners,
     /// the straight edges along the face's normal at its corners, are relieved.
-    #[serde(default, deserialize_with = "present")]
+    #[serde(default)]
     pub faces: Option<FaceRefs>,
     /// The router bit's diameter: each relief is a round hole of this diameter.
     pub diameter: LengthExpr,
@@ -59,7 +52,8 @@ pub struct DogboneParams {
     /// The tool's axis: picked edges not along it are skipped. Default: any direction (a picked
     /// face's corners are always along its normal).
     #[serde(default)]
-    pub along: Option<AxisDir>,
+    #[schemars(with = "Option<AxisDir>")]
+    pub along: Option<AlongDir>,
     /// The body the edges and faces are on. Default: the one the picks find.
     #[serde(default)]
     pub body: Option<String>,
