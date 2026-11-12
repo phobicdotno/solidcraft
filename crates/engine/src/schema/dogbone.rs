@@ -49,7 +49,7 @@ pub struct DogboneParams {
     /// and sharper corners).
     #[serde(default)]
     pub max_angle: Option<AngleExpr>,
-    /// The tool's axis: picked edges not along it are skipped. Default: any direction (a picked
+    /// The bit's axis: picked edges not along it are skipped. Default: any direction (a picked
     /// face's corners are always along its normal).
     #[serde(default)]
     #[schemars(with = "Option<AxisDir>")]

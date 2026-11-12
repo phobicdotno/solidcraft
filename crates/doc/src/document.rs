@@ -865,9 +865,9 @@ pub enum FeatureKind {
         #[serde(default = "yes", skip_serializing_if = "is_yes")]
         tangent_chain: bool,
     },
-    /// Dogbone reliefs (CNC routing): a round bite of the tool's diameter cut into each picked
+    /// Dogbone reliefs (CNC routing): a round bite of the bit's diameter cut into each picked
     /// inside corner edge, or into the inside corners at picked planar faces (a pocket's floor, a
-    /// plate's face a slot runs through), so that a square part seats where a round tool would
+    /// plate's face a slot runs through), so that a square part seats where a round bit would
     /// leave a round. See `crate::dogbone`.
     Dogbone {
         /// Reference points on the inside corner edges (each re-finds the nearest edge).
@@ -876,12 +876,12 @@ pub enum FeatureKind {
         /// Points on planar faces whose inside corners, along the face's normal, are relieved.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         faces: Vec<FacePick>,
-        #[walk(length = "Tool Diameter")]
+        #[walk(length = "Bit Diameter")]
         diameter: Expr,
         #[serde(default, skip_serializing_if = "crate::dogbone::DogboneStyle::is_normal")]
         style: crate::dogbone::DogboneStyle,
         /// Minimal style: how far short of the sharp corner the relief stops (default 5% of the
-        /// tool diameter).
+        /// bit diameter).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[walk(length = "Gap")]
         gap: Option<Expr>,
@@ -892,7 +892,7 @@ pub enum FeatureKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[walk(angle = "Largest Angle")]
         max_angle: Option<Expr>,
-        /// The tool's axis: picked edges not along it are skipped (default: any direction).
+        /// The bit's axis: picked edges not along it are skipped (default: any direction).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         along: Option<Dir>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

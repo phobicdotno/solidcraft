@@ -231,8 +231,9 @@ A round relief, of a router bit's diameter, cut into an inside corner so that a 
 where the bit would leave a round.
 
 A dogbone runs the length of the corner edge. Its normal style is centred on the corner's
-bisector with its circle through the sharp corner; minimal stops a gap short of the corner; T-bone
-sits on one wall's line and bites that wall only.
+bisector with its circle through the sharp corner; minimal stops a gap short of the corner.
+T-bone: the relief is centred on one wall's line, the longer or the shorter one. At a square
+corner it bites that wall only; at a sharper corner it also bites the other wall.
 
 - **In SolidCraft:** the `solid.dogbone` command; its `diameter`, `style` (`normal`, `minimal`,
   `t_bone`), `gap`, `side` (`longer`, `shorter`), `max_angle` and `along` parameters; the

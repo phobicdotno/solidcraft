@@ -1,7 +1,7 @@
 //! Dogbone reliefs: round bites a router's bit cuts into inside corners so that square parts
 //! seat in them (`solid.dogbone`).
 use serde_json::Value;
-use solidcraft_doc::dogbone::{DogboneSide, DogboneStyle};
+use solidcraft_doc::dogbone::{DogboneSide, DogboneStyle, MAX_LENGTH};
 use solidcraft_doc::expr::Kind;
 use solidcraft_doc::{BodyName, Dir, FacePick, FeatureKind, Position};
 
@@ -19,7 +19,7 @@ pub static COMMANDS: &[CommandSpec] = &[CommandSpec::new("solid.dogbone", "Dogbo
     .contract(&CONTRACT)
     .output(output_schema_for::<DogboneResult>)
     .params(
-        "edges?: [[x,y,z] point on an inside corner edge | {body, index}]; faces?: [[x,y,z] points on planar faces, or face names from model.faces] (a pocket's floor, a plate's face a slot runs through: every inside corner edge along the face's normal at its corners); give edges, faces or both; diameter: expr (the router bit's diameter; each relief is a round hole of it, running the corner's length: from a blind pocket's floor, never below it, out past an open end); style?: normal|minimal|t_bone (normal, the default: centred on the corner's bisector, the circle through the sharp corner, the least material removed; minimal: on the bisector, stopping `gap` short of the corner, for mating parts with slightly broken corners; t_bone: along one wall, the bite in that wall only); gap?: expr (minimal only; default 5% of the diameter); side?: longer|shorter (t_bone only: which wall each relief bites; default longer); max_angle?: angle expr (corners more open are skipped; default 90 deg); along?: X|Y|Z|[x,y,z] (the bit's axis: picked edges not along it are skipped; default any; a face's corners are along its normal); body?. Only inside (concave) corners between planar faces are relieved: the reply's `relieved` counts them and `skipped` lists every other edge with its reason (convex, too_open, not_along_axis, not_straight, …); none relieved is refused.",
+        "edges?: [[x,y,z] point on an inside corner edge | {body, index}]; faces?: [[x,y,z] points on planar faces, or face names from model.faces] (a pocket's floor, a plate's face a slot runs through: every inside corner edge along the face's normal at its corners); give edges, faces or both; diameter: expr (the router bit's diameter; each relief is a round hole of it, running the corner's length: from a blind pocket's floor, never below it, out past an open end); style?: normal|minimal|t_bone (normal, the default: centred on the corner's bisector, the circle through the sharp corner; of all reliefs that reach the sharp corner, it removes the least material. minimal: on the bisector, stopping `gap` short of the corner, for mating parts with slightly broken corners. t_bone: centred on one wall's line, the longer or the shorter one; at a square corner it bites that wall only, at a sharper corner it also bites the other wall); gap?: expr (minimal only; default 5% of the diameter); side?: longer|shorter (t_bone only: which wall each relief bites; default longer); max_angle?: angle expr (corners more open are skipped; default 90 deg); along?: X|Y|Z|[x,y,z] (the bit's axis: picked edges not along it are skipped; default any; a face's corners are along its normal); body?. Only inside (concave) corners between planar faces are relieved: the reply's `relieved` counts them and `skipped` lists every other edge with its reason (convex, too_open, not_along_axis, not_straight, …); none relieved is refused.",
     )];
 
 fn dogbone(s: &mut Session, p: &Value) -> Result<Value> {
@@ -38,8 +38,8 @@ fn dogbone(s: &mut Session, p: &Value) -> Result<Value> {
     let diameter = req_expr(cmd, p, "diameter")?;
     super::features::check_expr(s, &diameter, Kind::Length, cmd, "diameter")?;
     let d = s.doc.eval(&diameter, Kind::Length).map_err(|e| bad(cmd, format!("diameter: {e}")))?;
-    if !(d.is_finite() && d > 0.0) {
-        return Err(bad(cmd, "`diameter` must be positive"));
+    if !(d.is_finite() && d > 0.0 && d <= MAX_LENGTH) {
+        return Err(bad(cmd, format!("`diameter` must be more than 0 and at most {MAX_LENGTH} mm")));
     }
     let style = match str_(p, "style") {
         None => DogboneStyle::Normal,
@@ -55,8 +55,8 @@ fn dogbone(s: &mut Session, p: &Value) -> Result<Value> {
         }
         super::features::check_expr(s, g, Kind::Length, cmd, "gap")?;
         let v = s.doc.eval(g, Kind::Length).map_err(|e| bad(cmd, format!("gap: {e}")))?;
-        if !(v.is_finite() && v >= 0.0) {
-            return Err(bad(cmd, "`gap` must be zero or positive"));
+        if !(v.is_finite() && (0.0..=MAX_LENGTH).contains(&v)) {
+            return Err(bad(cmd, format!("`gap` must be at least 0 and at most {MAX_LENGTH} mm")));
         }
     }
     let side = match str_(p, "side") {

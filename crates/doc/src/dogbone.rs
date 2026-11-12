@@ -1,5 +1,5 @@
-//! Dogbone reliefs (CNC routing): a round bite of the tool's diameter cut into each inside
-//! corner edge of a body a round tool would leave rounded, so a square part or board seats in
+//! Dogbone reliefs (CNC routing): a round bite of the bit's diameter cut into each inside
+//! corner edge of a body a round bit would leave rounded, so a square part or board seats in
 //! it. The corners are picked edges, or the inside corners at picked planar faces (a pocket's
 //! floor, a plate's face a slot runs through). The kernel says which face each face pick means
 //! (on the exact faces), which edges are inside corners and where each relief cylinder goes
@@ -19,14 +19,16 @@ use crate::{DocError, Document, Feature, FeatureKind, ModelState, Operation, Res
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DogboneStyle {
-    /// On the corner's bisector, the circle through the sharp corner: the least material removed
-    /// of any relief that clears the corner.
+    /// On the corner's bisector, the circle through the sharp corner. Of all reliefs that reach
+    /// the sharp corner, it removes the least material.
     #[default]
     Normal,
     /// On the bisector, stopping `gap` short of the sharp corner, for mating parts whose corners
     /// are slightly broken.
     Minimal,
-    /// Along one wall, the circle through the corner: the bite goes into one wall only.
+    /// Centred on one wall's line, the longer or the shorter one, the circle through the corner.
+    /// At a square corner it bites that wall only; at a sharper corner it also bites the other
+    /// wall.
     TBone,
 }
 
@@ -89,9 +91,13 @@ impl DogboneSide {
     }
 }
 
-/// The share of the tool's diameter a minimal relief stops short of the corner by when no gap is
+/// The share of the bit's diameter a minimal relief stops short of the corner by when no gap is
 /// given: a tenth of the radius.
 pub const DEFAULT_GAP_SHARE: f64 = 0.05;
+
+/// The largest bit diameter and gap a dogbone takes (mm), 100 m: far past any router bit or
+/// part. The command refuses more, as the feature does.
+pub const MAX_LENGTH: f64 = 100_000.0;
 
 /// What a dogbone feature relieved and skipped in its last evaluation.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -127,8 +133,8 @@ pub(crate) fn evaluate(doc: &Document, vals: &BTreeMap<String, Value>, f: &Featu
         return Err(DocError::Invalid("not a dogbone".into()));
     };
     let d = crate::eval::val(vals, diameter, Kind::Length)?;
-    if !(d.is_finite() && d > 0.0 && d <= 1e5) {
-        return Err(DocError::Invalid("the tool diameter must be positive".into()));
+    if !(d.is_finite() && d > 0.0 && d <= MAX_LENGTH) {
+        return Err(DocError::Invalid(format!("the bit diameter must be more than 0 and at most {MAX_LENGTH} mm")));
     }
     let radius = d / 2.0;
     let relief_style = match style {
@@ -138,8 +144,8 @@ pub(crate) fn evaluate(doc: &Document, vals: &BTreeMap<String, Value>, f: &Featu
                 Some(e) => crate::eval::val(vals, e, Kind::Length)?,
                 None => d * DEFAULT_GAP_SHARE,
             };
-            if !(g.is_finite() && (0.0..=1e5).contains(&g)) {
-                return Err(DocError::Invalid("the gap must be zero or positive".into()));
+            if !(g.is_finite() && (0.0..=MAX_LENGTH).contains(&g)) {
+                return Err(DocError::Invalid(format!("the gap must be at least 0 and at most {MAX_LENGTH} mm")));
             }
             db::Style::Minimal { gap: g }
         }
@@ -159,14 +165,14 @@ pub(crate) fn evaluate(doc: &Document, vals: &BTreeMap<String, Value>, f: &Featu
     }
     // A zero axis is the kernel's to refuse; the command never saves one.
     if along.as_ref().is_some_and(|a| !a.0.is_finite()) {
-        return Err(DocError::Invalid("the tool axis must be a direction".into()));
+        return Err(DocError::Invalid("the bit's axis must be a direction".into()));
     }
     let picks: Vec<Vec3> = edges.iter().map(|p| p.0).chain(faces.iter().map(|p| p.0)).collect();
     if picks.is_empty() {
         return Err(DocError::Invalid("pick the inside corner edges, or the faces whose inside corners to relieve".into()));
     }
     let i = crate::eval::body_at(st, body, &picks)?;
-    let Some(mb) = st.bodies.get(i).cloned() else { return Err(DocError::Invalid("body".into())) };
+    let Some(mb) = st.bodies.get(i).cloned() else { return Err(DocError::Invalid("the dogbone's body is no longer in the model".into())) };
     if mb.body.is_mesh() {
         return Err(DocError::Invalid(format!("{} is a mesh body: dogbones need a solid", mb.name)));
     }
