@@ -117,6 +117,7 @@ export_tray	false
 extend	false
 extrude	false
 eye	false
+fab_slice	false
 fastener	false
 feature_group	false
 fillet	false

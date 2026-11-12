@@ -409,6 +409,8 @@ crate::dialog_descriptor::dialog_descriptors! {
             /// Surface tools and Split Face (`dialogs_surface`).
             Surface(crate::dialogs_surface::Surf),
             SaveMesh(crate::dialogs_save_mesh::SaveMesh),
+            /// Slice for Laser / CNC (`dialogs_fab`): settings only; the window runs no command on OK.
+            Fab(Box<crate::dialogs_fab::Fab>),
             /// The Custom View Navigator panel (`view_gizmo`): the app's navigator, not the design.
             ViewNavigator(crate::view_gizmo::Form),
             ViewDxf {
@@ -1156,6 +1158,7 @@ impl Dialog {
                     .or_else(|| crate::dialogs_sheet::start(app, id))
                     .or_else(|| crate::dialogs_surface::start(app, id))
                     .or_else(|| crate::dialogs_save_mesh::start(app, id))
+                    .or_else(|| crate::dialogs_fab::start(app, id))
                     .or_else(|| crate::dialogs_view_dxf::start(app, id))
                     .or_else(|| crate::view_gizmo::start(app, id))
                     .or_else(|| crate::dialogs_plastic::start(app, id))
@@ -2834,6 +2837,7 @@ fn title(k: &Kind) -> &'static str {
         Kind::Sheet(k) => k.title(),
         Kind::Surface(k) => k.title(),
         Kind::SaveMesh(_) => "SAVE AS MESH",
+        Kind::Fab(_) => "cmd.fab_slice",
         Kind::ViewDxf { .. } => "Export Current View as DXF",
         Kind::ViewNavigator(_) => "CUSTOM VIEW NAVIGATOR",
         Kind::InsertDrawing(p) => crate::dialogs_insert_drawing::title(p),
@@ -4008,7 +4012,7 @@ pub(crate) fn card_width(d: &Dialog) -> f32 {
 /// says what it does.
 pub(crate) fn action_labels(kind: &Kind) -> (&'static str, &'static str) {
     match kind {
-        Kind::Measure { .. } => ("", "Close"),
+        Kind::Measure { .. } | Kind::Fab(_) => ("", "Close"),
         Kind::ConfirmDelete { .. } => ("Delete", "Cancel"),
         Kind::SaveMesh(k) => (crate::dialogs_save_mesh::button(k), "Cancel"),
         Kind::ViewDxf { .. } => ("Export DXF…", "Cancel"),
@@ -4106,7 +4110,7 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
         if d.editing.is_some() { solidcraft_ui_text::format("dialog.edit_title", &[("title", tr(raw_title))]) } else { tr(raw_title).to_string() };
     let frame = crate::ui_kit::Panel::feature_frame(ctx, app.ui.layout, side);
     // OK is offered once the inputs make a feature.
-    let has_ok = !matches!(d.kind, Kind::Sketch | Kind::Measure { .. });
+    let has_ok = !matches!(d.kind, Kind::Sketch | Kind::Measure { .. } | Kind::Fab(_));
     let valid = match &d.kind {
         Kind::Sketch => false,
         // Nothing picked is an answer too: OK adds no pill.
@@ -6471,7 +6475,7 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
                 crate::tools::projection_preselection(sels(d, 0)).ok_or_else(|| "select geometry or bodies that can be projected".to_string())?;
             ("sketch.project", json!({"refs": refs, "projection_link": projection_link}))
         }
-        Kind::Sketch | Kind::Measure { .. } => return Ok(Vec::new()),
+        Kind::Sketch | Kind::Measure { .. } | Kind::Fab(_) => return Ok(Vec::new()),
         Kind::Assembly(k) => return crate::dialogs_assembly::commands(app, k, &d.inputs),
         Kind::Sheet(k) => return crate::dialogs_sheet::commands(app, k, &d.inputs, &d.extra),
         Kind::Surface(k) => return crate::dialogs_surface::commands(app, k, &d.inputs, &d.extra),

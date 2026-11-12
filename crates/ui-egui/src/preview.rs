@@ -401,6 +401,19 @@ fn stream_key(cmds: &[(String, Value)], revision: u64, colors: Colors) -> Option
 /// Keep the preview in step with the open dialog: start a computation when its inputs changed,
 /// take finished results. Called once per frame.
 pub fn update(app: &mut SolveApp, ctx: &egui::Context) {
+    // Slice for Laser / CNC draws its parts assembled, not a feature's result.
+    if let Some(parts) = crate::dialogs_fab::tick(app, ctx) {
+        match parts {
+            Some(key) if app.preview.shown_key != Some(key) => {
+                app.preview.clear();
+                let built = crate::dialogs_fab::built(app);
+                app.preview.apply(key, Ok(built));
+            }
+            Some(_) => {}
+            None => app.preview.clear(),
+        }
+        return;
+    }
     let cmds = match app.dialog.as_ref().filter(|d| d.previews() && d.preview_enabled).map(|d| crate::dialogs::preview_commands(app, d)) {
         Some(Ok(c)) if !c.is_empty() => c,
         _ if crate::sketch_attachment_ui::commands(app).is_some() => crate::sketch_attachment_ui::commands(app).unwrap_or_default(),
