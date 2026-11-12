@@ -35,6 +35,11 @@ pub(super) fn fixtures() -> Vec<(&'static str, Value)> {
             json!({"type":"frame_end_cap","ends":[{"plane":plane("cap1"),"member":{"feature":7,"line":"l1"}}],"thickness":"cap.thickness","ratio":"cap.ratio","chamfer":"cap.chamfer","direction":"inward"}),
         ),
         (
+            "dogbone",
+            json!({"type": "dogbone", "edges": [o], "faces": [o], "diameter": "dogbone.diameter", "style": "minimal", "gap": "dogbone.gap",
+                "max_angle": "dogbone.max_angle", "along": [0, 0, 1]}),
+        ),
+        (
             "body_transfer",
             json!({"type": "body_transfer", "bodies": ["B"], "from": 0, "to": 1, "transform": [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]}),
         ),
@@ -256,7 +261,7 @@ pub(super) fn with_refs(name: &str, mut v: Value) -> Value {
     let tool = json!({"body": "B", "point": o});
     let extra = match name {
         "extrude" | "extrude_thin" | "revolve" | "sweep" | "sweep_options" | "pipe" | "coil" | "thicken" => json!({"targets": ["B"]}),
-        "fillet_constant" | "fillet_chord" | "fillet_curvature" | "fillet_variable" | "fillet_spline" | "chamfer" | "shell" | "draft"
+        "fillet_constant" | "fillet_chord" | "fillet_curvature" | "fillet_variable" | "fillet_spline" | "chamfer" | "dogbone" | "shell" | "draft"
         | "offset_face" | "delete_face" | "replace_face" | "sheet_flange" | "sheet_hem" | "sheet_perforate" | "sheet_path" | "sheet_unfold"
         | "boss" | "lip" | "snap_fit" | "rest" | "surface_offset" => {
             json!({"body": "B"})

@@ -338,6 +338,7 @@ sketch.toggle_driven              2D sketch only (the sketch solver and engine t
 sketch.transform                  2D sketch only (the sketch solver and engine tests); no kernel operation
 sketch.trim                       2D sketch only (the sketch solver and engine tests); no kernel operation
 sketch.trim.path                  2D sketch only (the sketch solver and engine tests); no kernel operation
+solid.dogbone                     inside-corner reliefs; kernel cases in solidcore (dogbone_tests.rs of solidcore and solidcore-ops), tested in crates/engine/src/cmd/dogbone_tests.rs
 timeline.dependents               a listing of dependents
 timeline.export_script            writes the history as a script
 timeline.inspect                  a listing of the timeline

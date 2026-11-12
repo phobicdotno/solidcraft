@@ -599,6 +599,22 @@ keyword_param!(
     "inside or outside",
     "Which edge of the rim face the band runs along: inside (the default) or outside. Matching ignores case."
 );
+keyword_param!(
+    /// `solid.dogbone`'s `style`.
+    DogboneStyleParam,
+    "style",
+    &["normal", "minimal", "t_bone", "tbone"],
+    "normal, minimal or t_bone",
+    "Where each relief sits in its corner: normal (the default), on the corner's bisector, the circle through the sharp corner; minimal, on the bisector, stopping `gap` short of the sharp corner; or t_bone (alias tbone), along one wall, the circle through the corner, the bite in that wall only. Matching ignores case."
+);
+keyword_param!(
+    /// `solid.dogbone`'s `side`.
+    DogboneSideParam,
+    "side",
+    &["longer", "long", "shorter", "short"],
+    "longer or shorter",
+    "T-bone style only: which wall at each corner a relief bites, longer (the default; alias long) or shorter (alias short). Matching ignores case."
+);
 
 /// How a feature combines with existing bodies, as `features::operation` reads it.
 #[derive(Clone, Debug, PartialEq)]
