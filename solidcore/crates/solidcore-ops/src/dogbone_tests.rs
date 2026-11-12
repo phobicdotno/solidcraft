@@ -523,8 +523,5 @@ fn hostile_face_picks_are_refused() {
         assert_eq!(faces_at(&body, &order, &[p], 1.0), Err(Error::Argument));
     }
     let many = vec![[0.0; 3]; MAX_PICKS + 1];
-    assert_eq!(
-        faces_at(&body, &order, &many, 1.0),
-        Err(Error::Argument)
-    );
+    assert_eq!(faces_at(&body, &order, &many, 1.0), Err(Error::Argument));
 }
