@@ -30,8 +30,8 @@ pub fn plan(body: &Body, edges: &[usize], faces: &[Vec3], reach: f64, options: &
         } else {
             let (ops, order) = body.ops_body().ok_or_else(|| KernelError::Failed("dogbone: the kernel cannot take this body".into()))?;
             let points: Vec<[f64; 3]> = faces.iter().map(|p| [p.x, p.y, p.z]).collect();
-            let found =
-                solidcore_ops::dogbone::faces_at(ops, order, &points, reach).map_err(|e| KernelError::Invalid(format!("dogbone: picking faces: {e}")))?;
+            let found = solidcore_ops::dogbone::faces_at(ops, order, &points, reach)
+                .map_err(|e| KernelError::Invalid(format!("dogbone: picking faces: {e}")))?;
             let mut idx = Vec::with_capacity(found.len());
             for (p, f) in faces.iter().zip(found) {
                 idx.push(f.ok_or_else(|| KernelError::Invalid(format!("no face at [{}, {}, {}]", p.x, p.y, p.z)))?);

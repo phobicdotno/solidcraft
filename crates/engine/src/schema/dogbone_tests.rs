@@ -93,7 +93,10 @@ fn the_check_takes_what_the_schema_allows() {
         (json!({"edges": [[0, 0, 0]], "diameter": 3, "style": "t_bone", "side": "shorter"}), true),
         (json!({"edges": [[0, 0, 0]], "diameter": 3, "max_angle": "120 deg", "along": "Z"}), true),
         (json!({"edges": [[0, 0, 0]], "diameter": 3, "along": [0, 0, 1]}), true),
-        (json!({"edges": [[0, 0, 0]], "diameter": 3, "style": null, "gap": null, "side": null, "max_angle": null, "along": null, "body": null}), true),
+        (
+            json!({"edges": [[0, 0, 0]], "diameter": 3, "style": null, "gap": null, "side": null, "max_angle": null, "along": null, "body": null}),
+            true,
+        ),
         (json!({"diameter": 3}), true),
         (json!({"edges": [[0, 0, 0]], "diameter": 3, "gap": 1}), true),
         (json!({"edges": [[0, 0, 0]]}), false),

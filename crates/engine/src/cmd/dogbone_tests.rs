@@ -78,6 +78,47 @@ fn a_picked_floor_relieves_the_same_corners_as_its_edges() {
     assert!(rel(by_face, volume(&mut e)) < 1e-9);
 }
 
+/// The pocket with a round bay 5 in radius on its wall at y = 22, centred on (20, 22), floor at
+/// z = 4 too.
+fn bayed() -> Session {
+    let mut s = pocketed();
+    run(&mut s, "solid.cylinder", json!({"base": [20, 22, 4], "radius": 5, "height": 7, "operation": "cut"}));
+    s
+}
+
+#[test]
+fn a_face_pick_beside_a_round_wall_means_the_face_it_is_exactly_nearest() {
+    // The display mesh's facets of the bay's wall lie inside the bay, nearer its axis than the
+    // wall. A point `off` in from the wall and 0.8 `off` above the floor is nearer the floor, yet
+    // nearer a facet of the wall than the floor where a facet bulges in by more than 0.2 `off`:
+    // find one, where the mesh would pick the wall, which no dogbone relieves.
+    let s = bayed();
+    let pick = {
+        let st = s.model.state();
+        let b = st.body("Plate").unwrap();
+        let mesh_face = |p: [f64; 3]| solidcraft_doc::appearance::nearest_face(b, solidcore_record::Vec3::new(p[0], p[1], p[2])).unwrap().1;
+        let floor = mesh_face([20.0, 25.0, 4.0]);
+        [0.02, 0.05, 0.1]
+            .into_iter()
+            .flat_map(|off: f64| {
+                (0..=480).map(move |i| {
+                    let (sin, cos) = (30.0 + f64::from(i) * 0.25).to_radians().sin_cos();
+                    [20.0 + (5.0 - off) * cos, 22.0 + (5.0 - off) * sin, 4.0 + 0.8 * off]
+                })
+            })
+            .find(|p| mesh_face(*p) != floor)
+            .expect("a point the display mesh puts on the bay's wall")
+    };
+    // Picked there, the floor is relieved as when picked in the middle of the bay.
+    let mut at = bayed();
+    let out = run(&mut at, "solid.dogbone", json!({"faces": [pick], "diameter": 3}));
+    let mut mid = bayed();
+    let want = run(&mut mid, "solid.dogbone", json!({"faces": [[20, 25, 4]], "diameter": 3}));
+    assert!(out["relieved"].as_u64().is_some_and(|n| n >= 1), "{out}");
+    assert_eq!(out["relieved_edges"], want["relieved_edges"], "{pick:?}: {out}");
+    assert!(rel(volume(&mut at), volume(&mut mid)) < 1e-12);
+}
+
 #[test]
 fn a_blind_pocket_is_never_cut_below_its_floor() {
     // The reliefs end on the floor: the slab under it (z 0…4) keeps its whole 40 x 30 x 4.
