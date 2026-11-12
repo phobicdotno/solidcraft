@@ -15,11 +15,15 @@
 //!
 //! Regions here are polygons, not the exact lines-arcs-Béziers regions of [`crate::prism`]: a
 //! sliced model needs hundreds of booleans and offsets per recompute (slots, tabs, dowel holes,
-//! kerf, label room), with non-zero winding for self-overlapping offsets. The exact planar
-//! boolean of [`crate::prism`] takes about 2.4 s for one kerf offset of a 160-sided polygon
-//! (built as a union of edge bands); the polygon engine here (iOverlay, MIT OR Apache-2.0) does
-//! it in well under a millisecond. Section outlines come from the exact section curves, sampled
-//! within the caller's chord tolerance.
+//! kerf, label room), with non-zero winding for self-overlapping offsets. Measured (median of
+//! seven runs on one desktop machine): growing a 160-sided polygon by half a 0.15 mm kerf takes
+//! the kernel's exact profile offset
+//! ([`create_offset_profile`](crate::primitive::api_primitives::create_offset_profile)) about
+//! 66 ms, and the polygon engine here (iOverlay, MIT OR Apache-2.0) about 0.05 ms; cutting ten
+//! slots and four holes from a 200 x 120 mm plate takes the exact 2D boolean
+//! ([`boolean_2d`](crate::boolean::api_brep::boolean_2d)) about 12 ms, and this engine about
+//! 0.05 ms. Section outlines come from the exact section curves, sampled within the caller's
+//! chord tolerance.
 //!
 //! Deviations: none (no upstream counterpart). No recursion.
 
