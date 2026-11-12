@@ -247,8 +247,8 @@ fn relieve(
     let [v0, v1] = edge.vertices;
     let at_start = end_faces(body, v0 as usize, [first, second])?;
     let at_end = end_faces(body, v1 as usize, [first, second])?;
-    let ends = [at_start.as_slice(), at_end.as_slice()];
-    match k::edge_relief(&line, &[wa, wb], ends, options).map_err(status)? {
+    let at_ends = [at_start.as_slice(), at_end.as_slice()];
+    match k::edge_relief(&line, &[wa, wb], at_ends, options).map_err(status)? {
         k::EdgeRelief::Relief(c) => out.tools.push(Tool {
             edge: e,
             at,
