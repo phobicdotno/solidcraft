@@ -93,9 +93,14 @@ struct Bits {
     data: Vec<u64>,
 }
 
+/// The 64-cell words that hold `cells` cells.
+fn words_for(cells: usize) -> usize {
+    cells / 64 + usize::from(cells % 64 != 0)
+}
+
 impl Bits {
     fn new(nx: usize, ny: usize) -> Self {
-        let words = nx.div_ceil(64).max(1);
+        let words = words_for(nx).max(1);
         Self {
             nx,
             ny,
@@ -175,7 +180,7 @@ fn floor_idx(v: f64, n: usize) -> i64 {
     if v.is_nan() {
         return -1;
     }
-    v.floor().clamp(-1.0, n as f64) as i64
+    v.floor().max(-1.0).min(n as f64) as i64
 }
 
 /// `v` rounded towards plus infinity, as an index between -1 and `n` (NaN gives `n`).
@@ -183,7 +188,7 @@ fn ceil_idx(v: f64, n: usize) -> i64 {
     if v.is_nan() {
         return n as i64;
     }
-    v.ceil().clamp(-1.0, n as f64) as i64
+    v.ceil().max(-1.0).min(n as f64) as i64
 }
 
 /// The cells `lo..=hi` (of `0..n`) whose centres lie in `[a, b]`, for cell 0 starting at `o`.
@@ -484,13 +489,14 @@ fn best_spot(
         let ilim = if lim.is_finite() {
             ((lim / ey - pose.w) / cell)
                 .ceil()
-                .clamp(0.0, pose.imax as f64) as usize
+                .max(0.0)
+                .min(pose.imax as f64) as usize
         } else {
             pose.imax
         };
         let nb = ilim + 1;
         blocked.clear();
-        blocked.resize(nb.div_ceil(64), 0);
+        blocked.resize(words_for(nb), 0);
         let mut full = false;
         // raster cell (r, c) of a pose at grid (j, i) lands on sheet cell (r + j + 1, c + i + 1)
         'rows: for (r, runs) in pose.runs.iter().enumerate() {
