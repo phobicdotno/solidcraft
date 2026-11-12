@@ -1,9 +1,10 @@
 //! Dogbone reliefs (CNC routing): a round bite of the tool's diameter cut into each inside
 //! corner edge of a body a round tool would leave rounded, so a square part or board seats in
 //! it. The corners are picked edges, or the inside corners at picked planar faces (a pocket's
-//! floor, a plate's face a slot runs through). The kernel says which edges are inside corners
-//! and where each relief cylinder goes (`solidcraft_kernel::dogbone`); this module picks the
-//! body, the edges and faces, cuts the cylinders and keeps what was relieved and skipped.
+//! floor, a plate's face a slot runs through). The kernel says which face each face pick means
+//! (on the exact faces), which edges are inside corners and where each relief cylinder goes
+//! (`solidcraft_kernel::dogbone`); this module picks the body and the edges, cuts the cylinders
+//! and keeps what was relieved and skipped.
 
 use std::collections::BTreeMap;
 
@@ -157,9 +158,8 @@ pub(crate) fn evaluate(doc: &Document, vals: &BTreeMap<String, Value>, f: &Featu
     if !(largest.is_finite() && largest > 0.0 && largest <= std::f64::consts::PI) {
         return Err(DocError::Invalid("the largest corner angle must be between 0° and 180°".into()));
     }
-    if let Some(a) = along
-        && !(a.0.is_finite() && a.0.len() > 0.0)
-    {
+    // A zero axis is the kernel's to refuse; the command never saves one.
+    if along.as_ref().is_some_and(|a| !a.0.is_finite()) {
         return Err(DocError::Invalid("the tool axis must be a direction".into()));
     }
     let picks: Vec<Vec3> = edges.iter().map(|p| p.0).chain(faces.iter().map(|p| p.0)).collect();
@@ -182,17 +182,13 @@ pub(crate) fn evaluate(doc: &Document, vals: &BTreeMap<String, Value>, f: &Featu
         notes.extend(w);
         kernel::blend_edges(&mb.body, &at)?
     };
-    let mut face_idx = Vec::new();
-    for p in faces {
-        let face = crate::appearance::face_index_at(&mb, p.0)
-            .ok_or_else(|| DocError::Invalid(format!("no face of {} at [{}, {}, {}]", mb.name, p.0.x, p.0.y, p.0.z)))?;
-        face_idx.push(face);
-    }
+    // Faces by the exact face nearest each pick, within the reach any face pick has.
+    let face_points: Vec<Vec3> = faces.iter().map(|p| p.0).collect();
     let options = db::BodyOptions {
         relief: db::Options { radius, style: relief_style, max_angle: largest },
         along: along.as_ref().map(|a| [a.0.x, a.0.y, a.0.z]),
     };
-    let plan = db::plan(&mb.body, &edge_idx, &face_idx, &options)?;
+    let plan = db::plan(&mb.body, &edge_idx, &face_points, crate::appearance::pick_tolerance(&mb), &options)?;
     let report = DogboneReport {
         relieved: plan.tools.iter().map(|t| Vec3::new(t.at[0], t.at[1], t.at[2])).collect(),
         skipped: plan.skipped.iter().map(|s| (Vec3::new(s.at[0], s.at[1], s.at[2]), reason_id(&s.why))).collect(),

@@ -4,42 +4,40 @@
 //! it guards the calls and words the refusals.
 //!
 //! - [`plan`]: the relief cylinders of a body's picked inside edges, or of the inside corners of
-//!   picked planar faces (a pocket's floor), and the edges skipped with the reason. The caller
-//!   cuts the cylinders from the body.
-//! - [`ring_reliefs`], [`relieved_ring`]: the reliefs of a planar loop's inside corners (an
-//!   outline counter-clockwise, a hole clockwise), for flat parts cut from sheet.
+//!   the planar faces at picked points (a pocket's floor), and the edges skipped with the reason.
+//!   The caller cuts the cylinders from the body.
 
-pub use solidcore_ops::dogbone::{BodyOptions, Corner2, Options, Plan, Relief2, ReliefCylinder, Side, Skip, Skipped, Style, Tool, Why};
+pub use solidcore_ops::dogbone::{BodyOptions, Options, Plan, ReliefCylinder, Side, Skip, Skipped, Style, Tool, Why};
+
+use solidcore_record::Vec3;
 
 use crate::body::Body;
 use crate::{KernelError, Result, guard};
 
-/// The reliefs of `body` at its record edges `edges` and at the corners of its record faces
-/// `faces` (see `solidcore_ops::dogbone::plan`).
+/// The reliefs of `body` at its record edges `edges` and at the corners of the faces under the
+/// points `faces` (see `solidcore_ops::dogbone::plan`). Each point picks the face nearest it on
+/// the exact faces as trimmed, no farther than `reach` (`solidcore_ops::dogbone::faces_at`).
 ///
 /// # Errors
-/// [`KernelError::Invalid`] for a mesh body, an index past the body's edges or faces, or
-/// options out of range; [`KernelError::Internal`] for a panic in the kernel.
-pub fn plan(body: &Body, edges: &[usize], faces: &[usize], options: &BodyOptions) -> Result<Plan> {
+/// [`KernelError::Invalid`] for a mesh body, an index past the body's edges, a point with no face
+/// within `reach`, or options out of range; [`KernelError::Failed`] for a body the kernel cannot
+/// take; [`KernelError::Internal`] for a panic in the kernel.
+pub fn plan(body: &Body, edges: &[usize], faces: &[Vec3], reach: f64, options: &BodyOptions) -> Result<Plan> {
     body.require_brep("a dogbone")?;
-    guard("dogbone", || solidcore_ops::dogbone::plan(body.record(), edges, faces, options).map_err(|e| KernelError::Invalid(format!("dogbone: {e}"))))
-}
-
-/// The relief (or why none) at each vertex of planar loop `ring`, the material on its left.
-///
-/// # Errors
-/// [`KernelError::Invalid`] for options or points out of range.
-pub fn ring_reliefs(ring: &[[f64; 2]], options: &Options) -> Result<Vec<Corner2>> {
-    guard("dogbone ring", || solidcore_ops::dogbone::ring_reliefs(ring, options).map_err(|e| KernelError::Invalid(format!("dogbone: {e}"))))
-}
-
-/// `ring` with its reliefs cut in, each arc within `chord_tolerance` of its circle.
-///
-/// # Errors
-/// [`KernelError::Invalid`] for options or points out of range, or a relief that runs past its
-/// edge (cut those with a boolean of the circles instead).
-pub fn relieved_ring(ring: &[[f64; 2]], options: &Options, chord_tolerance: f64) -> Result<Vec<[f64; 2]>> {
-    guard("dogbone ring", || {
-        solidcore_ops::dogbone::relieved_ring(ring, options, chord_tolerance).map_err(|e| KernelError::Invalid(format!("dogbone: {e}")))
+    guard("dogbone", || {
+        let face_idx = if faces.is_empty() {
+            Vec::new()
+        } else {
+            let (ops, order) = body.ops_body().ok_or_else(|| KernelError::Failed("dogbone: the kernel cannot take this body".into()))?;
+            let points: Vec<[f64; 3]> = faces.iter().map(|p| [p.x, p.y, p.z]).collect();
+            let found =
+                solidcore_ops::dogbone::faces_at(ops, order, &points, reach).map_err(|e| KernelError::Invalid(format!("dogbone: picking faces: {e}")))?;
+            let mut idx = Vec::with_capacity(found.len());
+            for (p, f) in faces.iter().zip(found) {
+                idx.push(f.ok_or_else(|| KernelError::Invalid(format!("no face at [{}, {}, {}]", p.x, p.y, p.z)))?);
+            }
+            idx
+        };
+        solidcore_ops::dogbone::plan(body.record(), edges, &face_idx, options).map_err(|e| KernelError::Invalid(format!("dogbone: {e}")))
     })
 }

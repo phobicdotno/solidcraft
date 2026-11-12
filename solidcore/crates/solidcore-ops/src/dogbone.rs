@@ -8,7 +8,8 @@
 //! the cylinder that relieves it. A relief runs the edge's length, past an end only where the
 //! face there faces on along the edge (open: the top of a pocket or both ends of a slot through
 //! the plate), so it never cuts below a blind pocket's floor. The application cuts the
-//! cylinders from the body; [`plan`] says which edges it skipped and why.
+//! cylinders from the body; [`plan`] says which edges it skipped and why. [`faces_at`] says
+//! which face a picked point means, on the exact faces.
 //!
 //! For a planar loop, [`ring_reliefs`] and [`relieved_ring`] pass the kernel's answer on.
 
@@ -16,7 +17,7 @@ use solidcore::dogbone as k;
 use solidcore_record::brep::{Brep, Curve, Loop, Shell, Surface};
 
 use crate::error::status;
-use crate::{Error, Result};
+use crate::{Body, Error, Order, Result};
 
 pub use solidcore::dogbone::{
     Corner2, EdgeCorner, Options, Relief2, ReliefCylinder, Side, Skip, Style, ANGLE_SLACK,
@@ -164,6 +165,42 @@ pub fn plan(body: &Brep, edges: &[usize], faces: &[usize], options: &BodyOptions
         }
     }
     Ok(out)
+}
+
+/// The record face of `body` (with `order`, its record's [`Order`]) that each of `points`
+/// picks: the face nearest the point as trimmed, on the exact geometry
+/// ([`Body::face_distances`]), when it is no farther than `reach`; `None` where no face is that
+/// near. Of faces equally near (a point on the edge between two), the first in record order.
+///
+/// # Errors
+/// [`Error::Argument`] for more than [`MAX_PICKS`] points, a point that is not finite, or a
+/// `reach` that is not finite or is negative; any other kernel error.
+pub fn faces_at(
+    body: &Body,
+    order: &Order,
+    points: &[[f64; 3]],
+    reach: f64,
+) -> Result<Vec<Option<usize>>> {
+    if points.len() > MAX_PICKS || !(reach.is_finite() && reach >= 0.0) {
+        return Err(Error::Argument);
+    }
+    if points.iter().any(|p| !p.iter().all(|x| x.is_finite())) {
+        return Err(Error::Argument);
+    }
+    let mut best: Vec<Option<(f64, usize)>> = vec![None; points.len()];
+    if points.is_empty() {
+        return Ok(Vec::new());
+    }
+    for f in 0..order.faces.len() {
+        let ds = body.face_distances(order, f, points)?;
+        for (b, d) in best.iter_mut().zip(ds) {
+            match d {
+                Some(d) if d <= reach && b.is_none_or(|(x, _)| d < x) => *b = Some((d, f)),
+                _ => {}
+            }
+        }
+    }
+    Ok(best.into_iter().map(|b| b.map(|(_, f)| f)).collect())
 }
 
 /// The relief of edge `e`, or why none, added to `out`.

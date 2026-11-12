@@ -438,3 +438,93 @@ fn rings_pass_the_kernels_answer_on() {
     assert!(ring_reliefs(&hole[..2], &o).is_err());
     assert!(relieved_ring(&hole, &o, 0.0).is_err());
 }
+
+/// The face of `r` on a cylinder.
+fn cylinder_face(r: &Brep) -> usize {
+    let found: Vec<usize> = (0..r.faces.len())
+        .filter(|&f| matches!(r.faces[f].surface, Surface::Cylinder { .. }))
+        .collect();
+    assert_eq!(found.len(), 1, "{found:?}");
+    found[0]
+}
+
+#[test]
+fn a_pick_means_the_exact_face_nearest_it() {
+    let body = pocketed();
+    let (r, order) = body.to_record().unwrap();
+    let floor = flat_face(&r, 4.0, [10.0, 8.0], [30.0, 22.0]);
+    let at = |p: [f64; 3]| faces_at(&body, &order, &[p], 2.0).unwrap()[0];
+    assert_eq!(at([20.0, 15.0, 4.0]), Some(floor));
+    // 0.2 above the floor and 0.5 from the wall at x = 10: the floor; 0.5 above it and 0.2 from
+    // the wall: the wall, whose every vertex lies at x = 10.
+    assert_eq!(at([10.5, 15.0, 4.2]), Some(floor));
+    let wall = at([10.2, 15.0, 4.5]).unwrap();
+    assert_ne!(wall, floor);
+    let on_wall = |p: [f64; 3]| (p[0] - 10.0).abs() < 1e-9;
+    assert!(r.faces[wall].loops.iter().all(|lp| match lp {
+        Loop::Edges { edges } => edges.iter().all(|oe| {
+            let [a, b] = r.edges[oe.edge as usize].vertices;
+            on_wall(point(&r, a)) && on_wall(point(&r, b))
+        }),
+        Loop::Vertex { vertex } => on_wall(point(&r, *vertex)),
+    }));
+    // The floor as trimmed: 0.5 over its plane but 1 past its edge at x = 10 (in the plate),
+    // the point is nearer the wall.
+    assert_eq!(at([9.0, 15.0, 4.5]), Some(wall));
+    // Farther than the reach from every face: none.
+    assert_eq!(at([100.0, 100.0, 100.0]), None);
+    // Several points at once, in order.
+    assert_eq!(
+        faces_at(
+            &body,
+            &order,
+            &[[20.0, 15.0, 4.0], [100.0, 0.0, 0.0], [10.5, 15.0, 4.2]],
+            2.0
+        )
+        .unwrap(),
+        vec![Some(floor), None, Some(floor)]
+    );
+    assert_eq!(faces_at(&body, &order, &[], 2.0).unwrap(), vec![]);
+}
+
+#[test]
+fn a_pick_beside_a_round_wall_is_decided_on_the_exact_wall() {
+    // A round pocket 5 in radius, floor at z = 4. A facet of a mesh of its wall would lie inside
+    // the pocket, nearer its axis than the wall by up to the mesh's tolerance; on the exact wall,
+    // a point 0.1 in from it is 0.1 away, so 0.08 above the floor picks the floor and 0.12 above
+    // it the wall, whatever a mesh would say.
+    let body = cut(
+        make_box([0.0; 3], [40.0, 30.0, 10.0]).unwrap(),
+        vec![make_cylinder([20.0, 15.0, 4.0], 5.0, 7.0).unwrap()],
+    );
+    let (r, order) = body.to_record().unwrap();
+    let floor = flat_face(&r, 4.0, [15.0, 10.0], [25.0, 20.0]);
+    let wall = cylinder_face(&r);
+    for deg in [0.0_f64, 10.0, 45.0, 100.0, 200.0, 333.0] {
+        let (s, c) = deg.to_radians().sin_cos();
+        let (x, y) = (20.0 + 4.9 * c, 15.0 + 4.9 * s);
+        let at = |z: f64| faces_at(&body, &order, &[[x, y, z]], 2.0).unwrap()[0];
+        assert_eq!(at(4.08), Some(floor), "{deg}°");
+        assert_eq!(at(4.12), Some(wall), "{deg}°");
+    }
+}
+
+#[test]
+fn hostile_face_picks_are_refused() {
+    let body = pocketed();
+    let (_, order) = body.to_record().unwrap();
+    for reach in [-1.0, f64::NAN, f64::INFINITY] {
+        assert_eq!(
+            faces_at(&body, &order, &[[20.0, 15.0, 4.0]], reach),
+            Err(Error::Argument)
+        );
+    }
+    for p in [[f64::NAN, 0.0, 0.0], [0.0, f64::INFINITY, 0.0]] {
+        assert_eq!(faces_at(&body, &order, &[p], 1.0), Err(Error::Argument));
+    }
+    let many = vec![[0.0; 3]; MAX_PICKS + 1];
+    assert_eq!(
+        faces_at(&body, &order, &many, 1.0),
+        Err(Error::Argument)
+    );
+}

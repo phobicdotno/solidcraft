@@ -91,3 +91,7 @@ pub struct DogboneResult {
     /// The edges and faces skipped, and why.
     pub skipped: Vec<DogboneSkip>,
 }
+
+#[cfg(test)]
+#[path = "dogbone_tests.rs"]
+mod tests;
