@@ -10,7 +10,6 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use solidcore_record::Vec3;
-use solidcraft_geom::prelude::*;
 use solidcraft_kernel::{self as kernel, dogbone as db};
 
 use crate::expr::{Kind, Value};
