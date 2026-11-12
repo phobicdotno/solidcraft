@@ -71,6 +71,7 @@ pub mod diagnostics;
 pub mod dogbone;
 pub mod edit;
 pub mod end_cap;
+pub mod fab;
 pub mod features;
 pub mod features_more;
 pub mod file;
