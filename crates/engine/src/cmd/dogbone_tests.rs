@@ -290,8 +290,9 @@ fn undo_takes_the_reliefs_away_and_a_saved_design_keeps_them() {
     assert!(rel(volume(&mut back), relieved) < 1e-9);
     let kinds = |s: &Session| s.doc.features.iter().map(|f| f.kind.clone()).collect::<Vec<_>>();
     assert_eq!(kinds(&back), kinds(&s));
-    let saved = std::fs::read_to_string(&path).unwrap();
-    assert!(saved.contains("\"dogbone\""), "the design names the feature kind");
+    // The file is a design container: the design read from its bytes names the feature kind.
+    let saved = crate::io::read_design(&std::fs::read(&path).unwrap()).unwrap();
+    assert!(saved.to_json().contains("\"dogbone\""), "the design names the feature kind");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -380,10 +381,10 @@ fn hostile_parameters_are_refused_and_change_nothing() {
     // A diameter or a gap past the largest one (100 m) is a bad parameter that names the range.
     let range = format!("at most {MAX_LENGTH} mm");
     for p in [
-        json!({"edges": CORNERS, "diameter": 1e9}),
         json!({"edges": CORNERS, "diameter": MAX_LENGTH + 1.0}),
-        json!({"edges": CORNERS, "diameter": 3, "style": "minimal", "gap": 1e9}),
+        json!({"edges": CORNERS, "diameter": 10.0 * MAX_LENGTH}),
         json!({"edges": CORNERS, "diameter": 3, "style": "minimal", "gap": MAX_LENGTH + 1.0}),
+        json!({"edges": CORNERS, "diameter": 3, "style": "minimal", "gap": 10.0 * MAX_LENGTH}),
     ] {
         match s.execute("solid.dogbone", &p) {
             Err(EngineError::BadParams { msg, .. }) => assert!(msg.contains(&range), "{p}: {msg}"),
