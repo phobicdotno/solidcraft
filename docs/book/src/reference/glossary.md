@@ -114,6 +114,18 @@ a tree.
   it (in French, *arborescence*), so that "browser" and "web browser" don't share a word. See
   *web browser*.
 
+### build style
+
+How the flat parts of a body cut from sheet stock go back together: stacked layers, slices on a
+rod, slices on a base or back plate, or a waffle grid.
+
+- **In SolidCraft:** the `style` parameter of `fab.slice` and `fab.export_sheets` (`stacked`,
+  `rod`, `base`, `back`, `waffle`); Slice for Laser / CNC's Style row.
+- **Don't use:** mode, method (for the style).
+- **Elsewhere:** slice style, construction technique.
+- **For translators:** not an appearance or a text style. A *waffle grid* is two sets of slices
+  slotted half way into each other.
+
 ### caustic
 
 A concentration or structured redistribution of light caused by reflection or refraction.
@@ -284,6 +296,16 @@ construction plane.
 - **For translators:** French uses *fonction* for a timeline feature, so "AI features" had to
   become *fonctionnalités IA*. Translate "feature" only in the timeline sense.
 
+### flat part
+
+A part to cut from sheet stock, one sheet thick: an outline with holes, made from a body by Slice
+for Laser / CNC.
+
+- **In SolidCraft:** the `parts` of `fab.slice` (kind `slice`, `plate` or `spacer`).
+- **Don't use:** part (alone, outside Slice for Laser / CNC's own messages), piece.
+- **Elsewhere:** flat part, cut part, profile.
+- **For translators:** not a standard part and not a sheet metal body.
+
 ### folder
 
 One of the browser's fixed sections of a component: Bodies, Sketches, Construction, Joints.
@@ -318,6 +340,20 @@ features are computed.
 - **Elsewhere:** folder, group.
 - **For translators:** not a rigid group (a joint) and not a fixed browser *folder*.
 
+### kerf
+
+The width of material a laser beam or a router bit removes along a cut.
+
+Slice for Laser / CNC grows each flat part by half the kerf for a laser, so the part comes out at
+its size. For a router the outline stays at its size and its inside corners get reliefs for the
+bit's diameter.
+
+- **In SolidCraft:** the `kerf` parameter of `fab.slice` and `fab.export_sheets`; Slice for Laser
+  / CNC's Kerf row.
+- **Don't use:** cut width, beam width.
+- **Elsewhere:** kerf.
+- **For translators:** not a clearance or a gap.
+
 ### material
 
 The physical substance of a body, which sets its density and mechanical properties.
@@ -346,6 +382,18 @@ them. The *first moments* are the mass times the centre of mass.
 - **Don't use:** rotational inertia, second moment of mass, mass moment.
 - **Elsewhere:** moment of inertia, inertia tensor, mass moment of inertia.
 - **For translators:** not the second moment of area of a cross-section, a different quantity.
+
+### nesting
+
+Packing flat parts onto sheets of a given size, a gap apart and a margin from each sheet's edge,
+so that as few sheets as possible are used.
+
+- **In SolidCraft:** the `sheets` of `fab.slice`; `fab.export_sheets` writes one file per sheet;
+  Slice for Laser / CNC's Sheets view. The `gap` and `margin` are measured to the machine's path,
+  which for a CNC router runs half the bit's diameter outside the part.
+- **Don't use:** layout, arrangement (for the packing).
+- **Elsewhere:** nesting, packing.
+- **For translators:** not nested components and not a nested sketch.
 
 ### occurrence
 
@@ -600,16 +648,21 @@ share a catalogue entry. Each meaning below gets its own term and, in time, its 
 | Part | a standard part | *standard part* | `parts.*` |
 | | a body, an occurrence or the design | *body*, *occurrence*, *design* | catalogue texts that say "part" |
 | | a design property | *part number* | Design Properties |
+| | a part cut from sheet stock | *flat part* | Slice for Laser / CNC, `parts` of `fab.slice` |
 | Profile | a closed region of a sketch that a feature uses | profile | `solid.extrude`, `solid.revolve` |
 | | the cross-section a frame member follows | frame profile | `frame.profile.*` |
 | | a named set of preferences | *settings profile* | `settings.profile.*`, Preferences › General |
 | Gap | the space a hem leaves | hem gap | the Hem dialog's Gap row |
 | | an open end in the sketch continuity legend | open end | the sketch continuity legend |
+| | the least distance between the machine's paths round two flat parts on a sheet | part gap | Slice for Laser / CNC's Gap between parts row, `gap` of `fab.slice` |
 | Clearance | the Clearance command | clearance check | `inspect.clearance` |
 | | a minimum distance field | clearance | the Interference and plastic rules dialogs |
 | | a hole sized for a bolt to pass through | clearance (hole) | the Hole dialog's Hole Tap Type, `ui.hole_clearance` |
+| | play in the slots and holes of flat parts | slot and hole play | Slice for Laser / CNC, `clearance` of `fab.slice` |
 | Fit | fit the view to the model | fit (view) | the view's Fit action, `ui.fit` |
 | | how much room a clearance hole leaves around the bolt | clearance fit | the Hole dialog's Fit, `ui.clearance_fit` |
+| Sheet | a sheet metal body's material | sheet metal | `sheet.*` |
+| | a board of stock that flat parts are cut from | sheet (stock) | `fab.slice`, `fab.export_sheets`, the Sheets view |
 | Flat | a hole's flat bottom | flat bottom | the Hole dialog's tip |
 | | a hem that lies flat on the sheet | flat hem | the Hem dialog's type |
 | Round | a round relief or corner shape | round (shape) | relief shapes, plastic rests, ruled surface corners |
