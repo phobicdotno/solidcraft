@@ -22,6 +22,9 @@ profile = []
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 thiserror.workspace = true
+# The polygon engine of `flat` (sheet fabrication): booleans, offsets and polyline clipping
+# on flattened regions. MIT OR Apache-2.0, pure Rust, builds for wasm.
+i_overlay = { version = "9.1", default-features = false }
 
 [dev-dependencies]
 serde_json = { version = "1", features = ["float_roundtrip"] }

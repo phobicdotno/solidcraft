@@ -40,7 +40,7 @@ const MAX_SIZE: f64 = 1.0e6;
 
 /// Two unit directions closer to parallel than this (radians, or its sine) are in line: a turn
 /// this small is no corner.
-const STRAIGHT: f64 = 1.0e-9;
+pub(crate) const STRAIGHT: f64 = 1.0e-9;
 
 /// Two lengths that differ by at most this times the longer are equal. Lengths measured between
 /// a record's points carry rounding of a few 10⁻¹⁶ of their size, far below this; a difference
@@ -144,9 +144,9 @@ pub enum Skip {
 /// A relief in a corner, in the corner's own terms: its circle's centre as an offset from the
 /// corner point.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Wedge {
+pub(crate) struct Wedge {
     /// The circle's centre less the corner point.
-    centre: Vec3,
+    pub(crate) centre: Vec3,
 }
 
 /// The relief of the inside corner whose walls leave it in unit directions `a` and `b`, the void
@@ -165,7 +165,7 @@ struct Wedge {
 /// # Errors
 /// [`SolidError::InvalidInput`] for options out of range, a direction or length that is not
 /// finite, or walls in line.
-fn wedge_relief(
+pub(crate) fn wedge_relief(
     a: Vec3,
     b: Vec3,
     axis: Vec3,
