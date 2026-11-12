@@ -295,6 +295,9 @@ fn face(outward: Vec3, left: bool) -> Wall<'static> {
     }
 }
 
+/// An end of an edge with no other face.
+const NO_FACES: &[Option<Vec3>] = &[];
+
 /// The edge from `start` to `end`.
 fn edge(start: Vec3, end: Vec3) -> Edge {
     Edge { start, end }
@@ -312,7 +315,7 @@ fn hostile_options_and_points_are_refused() {
             max_angle: PI,
         };
         assert!(wedge_relief(a, b, 1.0, 1.0, &o).is_err(), "{radius}");
-        assert!(edge_relief(&up, &pocket, [&[], &[]], &o).is_err());
+        assert!(edge_relief(&up, &pocket, [NO_FACES, NO_FACES], &o).is_err());
     }
     for gap in [-0.1, f64::NAN, f64::INFINITY] {
         assert!(opts(Style::Minimal { gap }).checked().is_err());
@@ -522,8 +525,8 @@ fn an_edge_relief_reads_its_walls_and_ends() {
         },
     ];
     // The floor faces up, back along the edge: blind; the top faces up, on past it: open.
-    let floor = [Some(Vec3::Z)];
-    let top = [Some(Vec3::Z)];
+    let floor: &[Option<Vec3>] = &[Some(Vec3::Z)];
+    let top: &[Option<Vec3>] = &[Some(Vec3::Z)];
     let relief =
         |style, ends: [&[Option<Vec3>]; 2]| match edge_relief(&up, &walls, ends, &opts(style))
             .unwrap()
@@ -531,33 +534,33 @@ fn an_edge_relief_reads_its_walls_and_ends() {
             EdgeRelief::Relief(c) => c,
             r => panic!("{r:?}"),
         };
-    let c = relief(Style::Normal, [&floor, &top]);
+    let c = relief(Style::Normal, [floor, top]);
     let d = R * FRAC_1_SQRT_2;
     assert!(close3(c.base, Vec3::new(d, d, 4.0)));
     assert_eq!(c.height, 6.0 + R);
     // An end with a face that is not planar, or with no other face, is blind.
-    let curved = [Some(Vec3::Z), None];
-    assert_eq!(relief(Style::Normal, [&floor, &curved]).height, 6.0);
-    assert_eq!(relief(Style::Normal, [&floor, &[]]).height, 6.0);
+    let curved: &[Option<Vec3>] = &[Some(Vec3::Z), None];
+    assert_eq!(relief(Style::Normal, [floor, curved]).height, 6.0);
+    assert_eq!(relief(Style::Normal, [floor, NO_FACES]).height, 6.0);
     // A T-bone bites the longer wall (along x), or the shorter one.
-    let long = relief(Style::TBone { side: Side::Longer }, [&floor, &top]);
+    let long = relief(Style::TBone { side: Side::Longer }, [floor, top]);
     assert!(close3(long.base, Vec3::new(R, 0.0, 4.0)));
     let short = relief(
         Style::TBone {
             side: Side::Shorter,
         },
-        [&floor, &top],
+        [floor, top],
     );
     assert!(close3(short.base, Vec3::new(0.0, R, 4.0)));
     // The same edge on a box's outside, and between two faces of one plane.
     let outside = [face(Vec3::Y, false), face(Vec3::X, true)];
     assert_eq!(
-        edge_relief(&up, &outside, [&floor, &top], &opts(Style::Normal)).unwrap(),
+        edge_relief(&up, &outside, [floor, top], &opts(Style::Normal)).unwrap(),
         EdgeRelief::Skipped(Skip::Convex)
     );
     let flat = [face(Vec3::Y, true), face(Vec3::Y, false)];
     assert_eq!(
-        edge_relief(&up, &flat, [&floor, &top], &opts(Style::Normal)).unwrap(),
+        edge_relief(&up, &flat, [floor, top], &opts(Style::Normal)).unwrap(),
         EdgeRelief::Smooth
     );
     // A corner more open than the largest angle.
@@ -567,7 +570,7 @@ fn an_edge_relief_reads_its_walls_and_ends() {
         max_angle: 1.0,
     };
     assert!(matches!(
-        edge_relief(&up, &walls, [&floor, &top], &narrow).unwrap(),
+        edge_relief(&up, &walls, [floor, top], &narrow).unwrap(),
         EdgeRelief::Skipped(Skip::TooOpen { .. })
     ));
 }
