@@ -228,6 +228,24 @@ pub struct FabSheetInfo {
     pub engrave_lines: Option<Vec<Vec<[f64; 2]>>>,
 }
 
+/// A part too big for the sheet: the details of `sheets_error` when the parts could not be packed
+/// for that reason.
+#[derive(Clone, Debug, Serialize, JsonSchema)]
+pub struct FabDoesNotFit {
+    /// The part's name.
+    pub part: String,
+    /// The part's width in its own frame, as the machine cuts it (mm).
+    pub width_mm: f64,
+    /// The part's height in its own frame, as the machine cuts it (mm).
+    pub height_mm: f64,
+    /// The sheet's width (mm).
+    pub sheet_width_mm: f64,
+    /// The sheet's height (mm).
+    pub sheet_height_mm: f64,
+    /// The least distance kept from the sheet's edge (mm).
+    pub margin_mm: f64,
+}
+
 /// What `fab.slice` returns.
 #[derive(Clone, Debug, Serialize, JsonSchema)]
 pub struct FabSliceResult {
@@ -250,6 +268,9 @@ pub struct FabSliceResult {
     /// Why the parts could not be packed (a part bigger than the sheet), when they could not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sheets_error: Option<String>,
+    /// With `sheets_error`, when a part is bigger than the sheet allows: that part and the sheet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub does_not_fit: Option<FabDoesNotFit>,
     /// In the warn parameter-check mode: what the call's parameters got wrong.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub param_warnings: Vec<String>,
