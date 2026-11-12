@@ -94,6 +94,7 @@ decal	false
 delete	false
 delete_face	false
 dimension	false
+dogbone	false
 display	false
 dots	false
 draft	false
