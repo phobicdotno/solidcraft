@@ -261,7 +261,7 @@ pub(super) fn with_refs(name: &str, mut v: Value) -> Value {
     let tool = json!({"body": "B", "point": o});
     let extra = match name {
         "extrude" | "extrude_thin" | "revolve" | "sweep" | "sweep_options" | "pipe" | "coil" | "thicken" => json!({"targets": ["B"]}),
-        "fillet_constant" | "fillet_chord" | "fillet_curvature" | "fillet_variable" | "fillet_spline" | "chamfer" | "dogbone" | "shell" | "draft"
+        "fillet_constant" | "fillet_chord" | "fillet_curvature" | "fillet_variable" | "fillet_spline" | "chamfer" | "shell" | "draft"
         | "offset_face" | "delete_face" | "replace_face" | "sheet_flange" | "sheet_hem" | "sheet_perforate" | "sheet_path" | "sheet_unfold"
         | "boss" | "lip" | "snap_fit" | "rest" | "surface_offset" => {
             json!({"body": "B"})
@@ -278,6 +278,7 @@ pub(super) fn with_refs(name: &str, mut v: Value) -> Value {
         "emboss" => json!({"face": {"body": "B", "at": o}, "targets": ["B"]}),
         "sheet_fold" => json!({"sketch": 7, "body": "B"}),
         "patch" => json!({"sketch": 8, "body": "B"}),
+        "dogbone" => json!({"body": "B"}),
         _ => json!({}),
     };
     if let (Some(o), Some(e)) = (v.as_object_mut(), extra.as_object()) {

@@ -4,9 +4,10 @@ use serde_json::{Value, json};
 use std::f64::consts::{FRAC_PI_2, PI};
 
 use solidcore_record::Vec3;
+use solidcraft_doc::dogbone::MAX_LENGTH;
 use solidcraft_doc::{FacePick, FeatureKind};
 
-use crate::Session;
+use crate::{EngineError, Session};
 
 fn run(s: &mut Session, id: &str, p: Value) -> Value {
     match s.execute(id, &p) {
@@ -216,7 +217,7 @@ fn the_reliefs_follow_a_diameter_parameter() {
     assert!(rel(volume(&mut s), POCKETED - 4.0 * normal_relief(1.5, 6.0)) < 1e-7);
     run(&mut s, "parameters.change", json!({"name": "bit", "expression": "6 mm"}));
     assert!(rel(volume(&mut s), POCKETED - 4.0 * normal_relief(3.0, 6.0)) < 1e-7, "{}", volume(&mut s));
-    // The pocket grows: the reliefs follow its corners.
+    // Back to 3 mm, then Edit Feature doubles it.
     run(&mut s, "parameters.change", json!({"name": "bit", "expression": "3 mm"}));
     // Edit Feature redefines it with the dialog's parameters (timeline.redefine).
     run(
@@ -248,6 +249,26 @@ fn the_reliefs_follow_the_pocket_when_it_moves() {
 }
 
 #[test]
+fn the_reliefs_of_picked_edges_follow_the_pocket_when_it_moves() {
+    // As above with the four corner edges picked: the pocket widens from 20 to 24, and the two
+    // corner edges at x = 30 move to x = 34.
+    let mut s = Session::default();
+    run(&mut s, "parameters.add", json!({"name": "w", "expression": "20 mm"}));
+    run(&mut s, "solid.box", json!({"length": 40, "width": 30, "height": 10, "body_name": "Plate"}));
+    run(&mut s, "solid.box", json!({"length": "w", "width": 14, "height": 7, "corner": [10, 8, 4], "operation": "cut"}));
+    let out = run(&mut s, "solid.dogbone", json!({"edges": CORNERS, "diameter": 3}));
+    assert_eq!(out["relieved"], 4, "{out}");
+    let id = out["feature"].as_u64().unwrap();
+    run(&mut s, "parameters.change", json!({"name": "w", "expression": "24 mm"}));
+    let report = s.model.result(id).and_then(|r| r.state.dogbone_report(id)).cloned().unwrap();
+    let mut xs: Vec<f64> = report.relieved.iter().map(|v| v.x).collect();
+    xs.sort_by(f64::total_cmp);
+    assert_eq!(xs, [10.0, 10.0, 34.0, 34.0], "{report:?}");
+    let want = PLATE - 24.0 * 14.0 * 6.0 - 4.0 * normal_relief(1.5, 6.0);
+    assert!(rel(volume(&mut s), want) < 1e-7, "{} vs {want}", volume(&mut s));
+}
+
+#[test]
 fn undo_takes_the_reliefs_away_and_a_saved_design_keeps_them() {
     let mut s = pocketed();
     run(
@@ -269,11 +290,9 @@ fn undo_takes_the_reliefs_away_and_a_saved_design_keeps_them() {
     assert!(rel(volume(&mut back), relieved) < 1e-9);
     let kinds = |s: &Session| s.doc.features.iter().map(|f| f.kind.clone()).collect::<Vec<_>>();
     assert_eq!(kinds(&back), kinds(&s));
-    let saved = std::fs::read_to_string(&path).unwrap_or_default();
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(saved.contains("\"dogbone\""), "the design names the feature kind");
     let _ = std::fs::remove_dir_all(&dir);
-    if !saved.is_empty() {
-        assert!(saved.contains("\"dogbone\""), "the design names the feature kind");
-    }
 }
 
 #[test]
@@ -356,6 +375,20 @@ fn hostile_parameters_are_refused_and_change_nothing() {
     ];
     for p in bad {
         assert!(s.execute("solid.dogbone", &p).is_err(), "{p}");
+        assert_eq!(s.doc.features.len(), features, "{p}");
+    }
+    // A diameter or a gap past the largest one (100 m) is a bad parameter that names the range.
+    let range = format!("at most {MAX_LENGTH} mm");
+    for p in [
+        json!({"edges": CORNERS, "diameter": 1e9}),
+        json!({"edges": CORNERS, "diameter": MAX_LENGTH + 1.0}),
+        json!({"edges": CORNERS, "diameter": 3, "style": "minimal", "gap": 1e9}),
+        json!({"edges": CORNERS, "diameter": 3, "style": "minimal", "gap": MAX_LENGTH + 1.0}),
+    ] {
+        match s.execute("solid.dogbone", &p) {
+            Err(EngineError::BadParams { msg, .. }) => assert!(msg.contains(&range), "{p}: {msg}"),
+            other => panic!("{p}: {other:?}"),
+        }
         assert_eq!(s.doc.features.len(), features, "{p}");
     }
     assert!(rel(volume(&mut s), POCKETED) < 1e-9);
