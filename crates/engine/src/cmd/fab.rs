@@ -170,7 +170,9 @@ fn refusal(cmd: &str, e: &FlatError, res: Option<&FabResult>, ss: &SheetSettings
                 ),
             )
         }
-        FlatError::Kernel(_) | FlatError::Section { .. } => EngineError::Other(format!("{cmd}: slicing the body failed: {e}")),
+        FlatError::Kernel(_) | FlatError::Section { .. } | FlatError::OpenSection { .. } => {
+            EngineError::Other(format!("{cmd}: slicing the body failed: {e}"))
+        }
     }
 }
 

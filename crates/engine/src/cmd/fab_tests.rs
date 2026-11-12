@@ -195,6 +195,16 @@ fn a_part_bigger_than_the_sheet_is_named() {
 }
 
 #[test]
+fn a_section_that_does_not_close_fails_naming_the_plane_and_the_gap() {
+    use solidcraft_kernel::fab::{Axis, FlatError};
+    let (_, ss) = super::settings(&Default::default());
+    let e = super::refusal("fab.slice", &FlatError::OpenSection { axis: Axis::Z, at: 12.5, gap: 0.25 }, None, &ss);
+    assert!(matches!(e, crate::EngineError::Other(_)), "{e}");
+    let e = e.to_string();
+    assert!(e.starts_with("fab.slice: slicing the body failed: ") && e.contains("Z = 12.5 mm") && e.contains("0.250 mm"), "{e}");
+}
+
+#[test]
 fn an_empty_design_has_nothing_to_slice() {
     let mut s = Session::default();
     let e = s.execute("fab.slice", &json!({})).unwrap_err().to_string();
