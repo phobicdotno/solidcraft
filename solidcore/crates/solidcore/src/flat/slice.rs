@@ -228,7 +228,7 @@ pub enum Warning {
         /// The slice.
         part: String,
     },
-    /// The gaps between rod slices are no whole number of sheets: spacers are not exact.
+    /// The gaps between rod slices are not a whole number of sheets: spacers are not exact.
     GapsNotWhole {
         /// The sheet thickness (mm).
         thickness: f64,
