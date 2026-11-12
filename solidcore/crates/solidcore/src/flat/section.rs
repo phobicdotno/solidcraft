@@ -1,9 +1,10 @@
 //! The section of a B-rep by a plane square to a model axis, as a polygonal [`Region`].
 //!
 //! The kernel's exact planar section curves
-//! ([`create_planar_section_curves`]) are sampled within the caller's chord tolerance with the
-//! curves' own evaluation, projected to the slice's `(u, v)` of [`Axis::directions`], chained
-//! end to end into closed loops and filled even-odd, so a loop inside another is a hole.
+//! ([`create_planar_section_curves`]) are sampled within the caller's chord tolerance by the
+//! kernel's tessellation ([`Curve::tessellate`]), projected to the slice's `(u, v)` of
+//! [`Axis::directions`], chained end to end into closed loops and filled even-odd, so a loop
+//! inside another is a hole.
 //!
 //! A plane through a vertex of the body, or lying in one of its planar faces, has no
 //! well-defined section (a face in the plane is material on one side only; a sphere's pole
@@ -15,6 +16,7 @@
 use crate::curve::curve::Curve;
 use crate::geom::vector3d::{Point3, Vec3};
 use crate::kernel::Kernel;
+use crate::nurbs::b_spline_curve::Tessellation;
 use crate::query::api_queries::brep_bounding_box;
 use crate::topology::brep::p1 as brep1;
 use crate::topology::brep::planar_section::{
@@ -40,13 +42,6 @@ pub const VERTEX_CLEARANCE: f64 = 0.002;
 
 /// The smallest and largest chord tolerances (mm) a section accepts.
 const CHORD_RANGE: (f64, f64) = (1e-4, 10.0);
-
-/// The deepest a curve span is halved while sampling (2^24 pieces per starting span).
-const MAX_DEPTH: u32 = 24;
-
-/// The spans a curve is first cut into before halving: enough that a closed curve (a circle
-/// from 0 to 2π) has interior samples to test against.
-const FIRST_SPANS: usize = 8;
 
 fn chord_ok(chord: f64) -> bool {
     chord.is_finite() && (CHORD_RANGE.0..=CHORD_RANGE.1).contains(&chord)
@@ -180,51 +175,16 @@ fn section_at(
     chord: f64,
     centre: [f64; 3],
 ) -> FlatResult<Region> {
-    if !at.is_finite() || at.abs() >= 1e6 {
-        return Err(FlatError::Setting("section position"));
-    }
-    if !chord_ok(chord) {
-        return Err(FlatError::Setting("chord"));
-    }
-    let (n, u, v) = axis.directions();
-    let mut point = if centre.iter().all(|x| x.is_finite() && x.abs() < 1e6) {
-        centre
-    } else {
-        [0.0; 3]
-    };
-    if let Some(p) = point.get_mut(axis.index()) {
-        *p = at;
-    }
-    let opts = PlanarSectionOptions {
-        // the section curves themselves stay well inside the outline's chord budget
-        approx_tol_3d: Some((chord * 0.1).max(1e-6)),
-        outputs: SectionOutputs {
-            curves_3d: true,
-            ..SectionOutputs::default()
-        },
-        ..PlanarSectionOptions::default()
-    };
-    let failed = move |error| FlatError::Section { axis, at, error };
-    let made = create_planar_section_curves(
-        k,
-        b,
-        Point3::new(point[0], point[1], point[2]),
-        Vec3::new(n[0], n[1], n[2]),
-        &opts,
-    )
-    .map_err(failed)?;
-    let curves = made.curves_3d.unwrap_or_default();
-    if curves.len() > MAX_SECTION_CURVES {
-        return Err(FlatError::TooBig("section curves"));
-    }
+    let curves = section_curves(k, b, axis, at, chord, centre)?;
+    let (_, u, v) = axis.directions();
     let mut budget = MAX_SECTION_SAMPLES;
     let mut pieces: Vec<Ring> = Vec::new();
     for c in &curves {
-        let pts = sample_curve(k, c, chord, &mut budget).map_err(|e| match e {
-            FlatError::Kernel(error) => failed(error),
-            other => other,
-        })?;
-        let flat: Ring = pts
+        let samples =
+            sample_curve(k, c, chord).map_err(|error| FlatError::Section { axis, at, error })?;
+        take(&mut budget, samples.points.len())?;
+        let flat: Ring = samples
+            .points
             .iter()
             .map(|p| [dot(*p, u), dot(*p, v)])
             .filter(|q| q.iter().all(|x| x.is_finite()))
@@ -243,6 +203,55 @@ fn section_at(
     Ok(region::from_rings(&rings, true))
 }
 
+/// The kernel's exact section curves of body `b` by the plane `axis = at` through `centre`
+/// moved onto the plane (see [`section_at`]), traced to a tenth of `chord`.
+fn section_curves(
+    k: &Kernel,
+    b: &mut Brep,
+    axis: Axis,
+    at: f64,
+    chord: f64,
+    centre: [f64; 3],
+) -> FlatResult<Vec<Curve>> {
+    if !at.is_finite() || at.abs() >= 1e6 {
+        return Err(FlatError::Setting("section position"));
+    }
+    if !chord_ok(chord) {
+        return Err(FlatError::Setting("chord"));
+    }
+    let (n, _, _) = axis.directions();
+    let mut point = if centre.iter().all(|x| x.is_finite() && x.abs() < 1e6) {
+        centre
+    } else {
+        [0.0; 3]
+    };
+    if let Some(p) = point.get_mut(axis.index()) {
+        *p = at;
+    }
+    let opts = PlanarSectionOptions {
+        // the section curves themselves stay well inside the outline's chord budget
+        approx_tol_3d: Some((chord * 0.1).max(1e-6)),
+        outputs: SectionOutputs {
+            curves_3d: true,
+            ..SectionOutputs::default()
+        },
+        ..PlanarSectionOptions::default()
+    };
+    let made = create_planar_section_curves(
+        k,
+        b,
+        Point3::new(point[0], point[1], point[2]),
+        Vec3::new(n[0], n[1], n[2]),
+        &opts,
+    )
+    .map_err(|error| FlatError::Section { axis, at, error })?;
+    let curves = made.curves_3d.unwrap_or_default();
+    if curves.len() > MAX_SECTION_CURVES {
+        return Err(FlatError::TooBig("section curves"));
+    }
+    Ok(curves)
+}
+
 fn dot(p: Point3, d: [f64; 3]) -> f64 {
     p.x * d[0] + p.y * d[1] + p.z * d[2]
 }
@@ -253,30 +262,15 @@ fn join_tolerance(chord: f64) -> f64 {
     chord.clamp(1e-3, 0.05)
 }
 
-/// The points of a curve from its start to its end, each chord within `chord` of the curve
-/// (checked at the quarter points of every span), taken from `budget`.
-fn sample_curve(k: &Kernel, c: &Curve, chord: f64, budget: &mut usize) -> FlatResult<Vec<Point3>> {
+/// The samples of a curve from its start to its end, each chord within `chord` of the curve:
+/// the kernel's tessellation with its chord height test alone (the angle test off, no least
+/// number of segments). A curve without a finite, non-empty interval has none.
+fn sample_curve(k: &Kernel, c: &Curve, chord: f64) -> crate::Result<Tessellation> {
     let ivl = c.natural_interval();
-    let (t0, t1) = (ivl.min(), ivl.max());
-    if !(t0.is_finite() && t1.is_finite() && t1 > t0) {
-        return Ok(Vec::new());
+    if !(ivl.min().is_finite() && ivl.max().is_finite() && ivl.max() > ivl.min()) {
+        return Ok(Tessellation::default());
     }
-    let Ok(first) = c.evaluate_point(k, t0) else {
-        // a kind without a point evaluator (a composite curve): the kernel's tessellation
-        let tess = c.tessellate(k, &ivl, chord, 10.0, 1)?;
-        take(budget, tess.points.len())?;
-        return Ok(tess.points);
-    };
-    take(budget, 1)?;
-    let mut out = vec![first];
-    let mut a = (t0, first);
-    for i in 1..=FIRST_SPANS {
-        let tb = t0 + (t1 - t0) * i as f64 / FIRST_SPANS as f64;
-        let b = (tb, c.evaluate_point(k, tb)?);
-        refine(k, c, a, b, chord, 0, budget, &mut out)?;
-        a = b;
-    }
-    Ok(out)
+    c.tessellate(k, &ivl, chord, 0.0, 1)
 }
 
 /// Takes `n` samples from the budget.
@@ -285,49 +279,6 @@ fn take(budget: &mut usize, n: usize) -> FlatResult<()> {
         .checked_sub(n)
         .ok_or(FlatError::TooBig("section sample points"))?;
     Ok(())
-}
-
-/// Appends the samples of the span from `a` to `b` (`a` already out, `b` last), halving it
-/// while its middle or a quarter point strays more than `chord` from the chord.
-fn refine(
-    k: &Kernel,
-    c: &Curve,
-    a: (f64, Point3),
-    b: (f64, Point3),
-    chord: f64,
-    depth: u32,
-    budget: &mut usize,
-    out: &mut Vec<Point3>,
-) -> FlatResult<()> {
-    let tm = 0.5 * (a.0 + b.0);
-    let pm = c.evaluate_point(k, tm)?;
-    let mut far = off_chord(pm, a.1, b.1);
-    if far <= chord {
-        for f in [0.25, 0.75] {
-            let p = c.evaluate_point(k, a.0 + (b.0 - a.0) * f)?;
-            far = far.max(off_chord(p, a.1, b.1));
-        }
-    }
-    if far > chord && depth < MAX_DEPTH && tm > a.0 && tm < b.0 {
-        refine(k, c, a, (tm, pm), chord, depth + 1, budget, out)?;
-        refine(k, c, (tm, pm), b, chord, depth + 1, budget, out)?;
-    } else {
-        take(budget, 1)?;
-        out.push(b.1);
-    }
-    Ok(())
-}
-
-/// The distance from `p` to the segment `a`-`b`.
-fn off_chord(p: Point3, a: Point3, b: Point3) -> f64 {
-    let ab = b - a;
-    let len2 = ab.dot(ab);
-    let t = if len2 > 0.0 {
-        ((p - a).dot(ab) / len2).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    p.distance(a + ab * t)
 }
 
 /// The polyline without points that repeat their predecessor.
@@ -429,6 +380,7 @@ fn nearest_end(pieces: &[Ring], p: P2, tol: f64) -> Option<(usize, bool)> {
 mod tests {
     use super::*;
     use crate::boolean::api_brep::boolean_difference;
+    use crate::curve::curve::CurveKind;
     use crate::primitive::api_primitives::{
         create_box, create_cylinder, create_sphere, create_torus,
     };
@@ -683,24 +635,58 @@ mod tests {
         assert!(drop_repeats(Vec::new()).is_empty());
     }
 
+    /// The distance from `p` to the segment `a`-`b`.
+    fn to_segment(p: Point3, a: Point3, b: Point3) -> f64 {
+        let ab = b - a;
+        let t = ((p - a).dot(ab) / ab.dot(ab)).clamp(0.0, 1.0);
+        p.distance(a + ab * t)
+    }
+
+    /// The farthest curve `c` strays from the chords between its samples `s`: each span
+    /// between two samples measured at 64 points of the curve.
+    fn largest_chord_error(k: &Kernel, c: &Curve, s: &Tessellation) -> f64 {
+        let mut far: f64 = 0.0;
+        for (t, p) in s.parameters.windows(2).zip(s.points.windows(2)) {
+            for i in 1..64 {
+                let q = c
+                    .evaluate_point(k, t[0] + (t[1] - t[0]) * f64::from(i) / 64.0)
+                    .unwrap();
+                far = far.max(to_segment(q, p[0], p[1]));
+            }
+        }
+        far
+    }
+
     #[test]
-    fn off_chord_measures_to_the_segment() {
-        let a = Point3::ZERO;
-        let b = Point3::new(10.0, 0.0, 0.0);
-        assert!(close(
-            off_chord(Point3::new(5.0, 3.0, 0.0), a, b),
-            3.0,
-            1e-12
-        ));
-        assert!(close(
-            off_chord(Point3::new(-4.0, 3.0, 0.0), a, b),
-            5.0,
-            1e-12
-        ));
-        assert!(close(
-            off_chord(Point3::new(0.0, 2.0, 0.0), a, a),
-            2.0,
-            1e-12
-        ));
+    fn samples_of_circles_and_splines_stay_within_the_chord() {
+        let mut k = Kernel::default();
+        // across a cylinder's axis the section is a circle; a torus cut parallel to its axis,
+        // 30 mm from it, gives spiric curves, which the kernel traces as B-splines
+        let mut cylinder = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
+        let mut torus = create_torus(&mut k, Point3::ZERO, 40.0, 15.0).unwrap();
+        for (b, axis, at, spline) in [
+            (&mut cylinder, Axis::Z, 15.0, false),
+            (&mut torus, Axis::X, 30.0, true),
+        ] {
+            let curves = section_curves(&k, b, axis, at, CHORD, [0.0; 3]).unwrap();
+            assert!(!curves.is_empty(), "{axis:?} = {at}");
+            if spline {
+                assert!(
+                    curves
+                        .iter()
+                        .all(|c| matches!(c.kind(), CurveKind::BSpline(_))),
+                    "{axis:?} = {at}"
+                );
+            }
+            for c in &curves {
+                let s = sample_curve(&k, c, CHORD).unwrap();
+                assert!(s.points.len() > 8, "{axis:?} = {at}: {}", s.points.len());
+                let far = largest_chord_error(&k, c, &s);
+                assert!(
+                    far <= CHORD,
+                    "{axis:?} = {at}: {far} over the chord {CHORD}"
+                );
+            }
+        }
     }
 }
