@@ -129,6 +129,17 @@ is started on its own first, SolidCraft waits up to ten seconds for it to be rea
 file. If the version can't be read, the command decides: the `slic3r-app-launcher` launcher is
 treated as PrusaSlicer 3, and any other entry is left as it is.
 
+**Insert → Slice for Laser / CNC** (`fab.slice`) cuts a solid body into flat parts to cut from
+sheet wood or acrylic and build the model back up: stacked layers glued on top of each other
+(with dowel holes and the next layer's place engraved), slices on a rod with spacer rings,
+upright slices with tabs in a base or back plate, or a waffle grid of slices slotted into each
+other. The window shows the parts assembled in the viewport as you change the settings; **Sheets**
+shows them packed onto sheets of the size you give, cuts in one colour and engraving in another.
+The parts allow for a laser's kerf, or get reliefs in their inside corners for a CNC router's
+bit. **Export sheets…** writes each sheet as DXF (layers CUT, ENGRAVE and SHEET) and SVG
+(`fab.export_sheets`). Neither command changes the design: run it again after a change and the
+parts follow the body.
+
 Closed meshes can be rebuilt as solids with the `mesh.convert` command (command palette,
 scripts and the control channel): a mesh with a constant cross-section as analytic planar and
 cylindrical faces, any other closed mesh as the faceted solid its triangles describe.

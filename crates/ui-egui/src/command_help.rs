@@ -61,6 +61,7 @@ pub const DOCUMENTED: &[&str] = &[
     "edit.checkpoint",
     "edit.restore_checkpoint",
     "explode.create",
+    "fab.slice",
     "face.delete",
     "file.insert_mesh",
     "file.insert_step",

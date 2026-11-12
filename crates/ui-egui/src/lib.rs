@@ -44,6 +44,7 @@ pub mod dialogs_assembly;
 pub mod dialogs_coupling;
 pub mod dialogs_dogbone;
 pub mod dialogs_end_cap;
+pub mod dialogs_fab;
 pub mod dialogs_frame;
 mod dialogs_hole;
 pub mod dialogs_insert_drawing;
@@ -842,6 +843,8 @@ pub struct SolveApp {
     fit_waits: u32,
     /// The sheet metal flat pattern's own pan and zoom.
     pub flat_view: dialogs_sheet::FlatView,
+    /// Slice for Laser / CNC: its slicings and exports, and the settings it had last.
+    pub fab: dialogs_fab::FabRun,
     /// The start page.
     pub home: home::HomeState,
     /// The 3D mouse: which device, its reading, and the calibration window.
@@ -1038,6 +1041,7 @@ impl SolveApp {
             pending_fit: None,
             fit_waits: 0,
             flat_view: Default::default(),
+            fab: Default::default(),
             embedded: false,
             embed_editor: false,
             home: home::HomeState::default(),

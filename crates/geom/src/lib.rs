@@ -37,6 +37,7 @@ pub mod network;
 pub mod paper;
 pub mod pixel_grid;
 mod plane;
+pub mod plate;
 mod profile;
 pub mod section;
 pub mod simplify;
