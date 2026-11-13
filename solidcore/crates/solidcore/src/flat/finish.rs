@@ -38,7 +38,9 @@ pub struct SheetSettings {
     pub width: f64,
     /// Sheet height (mm).
     pub height: f64,
-    /// The least distance between parts (mm).
+    /// The least distance between the paths the machine follows round two parts (mm): for a
+    /// laser between the burnt outlines, for a router between the bit's paths, so the parts
+    /// themselves end up the bit's diameter further apart.
     pub gap: f64,
     /// The least distance from the sheet's edge (mm).
     pub margin: f64,
@@ -438,7 +440,10 @@ fn check(ss: &SheetSettings) -> FlatResult<()> {
 
 /// Every part (every copy) finished and packed onto as few sheets as it takes, turning parts by
 /// 90° where that packs better. Each sheet holds its parts' cut rings (outline and holes) and
-/// engraving in sheet coordinates, and their names in the order placed.
+/// engraving in sheet coordinates, and their names in the order placed. `gap` is the least
+/// distance between the paths the machine follows round two parts: a laser's outline already is
+/// its path, and a router's bit runs outside the part's edge, so router parts end up the bit's
+/// diameter further apart.
 ///
 /// # Errors
 /// [`FlatError::Setting`] for sheet settings out of range (naming the field: `width`,
@@ -460,7 +465,11 @@ pub fn layout(res: &FabResult, ss: &SheetSettings) -> FlatResult<Vec<Sheet>> {
         }
     }
     let outlines: Vec<Ring> = pieces.iter().map(|(_, f)| f.shape.outer.clone()).collect();
-    let places = super::nest::nest(&outlines, ss.width, ss.height, ss.gap, ss.margin, true)
+    let apart = match ss.machine {
+        Machine::Laser { .. } => ss.gap,
+        Machine::Router { tool_diameter } => ss.gap + tool_diameter,
+    };
+    let places = super::nest::nest(&outlines, ss.width, ss.height, apart, ss.margin, true)
         .map_err(|e| match e {
             FlatError::DoesNotFit {
                 part,
@@ -1198,6 +1207,57 @@ mod tests {
     }
 
     // --- layout ---
+
+    #[test]
+    fn layout_keeps_router_parts_a_bit_apart() {
+        let squares = result(vec![
+            part("A", PartKind::Slice, solid(sq(0.0, 0.0, 10.0, 10.0, true))),
+            part("B", PartKind::Slice, solid(sq(0.0, 0.0, 10.0, 10.0, true))),
+        ]);
+        // the distance between the two parts' outlines on their sheet: for squares on one
+        // sheet, the larger of the gaps between their bounds across x and across y
+        let apart = |machine: Machine| {
+            let ss = SheetSettings {
+                width: 100.0,
+                height: 100.0,
+                gap: 3.0,
+                margin: 5.0,
+                machine,
+                labels: false,
+                label_height: 5.0,
+            };
+            let sheets = layout(&squares, &ss).unwrap();
+            assert_eq!(sheets.len(), 1);
+            let bounds: Vec<[f64; 4]> = sheets[0]
+                .cuts
+                .iter()
+                .map(|r| {
+                    r.iter()
+                        .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {
+                            [
+                                b[0].min(p[0]),
+                                b[1].min(p[1]),
+                                b[2].max(p[0]),
+                                b[3].max(p[1]),
+                            ]
+                        })
+                })
+                .collect();
+            let [a, b] = bounds[..] else {
+                panic!("{bounds:?}")
+            };
+            let dx = (b[0] - a[2]).max(a[0] - b[2]);
+            let dy = (b[1] - a[3]).max(a[1] - b[3]);
+            dx.max(dy)
+        };
+        // a 6 mm bit runs 3 mm outside each part: 3 mm between its paths is 9 between the parts
+        let router = apart(Machine::Router { tool_diameter: 6.0 });
+        assert!(router >= 9.0 - 1e-6, "{router}");
+        // a laser's outline is its path
+        let laser = apart(Machine::Laser { kerf: 0.0 });
+        assert!(laser >= 3.0 - 1e-6, "{laser}");
+        assert!(router > laser, "{router} {laser}");
+    }
 
     fn result(parts: Vec<FabPart>) -> FabResult {
         FabResult {
