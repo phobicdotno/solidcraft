@@ -6,8 +6,12 @@
 //! end to end into closed loops, simplified and filled even-odd, so a loop inside another is a
 //! hole. Tracing, sampling and simplifying each take a share of the caller's chord tolerance,
 //! the shares adding up to all of it, so the outline stays within it of the exact section.
-//! Curves whose ends do not join into closed loops leave the section incomplete, and it is
-//! refused ([`FlatError::OpenSection`]).
+//! Where two curves meet, the end of one is dropped for the start of the next when they are
+//! within the join tolerance (the chord held to 1e-3..=0.05 mm), which may add that much
+//! there: the hard bound is the chord plus the join tolerance. The kernel's curves meet far
+//! closer than that (about 1e-13 mm in the tests), so in practice the outline is within the
+//! chord. Curves whose ends do not join into closed loops leave the section incomplete, and it
+//! is refused ([`FlatError::OpenSection`]).
 //!
 //! A plane through a vertex of the body, or lying in one of its planar faces, has no
 //! well-defined section (a face in the plane is material on one side only; a sphere's pole
@@ -52,7 +56,8 @@ const CHORD_RANGE: (f64, f64) = (1e-4, 10.0);
 // traces the section curves within `TRACE_SHARE` of it, the samples' chords stay within
 // `SAMPLE_SHARE` of the traced curves, and simplifying keeps the outline within
 // `SIMPLIFY_SHARE` of the samples. Their errors add up, so the shares add up to 1 and the
-// outline stays within the chord of the exact section.
+// outline stays within the chord of the exact section, except where curve ends are joined
+// (see `join_tolerance`, which is not a share).
 const TRACE_SHARE: f64 = 0.1;
 const SAMPLE_SHARE: f64 = 0.85;
 const SIMPLIFY_SHARE: f64 = 0.05;
@@ -73,7 +78,8 @@ pub struct BrepSection<'a> {
 }
 
 impl<'a> BrepSection<'a> {
-    /// The sectioner of body `b`, its outlines within `chord` mm of the exact section.
+    /// The sectioner of body `b`, its outlines within `chord` mm of the exact section, plus the
+    /// join tolerance where section curves meet (see the module docs).
     ///
     /// The bounds are the kernel's tight bounding box; a body without geometry has bounds that
     /// are not finite, which [`super::slice::make`] reads as nothing to cut.
@@ -157,8 +163,8 @@ impl Sectioner for BrepSection<'_> {
 }
 
 /// The material of body `b` on the plane `axis = at` exactly (no nudging), in the slice
-/// coordinates of [`Axis::directions`], its outlines within `chord` mm of the exact section. The
-/// plane's point is `centre` moved onto the plane (the body's middle, so the kernel's bounded
+/// coordinates of [`Axis::directions`], its outlines within `chord` mm of the exact section
+/// (plus [`join_tolerance`] where curves meet). The plane's point is `centre` moved onto the plane (the body's middle, so the kernel's bounded
 /// plane sits over the body however far it is from the origin).
 ///
 /// # Errors
@@ -276,8 +282,14 @@ fn dot(p: Point3, d: [f64; 3]) -> f64 {
     p.x * d[0] + p.y * d[1] + p.z * d[2]
 }
 
-/// How far apart (mm) two curve ends may be and still join: the kernel's section curves of
-/// neighbouring faces meet within its tolerances, far below any useful chord.
+/// How far apart (mm) two curve ends may be and still join, and how close two polylines must
+/// be to be copies: the chord, held to `1e-3..=0.05` mm. A join drops one of the two ends, so
+/// where curves meet the outline may be off by this much on top of the chord: up to ten
+/// chords at the smallest chord (1e-4 mm), less than the chord above 0.05 mm. It is not a
+/// share of the chord: the kernel's section curves of neighbouring faces meet far closer
+/// (about 1e-13 mm in the flat and app `fab` tests), and a tolerance as tight as a share would
+/// refuse sections whose curves meet only within the kernel's tolerances, and keep both
+/// copies of a seam curve, whose middle samples lie up to about one chord apart along it.
 fn join_tolerance(chord: f64) -> f64 {
     chord.clamp(1e-3, 0.05)
 }
