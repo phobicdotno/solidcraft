@@ -826,7 +826,7 @@ pub fn overlay(app: &mut SolveApp, painter: &egui::Painter, rect: Rect, d: &Dial
         painter.text(rect.center(), Align2::CENTER_CENTER, app.tr("fab.no_sheets"), FontId::proportional(t.font_heading), t.text_dim);
         return true;
     }
-    // Sheet i sits below sheet i - 1, a tenth of its height apart, room for its caption above.
+    // Sheet i sits below sheet i - 1, 0.12 of its height apart, room for its caption above.
     let pitch = h * 1.12;
     let base = |i: usize| -(i as f64) * pitch;
     let lo = (0.0, base(sheets.len() - 1));

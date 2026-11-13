@@ -345,7 +345,8 @@ features are computed.
 The width of material a laser beam or a router bit removes along a cut.
 
 Slice for Laser / CNC grows each flat part by half the kerf for a laser, so the part comes out at
-its size; for a router it uses the bit's diameter instead.
+its size. For a router the outline stays at its size and its inside corners get reliefs for the
+bit's diameter.
 
 - **In SolidCraft:** the `kerf` parameter of `fab.slice` and `fab.export_sheets`; Slice for Laser
   / CNC's Kerf row.
