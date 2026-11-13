@@ -57,8 +57,9 @@ pub static COMMANDS: &[CommandSpec] = &[
         .params(concat!(
             "the settings: ",
             settings_doc!(),
-            "; path? (without extension: writes <path>-sheet1.dxf, <path>-sheet1.svg, ...; without it the texts are returned); \
-             formats?: [dxf, svg] (default both) → files [{sheet, format, path|text}]: only cut and engrave paths, no sheet outline: DXF layers CUT (red) and ENGRAVE (blue); SVG cuts stroked red, engraving blue",
+            "; path? (without extension: writes <path>-sheet1.dxf, <path>-sheet1.svg, ... and removes that path's \
+             older sheet files numbered past the last sheet; without it the texts are returned); \
+             formats?: [dxf, svg] (default both) → files [{sheet, format, path|text}], removed: only cut and engrave paths, no sheet outline: DXF layers CUT (red) and ENGRAVE (blue); SVG cuts stroked red, engraving blue",
         )),
 ];
 
@@ -350,10 +351,7 @@ fn export_sheets(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let mut files = Vec::new();
     for (sheet, format, text) in made {
-        let ext = match format {
-            FabFormat::Dxf => "dxf",
-            FabFormat::Svg => "svg",
-        };
+        let ext = extension(format);
         match &path {
             Some(stem) => {
                 let file = format!("{stem}-sheet{sheet}.{ext}");
@@ -365,15 +363,46 @@ fn export_sheets(s: &mut Session, p: &Value) -> Result<Value> {
             None => files.push(FabFile { sheet, format, path: None, text: Some(text) }),
         }
     }
+    let removed = match &path {
+        Some(stem) => remove_older_sheets(stem, &formats, sheets.len()).map_err(|e| EngineError::Other(format!("{cmd}: {e}")))?,
+        None => 0,
+    };
     let reply = FabExportResult {
         body: name,
         count: res.count(),
         sheets: sheets.len(),
         files,
+        removed,
         warnings: res.warnings.iter().map(warning).collect(),
         param_warnings: Vec::new(),
     };
     serde_json::to_value(reply).map_err(|e| EngineError::Other(e.to_string()))
+}
+
+/// A sheet file's extension.
+fn extension(format: FabFormat) -> &'static str {
+    match format {
+        FabFormat::Dxf => "dxf",
+        FabFormat::Svg => "svg",
+    }
+}
+
+/// Removes `<stem>-sheet{n}.<ext>` of each format for n past `last`, up to the first number with
+/// no file: only names this command's own scheme makes, so an earlier, longer export to the same
+/// path leaves no sheet behind. Returns how many it removed.
+fn remove_older_sheets(stem: &str, formats: &[FabFormat], last: usize) -> std::io::Result<usize> {
+    let mut removed = 0;
+    for &f in formats {
+        let ext = extension(f);
+        for n in last + 1.. {
+            match std::fs::remove_file(format!("{stem}-sheet{n}.{ext}")) {
+                Ok(()) => removed += 1,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => break,
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    Ok(removed)
 }
 
 #[cfg(test)]

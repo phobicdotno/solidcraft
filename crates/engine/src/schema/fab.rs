@@ -163,8 +163,9 @@ pub struct FabExportParams {
     #[serde(flatten)]
     pub settings: FabSettingsParams,
     /// Where to write, as a path without extension: one file per sheet and
-    /// format, `<path>-sheet1.dxf`, `<path>-sheet1.svg`, ... Without it the files' texts are
-    /// returned.
+    /// format, `<path>-sheet1.dxf`, `<path>-sheet1.svg`, ... Files of an earlier export to the
+    /// same path and format numbered past the new last sheet are removed. Without it the files'
+    /// texts are returned.
     #[serde(default)]
     pub path: Option<String>,
     /// The formats to write, `dxf` and/or `svg`. Default: both.
@@ -313,6 +314,9 @@ pub struct FabExportResult {
     pub sheets: usize,
     /// The files, sheet by sheet.
     pub files: Vec<FabFile>,
+    /// Files of an earlier export to the same path, numbered past the last sheet, that were
+    /// removed.
+    pub removed: usize,
     /// What to know about the parts.
     pub warnings: Vec<FabWarning>,
     /// In the warn parameter-check mode: what the call's parameters got wrong.

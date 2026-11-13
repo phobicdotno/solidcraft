@@ -292,6 +292,32 @@ fn exported_sheets_read_back_with_cuts_red_and_engraving_blue() {
 }
 
 #[test]
+fn exporting_fewer_sheets_to_the_same_path_removes_the_older_ones_past_them() {
+    let mut s = block();
+    let dir = std::env::temp_dir().join(format!("solidcraft-fab-again-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let stem = dir.join("block").to_string_lossy().to_string();
+    // a 200 x 100 sheet holds one 100 x 60 layer, so each layer is a sheet
+    let export = |s: &mut Session, thickness: f64| {
+        run(s, "fab.export_sheets", json!({"thickness": thickness, "path": stem, "sheet_width": 200, "sheet_height": 100, "dowels": 0}))
+    };
+    let first = export(&mut s, 10.0);
+    let second = export(&mut s, 20.0);
+    let (n1, n2) = (first["sheets"].as_u64().unwrap(), second["sheets"].as_u64().unwrap());
+    assert!(n1 > n2 && n2 > 0, "{n1} then {n2} sheets");
+    assert_eq!(first["removed"], 0);
+    // both formats of every sheet past the new last one
+    assert_eq!(second["removed"].as_u64().unwrap(), 2 * (n1 - n2));
+    for ext in ["dxf", "svg"] {
+        assert!(std::path::Path::new(&format!("{stem}-sheet{n2}.{ext}")).exists());
+        for n in n2 + 1..=n1 {
+            assert!(!std::path::Path::new(&format!("{stem}-sheet{n}.{ext}")).exists(), "sheet {n}.{ext} is left");
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn without_a_path_the_texts_come_back_and_a_router_cuts_true_size() {
     let mut s = block();
     let r = run(
