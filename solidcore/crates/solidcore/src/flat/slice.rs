@@ -2283,7 +2283,10 @@ mod tests {
             let one = std::slice::from_ref(&part.shape);
             for line in &part.engrave {
                 for &p in line {
-                    assert!(region::contains(one, p), "{name}: guide point {p:?} is off it");
+                    assert!(
+                        region::contains(one, p),
+                        "{name}: guide point {p:?} is off it"
+                    );
                 }
             }
         }
