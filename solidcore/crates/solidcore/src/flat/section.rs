@@ -955,8 +955,8 @@ mod tests {
 
     #[test]
     #[ignore = "kernel: a plane tangent to a torus along its top circle returns that circle \
-                as one closed section curve, and a plane up to 1e-6 mm under it one circle only \
-                circle; either encloses the full disc (notes/tangent-planes.md)"]
+                as one closed section curve, and a plane up to 1e-6 mm under it one circle, not \
+                two; either encloses the full disc"]
     fn a_plane_on_the_top_circle_of_a_torus_gives_nothing() {
         // on the top circle: nothing; just under it, the two circles of radius
         // 40 +- sqrt(2 * 15 * e) (3.5e-3 mm apart at e = 1e-7): a ring under 1 mm^2 or nothing,
@@ -972,7 +972,7 @@ mod tests {
 
     #[test]
     #[ignore = "kernel: a plane tangent to a cylinder along a side line returns that line as \
-                an open section curve, so the section is refused as open (notes/tangent-planes.md)"]
+                an open section curve, so the section is refused as open"]
     fn a_plane_along_the_side_of_a_cylinder_gives_nothing() {
         let mut k = Kernel::default();
         let mut b = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
