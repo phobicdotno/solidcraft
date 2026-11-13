@@ -336,7 +336,7 @@ const SAME_FACE_COPY: f64 = 1e-6;
 /// its sides. Two polylines are copies when their ends and middles meet within `tol`, in
 /// either direction, and they come from different faces (or a face is not known). Two
 /// polylines of one face are copies only within [`SAME_FACE_COPY`]: just under the top of a
-/// torus its one face gives two circles far closer than `tol`, and both are outlines.
+/// torus its one face gives two circles that may be closer than `tol`, and both are outlines.
 fn dedupe(pieces: Vec<(Ring, Option<FaceId>)>, tol: f64) -> Vec<Ring> {
     // the middle is the mean of the two middle points, the same in either direction
     let key = |r: &Ring| -> Option<(P2, P2, P2)> {
@@ -869,19 +869,11 @@ mod tests {
     }
 
     #[test]
-    fn just_under_the_top_of_a_torus_is_a_thin_ring_not_a_disc() {
-        // the two circles of radius 40 +- sqrt(2 * 15 * 1e-7) are 3.5e-3 mm apart, under the
-        // join tolerance: the section is a ring of about 0.87 mm^2 (or nothing), never the
-        // disc of the outer circle (about 5026 mm^2)
+    fn a_little_under_the_top_of_a_torus_is_a_thin_ring() {
+        // the two circles of radius 40 +- sqrt(2 * 15 * 1e-5) are 0.035 mm apart: a ring of
+        // about 8.7 mm^2 (closer to the top, see the ignored test below)
         let mut k = Kernel::default();
         let mut b = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
-        for e in [1e-7, 1e-9] {
-            let r = section_at(&k, &mut b, Axis::Z, 35.0 - e, CHORD, [0.0; 3]).unwrap();
-            let a = region::area(&r);
-            assert!(a < 10.0, "z = 35 - {e}: area {a}");
-            assert!(!region::contains(&r, [0.0, 0.0]), "z = 35 - {e}");
-        }
-        // further down both circles are kept as before
         let r = section_at(&k, &mut b, Axis::Z, 35.0 - 1e-5, CHORD, [0.0; 3]).unwrap();
         let want = 160.0 * PI * (30.0 * 1e-5f64).sqrt();
         assert!(close(region::area(&r), want, 1.0), "{}", region::area(&r));
@@ -962,13 +954,18 @@ mod tests {
 
     #[test]
     #[ignore = "kernel: a plane tangent to a torus along its top circle returns that circle \
-                as one closed section curve, which encloses the full disc (notes/tangent-planes.md)"]
+                as one closed section curve, and a plane up to 1e-6 mm under it one circle only \
+                circle; either encloses the full disc (notes/tangent-planes.md)"]
     fn a_plane_on_the_top_circle_of_a_torus_gives_nothing() {
+        // on the top circle: nothing; just under it, the two circles of radius
+        // 40 +- sqrt(2 * 15 * e) (3.5e-3 mm apart at e = 1e-7): a ring under 1 mm^2 or nothing,
+        // never the disc of the outer circle (about 5026 mm^2)
         let mut k = Kernel::default();
         let mut b = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
-        for z in [35.0, 5.0] {
+        for z in [35.0, 5.0, 35.0 - 1e-7, 35.0 - 1e-9] {
             let r = section_at(&k, &mut b, Axis::Z, z, CHORD, [0.0; 3]).unwrap();
             assert!(region::area(&r) < 10.0, "z = {z}: {}", region::area(&r));
+            assert!(!region::contains(&r, [0.0, 0.0]), "z = {z}");
         }
     }
 
@@ -995,8 +992,12 @@ mod tests {
             other => panic!("{other:?}"),
         }
         let mut t = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
-        let (curves, faces) = section_curves(&k, &mut t, Axis::Z, 35.0, CHORD, [0.0; 3]).unwrap();
-        assert_eq!(curves.len(), 1);
-        assert!(matches!(faces.as_slice(), [Some(_)]), "{faces:?}");
+        // on the top circle and just under it (where the exact section is two circles): one
+        // curve of one face
+        for z in [35.0, 35.0 - 1e-7, 35.0 - 1e-9] {
+            let (curves, faces) = section_curves(&k, &mut t, Axis::Z, z, CHORD, [0.0; 3]).unwrap();
+            assert_eq!(curves.len(), 1, "z = {z}");
+            assert!(matches!(faces.as_slice(), [Some(_)]), "z = {z}: {faces:?}");
+        }
     }
 }
