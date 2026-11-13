@@ -84,9 +84,9 @@ fn a_pockets_four_corners_lose_four_derived_reliefs() {
     assert!(rel(volume(&mut s), want) < 1e-7, "{} vs {want}", volume(&mut s));
     // Each corner edge becomes a half cylinder between two straight edges on the walls, with an
     // arc on the top and one on the floor: one face, three edges and two vertices more each. A
-    // relief tool's seam lies along its +x side, so the half cylinders facing +x (at the corners
-    // with x = 30, centred on directions 315° and 45°) are split there in two: one face, three
-    // edges (the seam and the other halves of the arcs) and two vertices more each.
+    // relief cylinder's seam lies along its +x side, so the half cylinders facing +x (at the
+    // corners with x = 30, centred on directions 315° and 45°) are split there in two: one face,
+    // three edges (the seam and the other halves of the arcs) and two vertices more each.
     assert_eq!(counts(&s, "Plate"), [11 + 4 + 2, 24 + 12 + 6, 16 + 8 + 4]);
 }
 
