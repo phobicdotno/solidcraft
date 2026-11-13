@@ -498,7 +498,7 @@ pub fn layout(res: &FabResult, ss: &SheetSettings) -> FlatResult<Vec<Sheet>> {
 
 #[cfg(test)]
 mod tests {
-    use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2};
+    use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, SQRT_2};
 
     use super::super::region::{area, contains, ring_area, shape_area};
     use super::super::slice::{Axis, FabPart, Mark};
@@ -709,6 +709,20 @@ mod tests {
             .fold(f64::NEG_INFINITY, f64::max)
     }
 
+    /// How far the polygon engine can move a point of `relieve_corners`' result towards a
+    /// relief's centre (mm), for a shape whose bounds hold the relief circles too. iOverlay
+    /// scales the operands of each boolean by `2^(29 − ⌈log2 h⌉)`, `h` half the larger side of
+    /// their bounds (i_float's conservative 29-bit budget for `i32`), and rounds every point to
+    /// that grid: half a step on each axis, `step / √2` at most. A point of the result is a
+    /// rounded point of the material, or a rounded crossing of a relief polygon's rounded side,
+    /// and each relief polygon side lies outside its circle, so a point lands at most two
+    /// roundings, `step · √2`, inside the circle.
+    fn grid_slack(shape: &Shape) -> f64 {
+        let b = region::ring_bounds(shape.rings()).unwrap();
+        let h = (b[2] - b[0]).max(b[3] - b[1]) / 2.0;
+        SQRT_2 * 2f64.powi(h.log2().ceil() as i32 - 29)
+    }
+
     /// The most a relief of radius `r` in a square inside corner cuts past its circle (mm²): its
     /// polygon lies within the circle of radius `r + RELIEF_CHORD`, so what it cuts past the
     /// circle lies in the ring between the two, on the material's side of one of the corner's
@@ -785,7 +799,7 @@ mod tests {
             }
             let centre = [c[0] + d * v[0], c[1] + d * v[1]];
             let inside = inside_circle(&out, centre, r);
-            assert!(inside <= 1e-9, "{c:?}: {inside}");
+            assert!(inside <= grid_slack(&plate), "{c:?}: {inside}");
         }
         // the outline's corners are outside corners: untouched
         assert!(close(ring_area(&out.outer), 3600.0, 1e-9));
@@ -822,7 +836,7 @@ mod tests {
             let d = r * FRAC_1_SQRT_2;
             let centre = [c[0] + d * v[0], c[1] + d * v[1]];
             let inside = inside_circle(&out, centre, r);
-            assert!(inside <= 1e-9, "{c:?}: {inside}");
+            assert!(inside <= grid_slack(&s), "{c:?}: {inside}");
         }
         // the bottom edge between the corners is gone; the material out of the circles' reach
         // stays
@@ -856,7 +870,7 @@ mod tests {
         let out = relieve_corners(&l, 2.0 * r).unwrap();
         assert!(out.holes.is_empty(), "{:?}", out.holes.len());
         let inside = inside_circle(&out, [10.0 + d, 10.0 + d], r);
-        assert!(inside <= 1e-9, "{inside}");
+        assert!(inside <= grid_slack(&l), "{inside}");
         // the wall where the circle and the hole meet is cut through; the hole's far side and
         // the rest of the wall stay
         assert!(contains(&material(&l), [9.7, 10.0 + d]));
@@ -905,7 +919,7 @@ mod tests {
 
     #[test]
     fn label_turns_upright_about_its_corner() {
-        let s = label("A12", [10.0, 20.0], 5.0, std::f64::consts::FRAC_PI_2);
+        let s = label("A12", [10.0, 20.0], 5.0, FRAC_PI_2);
         let b = line_bounds(&s).unwrap();
         assert!(close(b[2], 10.0, 1e-9) && close(b[1], 20.0, 1e-9));
         assert!(close(b[2] - b[0], 5.0, 1e-9));
