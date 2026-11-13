@@ -15,7 +15,7 @@
 //!
 //! A plane through a vertex of the body, or lying in one of its planar faces, has no
 //! well-defined section (a face in the plane is material on one side only; a sphere's pole
-//! gives a curve of zero length). Like the mesh section it replaces, [`BrepSection`] then moves
+//! gives a curve of zero length). [`BrepSection`] then moves
 //! the plane by [`NUDGES`] (at most 0.023 mm, far less than a laser kerf) to the first offset
 //! that keeps [`VERTEX_CLEARANCE`] from every vertex. A planar face bounded only by edges
 //! without vertices is not detected; such faces are rare in practice.
@@ -43,14 +43,27 @@ pub const MAX_SECTION_CURVES: usize = 20_000;
 /// The most sample points one section may have, all curves together.
 pub const MAX_SECTION_SAMPLES: usize = 2_000_000;
 
-/// The plane offsets (mm) tried in order when the plane comes too close to a vertex.
-pub const NUDGES: [f64; 5] = [0.0, 0.01, -0.01, 0.023, -0.023];
+/// The least and the most (mm) [`join_tolerance`] allows curve ends to be apart.
+const JOIN_RANGE: (f64, f64) = (1e-3, 0.05);
 
-/// How far (mm) a section plane keeps from every vertex of the body when it can.
-pub const VERTEX_CLEARANCE: f64 = 0.002;
+/// How far (mm) a section plane keeps from every vertex of the body when it can: twice the
+/// least join tolerance, so the section curves of the faces about a vertex, which pass within
+/// the plane's distance of it, do not come within a join of each other there.
+pub const VERTEX_CLEARANCE: f64 = 2.0 * JOIN_RANGE.0;
+
+/// The first nudge (mm), 0.01: five clearances, so a plane on a vertex clears it with room to
+/// spare, and the clearance about each nudge stays apart from the plane's own.
+const NUDGE_NEAR: f64 = 5.0 * VERTEX_CLEARANCE;
+
+/// The second nudge (mm), 0.023: not a multiple of the first, so vertices on a grid of the
+/// first's pitch do not block both, and still a small part of a laser kerf (0.1 to 0.2 mm).
+const NUDGE_FAR: f64 = 11.5 * VERTEX_CLEARANCE;
+
+/// The plane offsets (mm) tried in order when the plane comes too close to a vertex.
+pub const NUDGES: [f64; 5] = [0.0, NUDGE_NEAR, -NUDGE_NEAR, NUDGE_FAR, -NUDGE_FAR];
 
 /// The smallest and largest chord tolerances (mm) a section accepts.
-const CHORD_RANGE: (f64, f64) = (1e-4, 10.0);
+pub(crate) const CHORD_RANGE: (f64, f64) = (1e-4, 10.0);
 
 // The three steps from the exact section to an outline share the chord tolerance: the kernel
 // traces the section curves within `TRACE_SHARE` of it, the samples' chords stay within
@@ -63,7 +76,7 @@ const SAMPLE_SHARE: f64 = 0.85;
 const SIMPLIFY_SHARE: f64 = 0.05;
 
 /// [`CHORD_RANGE`] in words, for [`FlatError::Setting`].
-const CHORD_LIMIT: &str = "0.0001 to 10 mm";
+pub(crate) const CHORD_LIMIT: &str = "0.0001 to 10 mm";
 
 fn chord_ok(chord: f64) -> bool {
     chord.is_finite() && (CHORD_RANGE.0..=CHORD_RANGE.1).contains(&chord)
@@ -128,9 +141,9 @@ impl<'a> BrepSection<'a> {
     }
 
     /// The plane position actually sectioned for `axis = at`: `at` moved by the first of
-    /// [`NUDGES`] that keeps [`VERTEX_CLEARANCE`] from every vertex (the last one tried when
-    /// none does). A plane strictly inside the body's bounds is never nudged out of them, so a
-    /// slice just below a sphere's pole stays a small disc.
+    /// [`NUDGES`] that keeps [`VERTEX_CLEARANCE`] from every vertex (when none does, the one
+    /// farthest from every vertex). A plane strictly inside the body's bounds is never nudged
+    /// out of them, so a slice just below a sphere's pole stays a small disc.
     #[must_use]
     pub fn nudged(&self, axis: Axis, at: f64) -> f64 {
         let i = axis.index();
@@ -140,19 +153,24 @@ impl<'a> BrepSection<'a> {
         );
         let inside = |c: f64| lo < c && c < hi;
         let keep_inside = inside(at);
-        let clear = |c: f64| {
-            (!keep_inside || inside(c))
-                && self
-                    .vertices
-                    .iter()
-                    .all(|p| p.get(i).is_none_or(|x| (x - c).abs() >= VERTEX_CLEARANCE))
+        // the distance to the nearest vertex along the axis
+        let room = |c: f64| {
+            self.vertices
+                .iter()
+                .filter_map(|p| p.get(i))
+                .fold(f64::INFINITY, |m, x| m.min((x - c).abs()))
         };
-        let last = NUDGES.last().copied().unwrap_or(0.0);
-        NUDGES
-            .iter()
-            .map(|d| at + d)
-            .find(|&c| clear(c))
-            .unwrap_or(at + last)
+        // `at` itself (the nudge 0) is always among them
+        let tried = || {
+            NUDGES
+                .iter()
+                .map(move |d| at + d)
+                .filter(move |&c| !keep_inside || inside(c))
+        };
+        tried()
+            .find(|&c| room(c) >= VERTEX_CLEARANCE)
+            .or_else(|| tried().max_by(|a, b| room(*a).total_cmp(&room(*b))))
+            .unwrap_or(at)
     }
 }
 
@@ -161,10 +179,15 @@ impl Sectioner for BrepSection<'_> {
         self.bounds
     }
 
-    /// The section at the nudged position ([`BrepSection::nudged`]).
+    /// The section at the nudged position ([`BrepSection::nudged`]); its errors name the
+    /// position asked for.
     fn section(&mut self, axis: Axis, at: f64) -> FlatResult<Region> {
-        let at = self.nudged(axis, at);
-        section_at(self.k, self.b, axis, at, self.chord, self.centre)
+        let plane = self.nudged(axis, at);
+        section_at(self.k, self.b, axis, plane, self.chord, self.centre).map_err(|e| match e {
+            FlatError::Section { axis, error, .. } => FlatError::Section { axis, at, error },
+            FlatError::OpenSection { axis, gap, .. } => FlatError::OpenSection { axis, at, gap },
+            other => other,
+        })
     }
 }
 
@@ -203,7 +226,7 @@ fn section_at(
             .collect();
         let flat = drop_repeats(flat);
         if flat.len() >= 2 {
-            pieces.push((flat, faces.get(i).copied().flatten()));
+            pieces.push((flat, faces.get(i).copied()));
         }
     }
     let rings = outlines(pieces, axis, at, chord)?;
@@ -233,7 +256,12 @@ fn outlines(
 
 /// The kernel's exact section curves of body `b` by the plane `axis = at` through `centre`
 /// moved onto the plane (see [`section_at`]), traced within `TRACE_SHARE` of `chord`, and the
-/// face each curve lies on (all `None` when the kernel does not give one face per curve).
+/// face each curve lies on.
+///
+/// # Errors
+/// [`FlatError::Setting`] for `at` not finite or a kilometre or more from the origin, or a chord
+/// out of range; [`FlatError::Section`] for the kernel's errors and for a face list that is not
+/// one face per curve; [`FlatError::TooBig`] past [`MAX_SECTION_CURVES`].
 fn section_curves(
     k: &Kernel,
     b: &mut Brep,
@@ -241,8 +269,8 @@ fn section_curves(
     at: f64,
     chord: f64,
     centre: [f64; 3],
-) -> FlatResult<(Vec<Curve>, Vec<Option<FaceId>>)> {
-    if !at.is_finite() || at.abs() >= 1e6 {
+) -> FlatResult<(Vec<Curve>, Vec<FaceId>)> {
+    if !(at.is_finite() && at.abs() < region::KM) {
         return Err(FlatError::Setting {
             name: "section position",
             limit: "finite and less than 1000000 mm from the origin",
@@ -255,11 +283,7 @@ fn section_curves(
         });
     }
     let (n, _, _) = axis.directions();
-    let mut point = if centre.iter().all(|x| x.is_finite() && x.abs() < 1e6) {
-        centre
-    } else {
-        [0.0; 3]
-    };
+    let mut point = centre;
     if let Some(p) = point.get_mut(axis.index()) {
         *p = at;
     }
@@ -284,11 +308,27 @@ fn section_curves(
     if curves.len() > MAX_SECTION_CURVES {
         return Err(FlatError::TooBig("section curves"));
     }
-    let faces = match made.faces {
-        Some(f) if f.len() == curves.len() => f.into_iter().map(Some).collect(),
-        _ => vec![None; curves.len()],
-    };
+    let faces = face_per_curve(made.faces, curves.len()).map_err(|error| FlatError::Section {
+        axis,
+        at,
+        error,
+    })?;
     Ok((curves, faces))
+}
+
+/// The kernel's face list of a section, one face per curve.
+///
+/// # Errors
+/// [`crate::SolidError::PortInvariant`] for a list that is missing or not one face per curve:
+/// without the faces, [`dedupe`] cannot tell a seam's copies from two near outlines of one face.
+fn face_per_curve(faces: Option<Vec<FaceId>>, curves: usize) -> crate::Result<Vec<FaceId>> {
+    match faces {
+        Some(f) if f.len() == curves => Ok(f),
+        _ => Err(crate::SolidError::PortInvariant {
+            operation: "flat section",
+            reason: "the kernel's section did not give one face per curve",
+        }),
+    }
 }
 
 fn dot(p: Point3, d: [f64; 3]) -> f64 {
@@ -304,7 +344,7 @@ fn dot(p: Point3, d: [f64; 3]) -> f64 {
 /// refuse sections whose curves meet only within the kernel's tolerances, and keep both
 /// copies of a seam curve, whose middle samples lie up to about one chord apart along it.
 fn join_tolerance(chord: f64) -> f64 {
-    chord.clamp(1e-3, 0.05)
+    chord.clamp(JOIN_RANGE.0, JOIN_RANGE.1)
 }
 
 /// The samples of a curve from its start to its end, each chord within `chord` of the curve:
@@ -876,12 +916,47 @@ mod tests {
         for (axis, at) in [(Axis::Z, 20.0), (Axis::X, 0.0), (Axis::Z, 34.0)] {
             let (curves, faces) = section_curves(&k, &mut b, axis, at, CHORD, [0.0; 3]).unwrap();
             assert!(!curves.is_empty());
-            assert_eq!(faces.len(), curves.len());
+            assert_eq!(faces.len(), curves.len(), "{axis:?} {at}: {faces:?}");
+        }
+    }
+
+    #[test]
+    fn a_face_list_that_is_not_one_per_curve_is_refused() {
+        let mut k = Kernel::default();
+        let b = create_box(&mut k, Point3::ZERO, 1.0, 1.0, 1.0).unwrap();
+        let f = brep1::faces(&b, None).unwrap();
+        assert_eq!(
+            face_per_curve(Some(f[..2].to_vec()), 2),
+            Ok(f[..2].to_vec())
+        );
+        for (faces, curves) in [
+            (None, 2),
+            (Some(f[..1].to_vec()), 2),
+            (Some(f[..3].to_vec()), 2),
+        ] {
             assert!(
-                faces.iter().all(Option::is_some),
-                "{axis:?} {at}: {faces:?}"
+                matches!(
+                    face_per_curve(faces, curves),
+                    Err(crate::SolidError::PortInvariant { .. })
+                ),
+                "{curves}"
             );
         }
+    }
+
+    #[test]
+    fn a_blocked_plane_inside_the_bounds_stays_inside() {
+        let mut k = Kernel::default();
+        let mut b = create_sphere(&mut k, Point3::ZERO, 10.0).unwrap();
+        let mut s = BrepSection::new(&k, &mut b, CHORD).unwrap();
+        // vertices on every nudge of -9.99 that stays inside: none is clear, and the one
+        // farthest from a vertex among those inside is taken, not the last nudge (-10.013)
+        s.vertices = [-9.99, -9.98, -9.967].map(|z| [0.0, 0.0, z]).to_vec();
+        let c = s.nudged(Axis::Z, -9.99);
+        assert!(s.bounds[2] < c && c < s.bounds[5], "{c} {:?}", s.bounds);
+        // one blocked: the next nudge that clears
+        s.vertices = vec![[0.0, 0.0, -9.99]];
+        assert!(close(s.nudged(Axis::Z, -9.99), -9.98, 1e-12));
     }
 
     #[test]
@@ -1013,7 +1088,7 @@ mod tests {
         for z in [35.0, 35.0 - 1e-7, 35.0 - 1e-9] {
             let (curves, faces) = section_curves(&k, &mut t, Axis::Z, z, CHORD, [0.0; 3]).unwrap();
             assert_eq!(curves.len(), 1, "z = {z}");
-            assert!(matches!(faces.as_slice(), [Some(_)]), "z = {z}: {faces:?}");
+            assert_eq!(faces.len(), 1, "z = {z}: {faces:?}");
         }
     }
 }

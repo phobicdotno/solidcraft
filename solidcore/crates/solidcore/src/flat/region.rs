@@ -24,7 +24,9 @@ pub enum Join {
     /// Sharp: the offset edges meet where they cross. Corners sharper than
     /// [`MITER_MIN_ANGLE`] are cut square instead of spiking out.
     Miter,
-    /// Round: an arc of the offset's radius, within `chord` (mm) of the true arc.
+    /// Round: an arc of the offset's radius, within `chord` (mm) of the true arc while
+    /// `|delta|` is at most `chord / 1.2337e-4`. Past that, iOverlay's floor on the arc step
+    /// (0.01 pi, 200 sides to a full turn) leaves each chord up to `|delta| * 1.2337e-4` off.
     Round {
         /// The largest distance between the arc and its chords (mm); an offset with one that is
         /// not a positive finite number is empty.
@@ -36,9 +38,14 @@ pub enum Join {
 /// four times the offset from the corner.
 pub const MITER_MIN_ANGLE: f64 = 0.505;
 
-/// Finite and at most a kilometre from the origin.
+/// A kilometre (mm): the farthest from the origin a flat coordinate, an offset or a section
+/// plane may be. iOverlay scales each operation to its operands' bounds on a 32-bit grid, so a
+/// kilometre still resolves to well under a micrometre.
+pub(crate) const KM: f64 = 1e6;
+
+/// Finite and less than a kilometre from the origin.
 fn sane(p: P2) -> bool {
-    p.iter().all(|c| c.is_finite() && c.abs() < 1e6)
+    p.iter().all(|c| c.is_finite() && c.abs() < KM)
 }
 
 fn ring_ok(r: &Ring) -> bool {
@@ -136,26 +143,26 @@ pub fn normalize(r: &[Shape]) -> Region {
 /// The region grown by `delta` mm (shrunk for a negative `delta`): outlines move out, holes
 /// shrink. Mitred corners stay sharp, so a square stays a square of side `+ 2 delta`; round
 /// corners follow arcs of radius `|delta|`. A region shrunk to nothing is empty, and so is the
-/// offset by a `delta` that is not finite or with a round join whose `chord` is not a positive
-/// finite number.
+/// offset by a `delta` that is not finite or not under a kilometre ([`KM`], as for the rings'
+/// points), or with a round join whose `chord` is not a positive finite number.
 #[must_use]
 pub fn offset(r: &[Shape], delta: f64, join: Join) -> Region {
     let shapes = shapes_of(r);
-    let bad_chord = matches!(join, Join::Round { chord } if !(chord.is_finite() && chord > 0.0));
-    if shapes.is_empty() || !delta.is_finite() || bad_chord {
+    if shapes.is_empty() || !(delta.is_finite() && delta.abs() < KM) {
         return Vec::new();
-    }
-    if delta == 0.0 {
-        return normalize(r);
     }
     let lj = match join {
         Join::Miter => LineJoin::Miter(MITER_MIN_ANGLE),
-        Join::Round { chord } => {
-            // iOverlay's arc step is the largest segment length over the radius: a chord within
-            // `chord` of a radius-`|delta|` arc spans at most 2 sqrt(2 chord / |delta|) radians
-            LineJoin::Round((8.0 * chord / delta.abs()).sqrt().clamp(0.005, 1.0))
-        }
+        // iOverlay's round join steps the arc by at most the angle given: the step of a circle
+        // of `n` sides, each within `chord` of it (iOverlay holds the step to 0.01 pi..0.25 pi)
+        Join::Round { chord } => match circle_sides(delta.abs(), chord) {
+            Some(n) => LineJoin::Round(std::f64::consts::TAU / n as f64),
+            None => return Vec::new(),
+        },
     };
+    if delta == 0.0 {
+        return normalize(r);
+    }
     let style = OutlineStyle::new(delta).line_join(lj);
     region_of(shapes.outline(&style))
 }
@@ -671,8 +678,6 @@ mod tests {
         assert!(close(ring_area(&s), ring_area(&ring), 1e-12));
     }
 
-    // --- found by mutation testing (cargo mutants on this file) ---
-
     #[test]
     fn a_rectangle_needs_width_and_height() {
         assert!(rect(0.0, 0.0, 0.0, 5.0).is_empty());
@@ -694,28 +699,51 @@ mod tests {
         }
     }
 
-    #[test]
-    fn round_offset_corners_stay_within_the_chord() {
-        // the corner arcs of a square grown by 5 with round joins: every chord's midpoint lies
-        // within 0.002 of the arc (radius 5 about the square's corner)
-        let g = offset(&square(0.0, 0.0, 10.0), 5.0, Join::Round { chord: 0.001 });
+    /// The farthest a chord of the round corners of a 10 mm square grown by `delta` lies inside
+    /// its arc, and how many chords lie on the arcs.
+    fn round_corner_gap(delta: f64, chord: f64) -> (f64, usize) {
+        let g = offset(&square(0.0, 0.0, 10.0), delta, Join::Round { chord });
         let pts = &g[0].outer;
         let n = pts.len();
-        let mut on_arcs = 0;
+        let (mut worst, mut on_arcs) = (0.0_f64, 0);
         for i in 0..n {
             let (a, b) = (pts[i], pts[(i + 1) % n]);
             for c in [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]] {
                 let da = ((a[0] - c[0]).powi(2) + (a[1] - c[1]).powi(2)).sqrt();
                 let db = ((b[0] - c[0]).powi(2) + (b[1] - c[1]).powi(2)).sqrt();
-                if (da - 5.0).abs() < 1e-3 && (db - 5.0).abs() < 1e-3 {
+                if (da - delta).abs() < 1e-3 && (db - delta).abs() < 1e-3 {
                     let m = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
                     let dm = ((m[0] - c[0]).powi(2) + (m[1] - c[1]).powi(2)).sqrt();
-                    assert!(5.0 - dm < 0.002, "{a:?} {b:?}: {dm}");
+                    worst = worst.max(delta - dm);
                     on_arcs += 1;
                 }
             }
         }
+        (worst, on_arcs)
+    }
+
+    #[test]
+    fn round_offset_corners_stay_within_the_chord() {
+        // radius 5 is under the floor's 0.001 / 1.2337e-4 = 8.1 mm: every chord within 0.001
+        // (and the grid's nanometres)
+        let (gap, on_arcs) = round_corner_gap(5.0, 0.001);
+        assert!(gap <= 0.001 + 1e-6, "{gap}");
         assert!(on_arcs >= 4 * 20, "{on_arcs}");
+        // radius 50 is past it: iOverlay's least step, 0.01 pi, leaves 50 * 1.2337e-4 = 0.0062
+        let (gap, _) = round_corner_gap(50.0, 0.001);
+        assert!(gap > 0.001 && gap <= 50.0 * 1.2337e-4 + 1e-6, "{gap}");
+    }
+
+    #[test]
+    fn an_offset_past_a_kilometre_is_empty() {
+        let sq = square(0.0, 0.0, 1.0);
+        for d in [1e300, -1e300, KM, -KM] {
+            assert!(offset(&sq, d, Join::Miter).is_empty(), "{d}");
+            assert!(
+                offset(&sq, d, Join::Round { chord: 0.01 }).is_empty(),
+                "{d}"
+            );
+        }
     }
 
     #[test]

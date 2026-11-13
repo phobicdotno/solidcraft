@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use super::finish::LABEL_MARGIN;
 use super::region::{self, Join};
+use super::section;
 use super::{FlatError, FlatResult, Region, Ring, Shape, P2};
 
 /// How the model is built back up.
@@ -46,6 +47,17 @@ pub enum Axis {
     /// Z.
     #[default]
     Z,
+}
+
+/// The axis's letter, as in the warnings ("X").
+impl std::fmt::Display for Axis {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Axis::X => "X",
+            Axis::Y => "Y",
+            Axis::Z => "Z",
+        })
+    }
 }
 
 impl Axis {
@@ -271,9 +283,6 @@ pub const MAX_SPACERS: u64 = 100_000;
 /// The most parts one slicing may give.
 pub const MAX_PARTS: usize = 20_000;
 
-/// The most points one section may have.
-pub const MAX_SECTION_POINTS: usize = 2_000_000;
-
 /// The largest size (mm) of a length setting: ten metres.
 const MAX_LENGTH: f64 = 10_000.0;
 
@@ -355,7 +364,7 @@ pub fn validate(s: &FabSettings) -> FlatResult<()> {
         ),
         (
             s.rod_at
-                .is_none_or(|p| p.iter().all(|c| within(*c, -1e6, 1e6))),
+                .is_none_or(|p| p.iter().all(|c| c.abs() < region::KM)),
             "rod_at",
             "within 1000000 mm of the origin on every axis",
         ),
@@ -376,7 +385,11 @@ pub fn validate(s: &FabSettings) -> FlatResult<()> {
             "min_area",
             "0 to 100000000 mm²",
         ),
-        (within(s.chord, 1e-4, 10.0), "chord", "0.0001 to 10 mm"),
+        (
+            within(s.chord, section::CHORD_RANGE.0, section::CHORD_RANGE.1),
+            "chord",
+            section::CHORD_LIMIT,
+        ),
     ];
     if let Some(&(_, name, limit)) = checks.iter().find(|(ok, ..)| !ok) {
         return Err(FlatError::Setting { name, limit });
@@ -478,7 +491,7 @@ pub fn positions(lo: f64, hi: f64, s: &FabSettings, stacked: bool) -> FlatResult
 /// [`FlatError::Setting`] for a setting out of range (see [`validate`]);
 /// [`FlatError::Nothing`] when the model's bounds are not finite or the slices miss it;
 /// [`FlatError::TooBig`] past [`MAX_SLICES`], [`MAX_PARTS`], [`MAX_SPACERS`],
-/// [`MAX_SECTION_POINTS`] or for a model over a kilometre; the sectioner's errors.
+/// [`section::MAX_SECTION_SAMPLES`] or for a model over a kilometre; the sectioner's errors.
 pub fn make(model: &mut dyn Sectioner, s: &FabSettings) -> FlatResult<FabResult> {
     validate(s)?;
     let b = model_bounds(&*model)?;
@@ -511,7 +524,7 @@ fn model_bounds(model: &dyn Sectioner) -> FlatResult<[f64; 6]> {
     if !(b.iter().all(|x| x.is_finite()) && ordered) {
         return Err(FlatError::Nothing);
     }
-    if b.iter().any(|x| x.abs() >= 1e6) {
+    if b.iter().any(|x| x.abs() >= region::KM) {
         return Err(FlatError::TooBig("the model reaches past a kilometre"));
     }
     Ok(b)
@@ -553,7 +566,7 @@ fn slices(
     let mut cuts = Vec::new();
     for &c in cs {
         let raw = model.section(axis, c)?;
-        if region::point_count(&raw) > MAX_SECTION_POINTS {
+        if region::point_count(&raw) > section::MAX_SECTION_SAMPLES {
             return Err(FlatError::TooBig("points in a section"));
         }
         let reg = region::normalize(&raw);

@@ -89,8 +89,9 @@ pub enum FlatError {
     /// More geometry than the budget allows (points, parts, slices).
     #[error("too much geometry: {0}")]
     TooBig(&'static str),
-    /// The kernel failed to section the body by the plane `axis = at`.
-    #[error("the kernel cannot section the body at {axis:?} = {at} mm: {error}")]
+    /// The kernel failed to section the body by the plane `axis = at` (the position asked for,
+    /// before any nudge off a vertex).
+    #[error("the kernel cannot section the body at {axis} = {at:.3} mm: {error}")]
     Section {
         /// The axis the plane is square to.
         axis: slice::Axis,
@@ -101,7 +102,7 @@ pub enum FlatError {
     },
     /// The section of the body by the plane `axis = at` does not close: an outline's ends stay
     /// `gap` mm apart, more than the section curves' ends may be and still join.
-    #[error("the section of the body at {axis:?} = {at} mm does not close: a {gap:.3} mm gap")]
+    #[error("the section of the body at {axis} = {at:.3} mm does not close: a {gap:.3} mm gap")]
     OpenSection {
         /// The axis the plane is square to.
         axis: slice::Axis,
