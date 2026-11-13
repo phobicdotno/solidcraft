@@ -52,7 +52,7 @@ pub use mesh::Mesh;
 pub use mesher::{MAX_ANGLE_BOUNDARY, plan};
 pub use par::guarded;
 pub use plan::{FacePlan, TessPlan};
-pub use plate::{MAX_PLATE_CORNERS, PlateFrame, fill, plate};
+pub use plate::{PlateFrame, fill, plate};
 pub use pole::{AveragedPole, PoleNode, PoleRule};
 pub use spec::{MAX_MESH_MIN_ANGLE, MESH_MIN_ANGLE, MeshSpec, WeldedMesh, mesh};
 pub use stats::{

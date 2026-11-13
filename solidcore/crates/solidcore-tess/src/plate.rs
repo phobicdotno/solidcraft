@@ -10,6 +10,7 @@ use solidcore_record::{Vec2, Vec3};
 
 use crate::mesh::Mesh;
 use crate::mesher::cdt::{Fill, triangulate};
+use crate::ring::Ring;
 use crate::vec::VecExt as _;
 
 /// Where a plate sits: its point `(x, y)` is at `origin + x u + y v`, and the slab reaches
@@ -26,8 +27,11 @@ pub struct PlateFrame {
     pub n: Vec3,
 }
 
-/// Most corners a plate or a fill takes, all rings together; past it nothing is drawn.
-pub const MAX_PLATE_CORNERS: usize = 20_000;
+/// Most corners a plate or a fill takes, all rings together: 20 000 keeps the triangulation
+/// that draws them quick enough for the window's thread (a sheet of nested slices comes to a
+/// few thousand). Past it nothing is filled; a sheet still shows its cut outlines, only the
+/// shading is missing.
+const MAX_PLATE_CORNERS: usize = 20_000;
 
 /// Corners closer than this (mm) are one.
 const SAME: f64 = 1e-9;
@@ -36,7 +40,7 @@ const SAME: f64 = 1e-9;
 /// way round), `frame` places it and `thickness` is the sheet's. Triangles face outwards, each
 /// with its own corners and flat normal; the outline and holes are drawn as edges on both faces.
 /// Empty for a ring with fewer than three corners, a non-finite value, a thickness not above 0
-/// or more than [`MAX_PLATE_CORNERS`] corners.
+/// or more than `MAX_PLATE_CORNERS` (20 000) corners.
 #[must_use]
 pub fn plate(rings: &[Vec<[f64; 2]>], frame: &PlateFrame, thickness: f64) -> Mesh {
     let mut mesh = Mesh::default();
@@ -62,7 +66,7 @@ pub fn plate(rings: &[Vec<[f64; 2]>], frame: &PlateFrame, thickness: f64) -> Mes
         push_facing(&mut mesh, [a - half, b - half, c - half], -n);
     }
     for pts in &loops {
-        for (p, q) in pts.iter().zip(pts.iter().cycle().skip(1)) {
+        for (p, q) in pts.edges() {
             // The material is on the left, so outwards is to the right of p -> q.
             let out = frame.u * (q[1] - p[1]) - frame.v * (q[0] - p[0]);
             let (a, b) = (at(*p), at(*q));
@@ -96,7 +100,7 @@ pub fn fill(rings: &[Vec<[f64; 2]>]) -> Vec<[Vec2; 3]> {
 /// The rings as polygons, the first counter-clockwise and the rest clockwise (so the material of
 /// a part is on the left of every side), repeated corners dropped. `None` for no ring, a ring
 /// with fewer than three corners, a non-finite corner or more than [`MAX_PLATE_CORNERS`] in all.
-fn polygons(rings: &[Vec<[f64; 2]>]) -> Option<Vec<Vec<[f64; 2]>>> {
+fn polygons(rings: &[Vec<[f64; 2]>]) -> Option<Vec<Ring<[f64; 2]>>> {
     if rings.is_empty() || rings.iter().map(Vec::len).sum::<usize>() > MAX_PLATE_CORNERS {
         return None;
     }
@@ -123,23 +127,20 @@ fn polygons(rings: &[Vec<[f64; 2]>]) -> Option<Vec<Vec<[f64; 2]>>> {
         if pts.len() < 3 {
             return None;
         }
-        let area2: f64 = pts
-            .iter()
-            .zip(pts.iter().cycle().skip(1))
-            .map(|(p, q)| p[0] * q[1] - q[0] * p[1])
-            .sum();
-        if (i == 0) != (area2 > 0.0) {
-            pts.reverse();
-        }
-        loops.push(pts);
+        let ring = Ring::new(pts);
+        loops.push(if (i == 0) == (ring.signed_area() > 0.0) {
+            ring
+        } else {
+            ring.iter().rev().copied().collect()
+        });
     }
     Some(loops)
 }
 
 /// The triangles inside the loops by the even-odd rule, as corner points. A side crossing one
 /// already kept is left out rather than drawing nothing.
-fn triangles(loops: &[Vec<[f64; 2]>]) -> Vec<[[f64; 2]; 3]> {
-    let boundary: Vec<[f64; 2]> = loops.iter().flatten().copied().collect();
+fn triangles(loops: &[Ring<[f64; 2]>]) -> Vec<[[f64; 2]; 3]> {
+    let boundary: Vec<[f64; 2]> = loops.iter().flat_map(|l| l.iter()).copied().collect();
     let mut ranges = Vec::with_capacity(loops.len());
     let mut start = 0;
     for l in loops {
