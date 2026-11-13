@@ -639,7 +639,7 @@ share a catalogue entry. Each meaning below gets its own term and, in time, its 
 | | a named set of preferences | *settings profile* | `settings.profile.*`, Preferences › General |
 | Gap | the space a hem leaves | hem gap | the Hem dialog's Gap row |
 | | an open end in the sketch continuity legend | open end | the sketch continuity legend |
-| | the least distance between flat parts on a sheet | part gap | Slice for Laser / CNC's Gap between parts row, `gap` of `fab.slice` |
+| | the least distance between the machine's paths round two flat parts on a sheet | part gap | Slice for Laser / CNC's Gap between parts row, `gap` of `fab.slice` |
 | Clearance | the Clearance command | clearance check | `inspect.clearance` |
 | | a minimum distance field | clearance | the Interference and plastic rules dialogs |
 | | play in the slots and holes of flat parts | slot and hole play | Slice for Laser / CNC, `clearance` of `fab.slice` |
