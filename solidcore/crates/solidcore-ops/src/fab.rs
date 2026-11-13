@@ -16,7 +16,9 @@
 use solidcore::flat::{finish, section, slice};
 
 pub use solidcore::flat::finish::{Machine, Sheet, SheetSettings};
-pub use solidcore::flat::slice::{Axis, FabResult, FabSettings, Frame, PartKind, Style, Warning};
+pub use solidcore::flat::slice::{
+    Axis, FabResult, FabSettings, Frame, PartKind, Style, Warning, MAX_DOWELS, MAX_SLICES,
+};
 pub use solidcore::flat::{FlatError, Shape};
 
 use crate::body::Body;
