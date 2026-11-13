@@ -1288,11 +1288,9 @@ pub fn overlay(app: &mut SolveApp, painter: &egui::Painter, rect: Rect, d: &Dial
     if !app.flat_view.fitted {
         app.flat_view.fit(rect, area, lo, hi);
     }
-    let cam = app.flat_view.cam;
-    let scale = f64::from(rect.height()) / (2.0 * cam.half_height());
-    let ox = f64::from(rect.center().x) - cam.target.x * scale;
-    let oy = f64::from(rect.center().y) + cam.target.y * scale;
-    let to = |p: (f64, f64)| -> Pos2 { pos2((ox + p.0 * scale) as f32, (oy - p.1 * scale) as f32) };
+    let view = app.flat_view.page(rect);
+    let scale = view.scale;
+    let to = |p: (f64, f64)| -> Pos2 { view.at(p.0, p.1) };
     for l in &loops {
         let pts: Vec<Pos2> = l.iter().map(|p| to(*p)).collect();
         if pts.len() >= 3 {
@@ -1356,43 +1354,72 @@ pub fn overlay(app: &mut SolveApp, painter: &egui::Painter, rect: Rect, d: &Dial
         let col = if b["direction"] == "up" { up_col } else { down_col };
         painter.extend(egui::Shape::dashed_line(&[to(a), to(e)], Stroke::new(1.6, col), 8.0, 5.0));
     }
-    // Legend.
-    let mut y = rect.top() + 14.0;
-    painter.text(
-        pos2(rect.left() + 14.0, y),
-        Align2::LEFT_TOP,
-        "FLAT PATTERN",
-        FontId::proportional(solidcraft_theme::Tokens::get().font_button),
-        t.text,
-    );
-    for (label, col) in [("Bend up", up_col), ("Bend down", down_col)] {
-        y += 20.0;
-        painter.line_segment([pos2(rect.left() + 14.0, y + 7.0), pos2(rect.left() + 38.0, y + 7.0)], Stroke::new(2.0, col));
-        painter.text(
-            pos2(rect.left() + 44.0, y),
-            Align2::LEFT_TOP,
-            label,
-            FontId::proportional(solidcraft_theme::Tokens::get().font_body),
-            t.text_dim,
-        );
-    }
+    let mut legend = vec![
+        LegendEntry { label: "Bend up".into(), color: up_col, dotted: false },
+        LegendEntry { label: "Bend down".into(), color: down_col, dotted: false },
+    ];
     if !pockets.is_empty() {
-        y += 20.0;
-        painter.extend(egui::Shape::dashed_line(
-            &[pos2(rect.left() + 14.0, y + 7.0), pos2(rect.left() + 38.0, y + 7.0)],
-            Stroke::new(1.6, t.accent),
-            3.0,
-            3.0,
-        ));
-        painter.text(
-            pos2(rect.left() + 44.0, y),
-            Align2::LEFT_TOP,
-            "Pocket boundary (material remains)",
-            FontId::proportional(solidcraft_theme::Tokens::get().font_body),
-            t.text_dim,
-        );
+        legend.push(LegendEntry { label: "Pocket boundary (material remains)".into(), color: t.accent, dotted: true });
     }
+    flat_legend(painter, rect, "FLAT PATTERN", &legend);
     true
+}
+
+/// One row of a flat view's legend: a short sample of the line, then what it means.
+pub(crate) struct LegendEntry {
+    pub label: String,
+    pub color: Color32,
+    /// The sample is dotted, as a pocket boundary is drawn.
+    pub dotted: bool,
+}
+
+/// A flat view's legend, in screen points: its inset from the viewport's top-left corner, the
+/// pitch of its rows, the sample line's length, the gap from the sample to its label, and how far
+/// the sample sits below its row's top (about the middle of a line of body text).
+const LEGEND_INSET: f32 = 14.0;
+const LEGEND_ROW: f32 = 20.0;
+const LEGEND_SAMPLE: f32 = 24.0;
+const LEGEND_GAP: f32 = 6.0;
+const LEGEND_DROP: f32 = 7.0;
+/// A legend sample's stroke width, solid and dotted, and the dotted one's dash and gap length, in
+/// screen points: a little heavier than the drawing's own lines, so a short sample still reads.
+const LEGEND_STROKE: f32 = 2.0;
+const LEGEND_DOTTED_STROKE: f32 = 1.6;
+const LEGEND_DOT: f32 = 3.0;
+
+/// The legend of a flat view (the flat pattern, and Slice for Laser / CNC's sheets) in the
+/// top-left corner of `rect`: its title, then a row for each entry.
+pub(crate) fn flat_legend(painter: &egui::Painter, rect: Rect, title: &str, entries: &[LegendEntry]) {
+    let t = Tokens::get();
+    let left = rect.left() + LEGEND_INSET;
+    let mut y = rect.top() + LEGEND_INSET;
+    painter.text(pos2(left, y), Align2::LEFT_TOP, title, FontId::proportional(t.font_button), t.text);
+    for entry in entries {
+        y += LEGEND_ROW;
+        let sample = [pos2(left, y + LEGEND_DROP), pos2(left + LEGEND_SAMPLE, y + LEGEND_DROP)];
+        if entry.dotted {
+            painter.extend(egui::Shape::dashed_line(&sample, Stroke::new(LEGEND_DOTTED_STROKE, entry.color), LEGEND_DOT, LEGEND_DOT));
+        } else {
+            painter.line_segment(sample, Stroke::new(LEGEND_STROKE, entry.color));
+        }
+        painter.text(pos2(left + LEGEND_SAMPLE + LEGEND_GAP, y), Align2::LEFT_TOP, &entry.label, FontId::proportional(t.font_body), t.text_dim);
+    }
+}
+
+/// How a flat view maps the flat plane (millimetres, x right, y up) onto the screen.
+#[derive(Clone, Copy)]
+pub(crate) struct Page {
+    /// Screen points per millimetre.
+    pub scale: f64,
+    /// Where the plane's origin lands on the screen.
+    origin: (f64, f64),
+}
+
+impl Page {
+    /// The screen point of the plane point (`x`, `y`).
+    pub(crate) fn at(&self, x: f64, y: f64) -> Pos2 {
+        pos2((self.origin.0 + x * self.scale) as f32, (self.origin.1 - y * self.scale) as f32)
+    }
 }
 
 /// The flat pattern's own 2D view: a top-down orthographic camera over the flat plane (x right,
@@ -1450,6 +1477,14 @@ impl FlatView {
         self.cam.target.z = 0.0;
         self.cam.distance = f64::from(rect.height()) / (2.0 * scale) / 0.4;
         self.fitted = true;
+    }
+
+    /// The page this camera shows over `rect`, the viewport.
+    pub(crate) fn page(&self, rect: Rect) -> Page {
+        let cam = &self.cam;
+        let scale = f64::from(rect.height()) / (2.0 * cam.half_height());
+        let origin = (f64::from(rect.center().x) - cam.target.x * scale, f64::from(rect.center().y) + cam.target.y * scale);
+        Page { scale, origin }
     }
 }
 

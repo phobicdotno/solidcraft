@@ -22,6 +22,7 @@ use solidcraft_theme::Tokens;
 
 use crate::SolveApp;
 use crate::dialogs::{Dialog, Kind};
+use crate::dialogs_sheet::{LegendEntry, flat_legend};
 use crate::gpu::GpuScene;
 use crate::selection::{BODIES, SelInput};
 use crate::ui_kit;
@@ -855,11 +856,8 @@ pub fn overlay(app: &mut SolveApp, painter: &egui::Painter, rect: Rect, d: &Dial
     if !app.flat_view.fitted {
         app.flat_view.fit(rect, area, lo, hi);
     }
-    let cam = app.flat_view.cam;
-    let scale = f64::from(rect.height()) / (2.0 * cam.half_height());
-    let ox = f64::from(rect.center().x) - cam.target.x * scale;
-    let oy = f64::from(rect.center().y) + cam.target.y * scale;
-    let to = |x: f64, y: f64| -> Pos2 { pos2((ox + x * scale) as f32, (oy - y * scale) as f32) };
+    let view = app.flat_view.page(rect);
+    let to = |x: f64, y: f64| -> Pos2 { view.at(x, y) };
     let font = FontId::proportional(t.font_body);
     let cut = Stroke::new(1.4, t.text);
     let engrave = Stroke::new(1.0, t.accent);
@@ -903,14 +901,12 @@ pub fn overlay(app: &mut SolveApp, painter: &egui::Painter, rect: Rect, d: &Dial
             }
         }
     }
-    // The legend, as the flat pattern has it.
-    let mut y = rect.top() + 14.0;
-    painter.text(pos2(rect.left() + 14.0, y), Align2::LEFT_TOP, app.tr("fab.view_sheets"), FontId::proportional(t.font_button), t.text);
-    for (label, stroke) in [("fab.legend_cut", cut), ("fab.legend_engrave", engrave)] {
-        y += 20.0;
-        painter.line_segment([pos2(rect.left() + 14.0, y + 7.0), pos2(rect.left() + 38.0, y + 7.0)], Stroke::new(2.0, stroke.color));
-        painter.text(pos2(rect.left() + 44.0, y), Align2::LEFT_TOP, app.tr(label), font.clone(), t.text_dim);
-    }
+    let legend = [("fab.legend_cut", cut), ("fab.legend_engrave", engrave)].map(|(label, stroke)| LegendEntry {
+        label: app.tr(label).to_string(),
+        color: stroke.color,
+        dotted: false,
+    });
+    flat_legend(painter, rect, app.tr("fab.view_sheets"), &legend);
     true
 }
 
