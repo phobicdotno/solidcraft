@@ -43,8 +43,10 @@ const MAX_DOWELS: i64 = solidcraft_engine::kernel::fab::MAX_DOWELS as i64;
 const MAX_SLICES: i64 = solidcraft_engine::kernel::fab::MAX_SLICES as i64;
 /// Most warnings listed; the rest are counted.
 const MAX_WARNINGS: usize = 6;
-/// Most triangles the 3D preview draws, all plates together.
-const MAX_TRIANGLES: usize = 3_000_000;
+/// Most triangles the 3D preview draws, all plates together (3 million): half the viewport's
+/// budget for refined bodies (`display_lod::TRIANGLE_BUDGET`), as the preview is drawn on top of
+/// the model.
+const MAX_TRIANGLES: usize = crate::display_lod::TRIANGLE_BUDGET / 2;
 
 const STACKED: usize = 0;
 const ROD: usize = 1;
