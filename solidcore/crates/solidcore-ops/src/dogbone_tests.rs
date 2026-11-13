@@ -304,7 +304,7 @@ fn edges_that_are_no_inside_corner_are_skipped_with_the_reason() {
     assert_eq!(p.tools, []);
     assert_eq!(p.skipped[0].why, Why::Corner(Skip::Convex));
     assert!(near(p.skipped[0].at, [0.0, 0.0, 5.0]));
-    // A pocket floor edge (along x) with the tool along z: not along.
+    // A pocket floor edge (along x) with the bit along z: not along.
     let floor_edge = (0..r.edges.len())
         .find(|&i| {
             let e = &r.edges[i];
