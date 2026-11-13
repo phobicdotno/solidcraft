@@ -37,10 +37,10 @@ const MACHINES: [&str; 2] = ["laser", "cnc"];
 const MACHINE_LABELS: [&str; 2] = ["fab.machine_laser", "fab.machine_cnc"];
 /// How long the settings stay still before they are sliced again (seconds).
 pub(crate) const DEBOUNCE_S: f64 = 0.3;
-/// Most dowel holes the form offers.
-const MAX_DOWELS: i64 = 16;
-/// Most upright or rod slices the form offers.
-const MAX_SLICES: i64 = 500;
+/// Most dowel holes the form offers: the recipe's.
+const MAX_DOWELS: i64 = solidcraft_engine::kernel::fab::MAX_DOWELS as i64;
+/// Most upright or rod slices the form offers: the recipe's.
+const MAX_SLICES: i64 = solidcraft_engine::kernel::fab::MAX_SLICES as i64;
 /// Most warnings listed; the rest are counted.
 const MAX_WARNINGS: usize = 6;
 /// Most triangles the 3D preview draws, all plates together.
