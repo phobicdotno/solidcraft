@@ -304,7 +304,14 @@ fn section_curves(
         &opts,
     )
     .map_err(|error| FlatError::Section { axis, at, error })?;
-    let curves = made.curves_3d.unwrap_or_default();
+    let curves = made.curves_3d.ok_or(FlatError::Section {
+        axis,
+        at,
+        error: crate::SolidError::PortInvariant {
+            operation: "flat section",
+            reason: "the kernel's section gave no curves",
+        },
+    })?;
     if curves.len() > MAX_SECTION_CURVES {
         return Err(FlatError::TooBig("section curves"));
     }
@@ -349,11 +356,14 @@ fn join_tolerance(chord: f64) -> f64 {
 
 /// The samples of a curve from its start to its end, each chord within `chord` of the curve:
 /// the kernel's tessellation with its chord height test alone (the angle test off, no least
-/// number of segments). A curve without a finite, non-empty interval has none.
+/// number of segments). A curve without a finite, non-empty interval is refused.
 fn sample_curve(k: &Kernel, c: &Curve, chord: f64) -> crate::Result<Tessellation> {
     let ivl = c.natural_interval();
     if !(ivl.min().is_finite() && ivl.max().is_finite() && ivl.max() > ivl.min()) {
-        return Ok(Tessellation::default());
+        return Err(crate::SolidError::PortInvariant {
+            operation: "flat section",
+            reason: "a section curve has no finite, non-empty interval",
+        });
     }
     c.tessellate(k, &ivl, chord, 0.0, 1)
 }
