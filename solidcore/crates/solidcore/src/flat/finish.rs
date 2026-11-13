@@ -712,7 +712,7 @@ mod tests {
     /// How far the polygon engine can move a point of `relieve_corners`' result towards a
     /// relief's centre (mm), for a shape whose bounds hold the relief circles too. iOverlay
     /// scales the operands of each boolean by `2^(29 − ⌈log2 h⌉)`, `h` half the larger side of
-    /// their bounds (i_float's conservative 29-bit budget for `i32`), and rounds every point to
+    /// their bounds (`i_float`'s conservative 29-bit budget for `i32`), and rounds every point to
     /// that grid: half a step on each axis, `step / √2` at most. A point of the result is a
     /// rounded point of the material, or a rounded crossing of a relief polygon's rounded side,
     /// and each relief polygon side lies outside its circle, so a point lands at most two
