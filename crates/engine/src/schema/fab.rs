@@ -72,13 +72,15 @@ pub struct FabSettingsParams {
     /// Sheet thickness (mm), more than 0 and at most 1000. Default: 3.
     #[serde(default)]
     pub thickness: Option<f64>,
-    /// Centre-to-centre distance of upright or rod slices (mm), 0 (automatic) to 10000.
-    /// Default: 0. Ignored for stacked layers, which are one sheet apart, and when `count` is
-    /// above 0.
+    /// Centre-to-centre distance of upright or rod slices (mm): 0 (automatic: four sheets or
+    /// an eighth of the body, whichever is more, in whole sheets for rod slices), or from the
+    /// sheet thickness to 10000. Default: 0. Ignored for stacked layers, which are one sheet
+    /// apart and centred on the body, and when `count` is above 0.
     #[serde(default)]
     pub spacing: Option<f64>,
-    /// The number of upright or rod slices (per direction in a waffle), 0 to 500; overrides
-    /// `spacing` when above 0. Default: 0. Ignored for stacked layers.
+    /// The number of upright or rod slices (per direction in a waffle), 0 to 500 and no more
+    /// than the body's length divided by the sheet thickness; overrides `spacing` when above 0.
+    /// Default: 0. Ignored for stacked layers.
     #[serde(default)]
     pub count: Option<u32>,
     /// Play in slots and holes (mm), from 0 to the sheet thickness. Default: 0.2.
@@ -93,7 +95,8 @@ pub struct FabSettingsParams {
     /// Stacked: the dowels' diameter (mm), more than 0 and at most 10000. Default: 6.
     #[serde(default)]
     pub dowel_diameter: Option<f64>,
-    /// Material kept around holes, and the width of spacer rings (mm), 0 to 10000. Default: 4.
+    /// Material kept around holes, and the width of spacer rings (mm), 0 to 10000; for rod
+    /// slices more than half the clearance. Default: 4.
     #[serde(default)]
     pub wall: Option<f64>,
     /// Base or back: how far the plate reaches past the slices (mm), 0 to 10000. Default: 10.
