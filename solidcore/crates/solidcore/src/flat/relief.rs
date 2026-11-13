@@ -93,13 +93,11 @@ fn corner(prev: P2, at: P2, next: P2, o: &Options) -> Result<Option<Relief>> {
             centre: [at[0] + w.centre.x, at[1] + w.centre.y],
             radius: o.radius,
         }),
-        // The corner is more open than `max_angle`: the documented rule.
-        Err(Skip::TooOpen) => None,
-        // A minimal circle that reaches neither wall cuts no material: the part is the same
-        // without it. The normal style's circle passes through the corner and always bites.
-        Err(Skip::Unreached) => None,
-        // An outside corner gets none; the turn test above returns those before this.
-        Err(Skip::Convex) => None,
+        // No relief: the corner is more open than `max_angle` (the documented rule); a minimal
+        // circle reaches neither wall and so cuts no material, the part the same without it
+        // (the normal style's circle passes through the corner and always bites); an outside
+        // corner, which the turn test above has already returned.
+        Err(Skip::TooOpen | Skip::Unreached | Skip::Convex) => None,
     })
 }
 
@@ -114,7 +112,7 @@ fn check_ring(ring: &[P2]) -> Result<()> {
     {
         return Err(invalid("ring points must be finite and within 10⁶ mm"));
     }
-    if ring.first() == ring.last() || ring.windows(2).any(|w| w[0] == w[1]) {
+    if ring.first() == ring.last() || ring.iter().zip(ring.iter().skip(1)).any(|(p, q)| p == q) {
         return Err(invalid("a ring repeats a point"));
     }
     Ok(())
