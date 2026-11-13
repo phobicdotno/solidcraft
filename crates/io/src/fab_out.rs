@@ -127,9 +127,10 @@ pub fn sheet_svg(sheet: &SheetDrawing<'_>) -> Result<String> {
     let _ = writeln!(s, r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     let _ = writeln!(s, r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}mm" height="{h}mm" viewBox="0 0 {w} {h}">"#);
     let _ = writeln!(s, "<title>{}</title>", crate::threemf::esc(&sheet.parts.join(", ")));
-    for (id, colour, paths, closed) in [("cut", CUT_COLOUR, sheet.cuts, true), ("engrave", ENGRAVE_COLOUR, sheet.engrave, false)] {
+    // a ring needs three points, a line two
+    for (id, colour, paths, closed, least) in [("cut", CUT_COLOUR, sheet.cuts, true, 3), ("engrave", ENGRAVE_COLOUR, sheet.engrave, false, 2)] {
         let _ = writeln!(s, r#"<g id="{id}" fill="none" stroke="{colour}" stroke-width="{STROKE_MM}">"#);
-        for path in paths.iter().filter(|p| p.len() >= if closed { 3 } else { 2 }) {
+        for path in paths.iter().filter(|p| p.len() >= least) {
             push_path(&mut s, path, height, closed)?;
             fits(&s, "SVG")?;
         }
