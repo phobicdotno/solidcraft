@@ -940,12 +940,16 @@ mod tests {
         assert!(region::area(&r) < 1e-6, "{r:?}");
         let mut s = BrepSection::new(&k, &mut sphere, CHORD).unwrap();
         assert!(region::area(&s.section(Axis::Z, 10.0).unwrap()) < 1e-6);
-        // on the flat end of a cylinder (coplanar with a face)
+        // on the flat end of a cylinder (coplanar with a face): the exact plane gives the face
+        // itself (the material on the plane), the slicer's nudged plane (30.01) gives nothing
         let mut cylinder = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
-        for at in [30.0, 0.0] {
-            let r = section_at(&k, &mut cylinder, Axis::Z, at, CHORD, [0.0; 3]).unwrap();
-            assert!(region::area(&r) < 1e-6, "z = {at}: {r:?}");
-        }
+        let r = section_at(&k, &mut cylinder, Axis::Z, 30.0, CHORD, [0.0; 3]).unwrap();
+        assert!(
+            close(region::area(&r), PI * 100.0, disc_slack(10.0)),
+            "{r:?}"
+        );
+        let mut s = BrepSection::new(&k, &mut cylinder, CHORD).unwrap();
+        assert!(region::area(&s.section(Axis::Z, 30.0).unwrap()) < 1e-6);
     }
 
     #[test]
