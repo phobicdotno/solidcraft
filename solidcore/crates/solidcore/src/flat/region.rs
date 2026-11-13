@@ -6,7 +6,7 @@
 //! booleans, [`from_rings`] and [`normalize`] take rings in either direction that may overlap
 //! themselves; [`offset`] and [`map`] keep the direction they are given, so they need normalised
 //! input (every kernel caller passes one of the results above). Rings with a point that is not
-//! finite or a kilometre ([`KM`]) or more from the origin, or with fewer than three points, are
+//! finite or a kilometre (`KM`) or more from the origin, or with fewer than three points, are
 //! left out. The booleans and offsets run on iOverlay's integer engine, scaled to the
 //! operands' bounds (a 1 m part resolves to about a nanometre).
 //!
@@ -147,7 +147,7 @@ pub fn normalize(r: &[Shape]) -> Region {
 /// The region grown by `delta` mm (shrunk for a negative `delta`): outlines move out, holes
 /// shrink. Mitred corners stay sharp, so a square stays a square of side `+ 2 delta`; round
 /// corners follow arcs of radius `|delta|`. A region shrunk to nothing is empty, and so is the
-/// offset by a `delta` that is not finite or not under a kilometre ([`KM`], as for the rings'
+/// offset by a `delta` that is not finite or not under a kilometre (`KM`, as for the rings'
 /// points), or with a round join whose `chord` is not a positive finite number.
 #[must_use]
 pub fn offset(r: &[Shape], delta: f64, join: Join) -> Region {
@@ -268,7 +268,7 @@ pub fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Region {
 const CIRCLE_SIDES: (usize, usize) = (24, 1440);
 
 /// The number of sides of a polygon inscribed in a circle of radius `r` whose sides stay within
-/// `chord` of the circle, held to [`CIRCLE_SIDES`]. `None` for a `chord` that is not a positive
+/// `chord` of the circle, held to 24 to 1440 (`CIRCLE_SIDES`). `None` for a `chord` that is not a positive
 /// finite number.
 #[must_use]
 pub fn circle_sides(r: f64, chord: f64) -> Option<usize> {

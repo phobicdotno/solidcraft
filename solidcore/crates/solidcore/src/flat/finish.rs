@@ -326,7 +326,7 @@ fn place_box(room: &[Shape], b: [f64; 4], w: f64, t: f64) -> Option<P2> {
     None
 }
 
-/// The height the label search steps down to; a smaller label_height is engraved as given.
+/// The height the label search steps down to; a smaller `label_height` is engraved as given.
 pub const MIN_LABEL: f64 = 2.0;
 
 /// Each try of the label search is this much of the one before: about ten tries from a 10 mm
