@@ -278,8 +278,45 @@ pub const MAX_SECTION_POINTS: usize = 2_000_000;
 const MAX_LENGTH: f64 = 10_000.0;
 
 /// How close (mm) to a whole number of sheets a gap between rod slices must be for its
-/// spacers to count as exact.
+/// spacers to count as exact: half a millimetre, about what sheet stock varies by and the
+/// play on the rod takes up; past it the stack comes out visibly short or long.
 const GAP_SLACK: f64 = 0.5;
+
+/// How far (mm) inside a layer's own edge a guide line may be engraved: a neighbour's outline
+/// that runs along the edge is left out rather than cut into the edge itself.
+const GUIDE_INSET: f64 = 0.3;
+
+/// What (mm) the material round the rod may fall short of the hub's radius and still hold the
+/// rod without a hub: rounding of the offset outline, not a real lack of material.
+const HUB_SLACK: f64 = 0.01;
+
+/// The steps across the larger side of the grid the dowel points are picked from (41 x 41
+/// points): fine enough to spread a few dowels, coarse enough that the farthest-point pick
+/// stays quick.
+const DOWEL_GRID: u32 = 40;
+
+/// The height of the band whose width makes a plated slice's foot, in sheets, or this share
+/// of the slice's height, whichever is more: enough that a round bottom gives a foot wider
+/// than the point it touches at, little enough to follow the slice's own bottom.
+const FOOT_SHEETS: f64 = 3.0;
+/// See [`FOOT_SHEETS`].
+const FOOT_SHARE: f64 = 0.15;
+
+/// A foot this many sheets wide carries two tabs, at its quarters: two tabs of
+/// [`TAB_SHEETS`] then leave a sheet between them and half a sheet at each end.
+const TWO_TABS_SHEETS: f64 = 6.0;
+
+/// A tab is at least this many sheets wide, so it holds in its slot, or this share of the foot
+/// when that is more, at most [`TAB_MAX`] mm, so a wide slice's slots stay short in the plate.
+const TAB_SHEETS: f64 = 2.0;
+/// See [`TAB_SHEETS`].
+const TAB_SHARE: f64 = 0.2;
+/// See [`TAB_SHEETS`].
+const TAB_MAX: f64 = 40.0;
+
+/// Stretches of material along a waffle line closer than this (mm, a micrometre) are one
+/// stretch: pieces that touch meet with rounding gaps far below any cut.
+const SPAN_MERGE: f64 = 1e-3;
 
 /// Checks every setting: finite and in range.
 ///
@@ -620,7 +657,7 @@ fn stacked(
         let mut guide = Vec::new();
         if s.guide_outline {
             let here = areas.get(i).copied().unwrap_or(0.0);
-            let inside = region::offset(&cut, -0.3, round_join(s));
+            let inside = region::offset(&cut, -GUIDE_INSET, round_join(s));
             for j in [i.wrapping_sub(1), i + 1] {
                 if let (Some(n), Some(&a)) = (layers.get(j), areas.get(j)) {
                     if a < here {
@@ -682,7 +719,7 @@ fn dowel_holes(layers: &[Cut], s: &FabSettings, out: &mut Out) -> Vec<P2> {
 }
 
 /// Up to `n` points inside the region, as far apart as possible: the points of a 41 x 41 grid
-/// over its bounds that lie inside; for one point the one nearest their centroid, else the
+/// ([`DOWEL_GRID`]) over its bounds that lie inside; for one point the one nearest their centroid, else the
 /// one farthest from it, then each next the one farthest from those picked (ties go to the
 /// first in grid order).
 pub fn spread_points(r: &[Shape], n: usize) -> Vec<P2> {
@@ -692,17 +729,17 @@ pub fn spread_points(r: &[Shape], n: usize) -> Vec<P2> {
     if n == 0 {
         return Vec::new();
     }
-    let step = match (x1 - x0).max(y1 - y0) / 40.0 {
+    let step = match (x1 - x0).max(y1 - y0) / f64::from(DOWEL_GRID) {
         st if st > 0.0 && st.is_finite() => st,
         _ => 1.0,
     };
     let mut cand: Vec<P2> = Vec::new();
-    for i in 0..=40 {
+    for i in 0..=DOWEL_GRID {
         let y = y0 + f64::from(i) * step;
         if y > y1 {
             break;
         }
-        for j in 0..=40 {
+        for j in 0..=DOWEL_GRID {
             let x = x0 + f64::from(j) * step;
             if x > x1 {
                 break;
@@ -773,7 +810,7 @@ fn rod(model: &mut dyn Sectioner, s: &FabSettings, b: [f64; 6], out: &mut Out) -
     let hub_r = s.rod_diameter / 2.0 + s.wall;
     for cut in &cuts {
         let mut reg = cut.region.clone();
-        let reach = hub_r - 0.01;
+        let reach = hub_r - HUB_SLACK;
         let inner = if reach > 0.0 {
             region::offset(&reg, -reach, round_join(s))
         } else {
@@ -991,7 +1028,7 @@ fn with_foot_and_tabs(loc: &[Shape], t: f64) -> (Region, Vec<(f64, f64)>) {
     let Some([p0, q0, p1, q1]) = region::bounds(loc) else {
         return (loc.to_vec(), Vec::new());
     };
-    let band = (3.0 * t).max(0.15 * (q1 - q0));
+    let band = (FOOT_SHEETS * t).max(FOOT_SHARE * (q1 - q0));
     let foot = region::intersection(loc, &region::rect(p0 - 1.0, q0 - 1.0, p1 + 1.0, q0 + band));
     let (mut fa, mut fb) = region::bounds(&foot).map_or((p0, p1), |f| (f[0], f[2]));
     if fb - fa < 2.0 * t {
@@ -1003,8 +1040,8 @@ fn with_foot_and_tabs(loc: &[Shape], t: f64) -> (Region, Vec<(f64, f64)>) {
     // the foot is the one stretch the slice stands on, at least two sheets wide: one tab across
     // its middle half, or two from six sheets on
     let w = fb - fa;
-    let tabs: Vec<(f64, f64)> = if w >= 6.0 * t {
-        let tw = (2.0 * t).max(0.2 * w).min(40.0);
+    let tabs: Vec<(f64, f64)> = if w >= TWO_TABS_SHEETS * t {
+        let tw = (TAB_SHEETS * t).max(TAB_SHARE * w).min(TAB_MAX);
         [0.25, 0.75]
             .iter()
             .map(|f| (fa + w * f - tw / 2.0, fa + w * f + tw / 2.0))
@@ -1159,7 +1196,7 @@ fn spans(r: &[Shape], u: f64) -> Vec<(f64, f64)> {
     let mut out: Vec<(f64, f64)> = Vec::new();
     for (a, b) in region::spans_at_x(r, u) {
         match out.last_mut() {
-            Some(last) if a <= last.1 + 1e-3 => last.1 = last.1.max(b),
+            Some(last) if a <= last.1 + SPAN_MERGE => last.1 = last.1.max(b),
             _ => out.push((a, b)),
         }
     }
@@ -1297,7 +1334,7 @@ mod tests {
         Boxes(vec![(lo, hi)])
     }
 
-    /// The 100 x 60 x 40 box of the Python tests.
+    /// A 100 x 60 x 40 box with a corner at the origin.
     fn test_box() -> Boxes {
         one_box([0.0; 3], [100.0, 60.0, 40.0])
     }
@@ -1327,7 +1364,7 @@ mod tests {
         }
     }
 
-    /// The r = 50 sphere standing on z = 0 of the Python tests.
+    /// A sphere of radius 50 standing on z = 0.
     fn test_sphere() -> Sphere {
         Sphere {
             c: [0.0, 0.0, 50.0],
@@ -1401,7 +1438,7 @@ mod tests {
         }
     }
 
-    /// The torus of the Python tests: major radius 40, minor 15, about z = 20.
+    /// A torus of major radius 40 and minor radius 15 about z = 20.
     fn test_torus() -> Torus {
         Torus {
             c: [0.0, 0.0, 20.0],
@@ -1522,7 +1559,7 @@ mod tests {
         }
     }
 
-    // ---- the Python tests, ported -------------------------------------------------------
+    // ---- styles -------------------------------------------------------------------------
 
     #[test]
     fn stacked_box_has_ten_layers_with_dowel_holes_lined_up() {
@@ -1951,7 +1988,7 @@ mod tests {
         assert!(make(&mut test_box(), &s).is_ok());
     }
 
-    // ---- beyond the Python tests --------------------------------------------------------
+    // ---- more cases ---------------------------------------------------------------------
 
     #[test]
     fn every_style_along_every_axis_it_can_use() {
