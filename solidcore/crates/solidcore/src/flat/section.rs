@@ -164,8 +164,9 @@ impl Sectioner for BrepSection<'_> {
 
 /// The material of body `b` on the plane `axis = at` exactly (no nudging), in the slice
 /// coordinates of [`Axis::directions`], its outlines within `chord` mm of the exact section
-/// (plus [`join_tolerance`] where curves meet). The plane's point is `centre` moved onto the plane (the body's middle, so the kernel's bounded
-/// plane sits over the body however far it is from the origin).
+/// (plus [`join_tolerance`] where curves meet). The plane's point is `centre` moved onto the
+/// plane (the body's middle, so the kernel's bounded plane sits over the body however far it is
+/// from the origin).
 ///
 /// # Errors
 /// [`FlatError::Setting`] for `at` not finite or a chord out of range; [`FlatError::TooBig`]
