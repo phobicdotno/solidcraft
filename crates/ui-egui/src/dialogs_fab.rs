@@ -786,7 +786,17 @@ pub(crate) fn built(app: &SolveApp) -> crate::preview::Built {
     }
     let replaced =
         app.fab.result.as_ref().and_then(|r| r.as_ref().ok()).and_then(|v| v["body"].as_str()).map(|b| vec![b.to_string()]).unwrap_or_default();
-    crate::preview::Built { scene: sc, sketches: Vec::new(), replaced, error: None, bounds, applied: None, tapered: Vec::new(), stopped: None }
+    crate::preview::Built {
+        scene: sc,
+        sketches: Vec::new(),
+        replaced,
+        error: None,
+        bounds,
+        applied: None,
+        tapered: Vec::new(),
+        stopped: None,
+        placed: None,
+    }
 }
 
 /// The window is open on its Sheets view, which has the viewport.
