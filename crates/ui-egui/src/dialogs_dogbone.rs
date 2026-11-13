@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 use solidcraft_engine::{
     Sel,
     doc::{
-        FeatureKind,
+        Feature, FeatureKind,
         dogbone::{DogboneSide, DogboneStyle},
         expr::Kind as ValueKind,
     },
@@ -117,8 +117,8 @@ pub fn commands(app: &SolveApp, c: &Dogbone, inputs: &[SelInput], extra: &Map<St
     Ok(vec![("solid.dogbone".into(), args)])
 }
 
-pub fn for_feature(app: &SolveApp, kind: &FeatureKind) -> Option<(Kind, Vec<SelInput>, Map<String, Value>)> {
-    let FeatureKind::Dogbone { edges, faces, diameter, style, gap, side, max_angle, along, body } = kind else { return None };
+pub fn for_feature(app: &SolveApp, f: &Feature) -> Option<(Kind, Vec<SelInput>, Map<String, Value>)> {
+    let FeatureKind::Dogbone { edges, faces, diameter, style, gap, side, max_angle, along, body } = &f.kind else { return None };
     let (_, mut inputs) = start(app, "solid.dogbone")?;
     let c = Dogbone {
         diameter: shown_expr(diameter, ValueKind::Length),
@@ -127,14 +127,27 @@ pub fn for_feature(app: &SolveApp, kind: &FeatureKind) -> Option<(Kind, Vec<SelI
         side: usize::from(*side == DogboneSide::Shorter),
         max_angle: max_angle.as_ref().map_or_else(|| "90 deg".into(), |e| shown_expr(e, ValueKind::Angle)),
     };
-    // The picks come back where they were stored, on the body the feature names.
+    // Each pick comes back by its stored name first, as Fillet's and Shell's do, so a pocket
+    // that moved keeps its corners; a pick with no name comes back where it was stored, on the
+    // body the feature names.
+    let s = &app.session;
     let only = body.as_deref();
     let mut items = Vec::new();
-    for e in edges {
-        items.extend(crate::dialogs::edge_sel_on(&app.session, only, e.0));
+    for (i, e) in edges.iter().enumerate() {
+        items.extend(
+            f.edge_names
+                .get(i)
+                .and_then(|name| crate::dialogs::named_refill(s, only, name, e.0, true))
+                .or_else(|| crate::dialogs::edge_sel_on(s, only, e.0)),
+        );
     }
-    for f in faces {
-        items.extend(crate::dialogs::face_sel_on(&app.session, only, f.0));
+    for (i, p) in faces.iter().enumerate() {
+        items.extend(
+            f.face_names
+                .get(i)
+                .and_then(|name| crate::dialogs::named_refill(s, only, name, p.0, false))
+                .or_else(|| crate::dialogs::face_sel_on(s, only, p.0)),
+        );
     }
     if let Some(input) = inputs.first_mut() {
         input.items = items;

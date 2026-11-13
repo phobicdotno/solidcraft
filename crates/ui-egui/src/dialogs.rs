@@ -6850,7 +6850,7 @@ pub(crate) fn face_sel_on(s: &Session, only: Option<&str>, p0: Vec3) -> Option<S
 
 /// Resolve a stored name on the current input body before placing its pick in the viewport.
 /// Keep the resolved index: a face point can lie on a boundary shared with another face.
-fn named_refill(s: &Session, body: Option<&str>, name: &str, point: Vec3, edge: bool) -> Option<Sel> {
+pub(crate) fn named_refill(s: &Session, body: Option<&str>, name: &str, point: Vec3, edge: bool) -> Option<Sel> {
     use solidcraft_engine::doc::naming;
 
     if name.is_empty() {
@@ -8173,7 +8173,7 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                 .or_else(|| crate::dialogs_plastic::for_feature(app, other))
                 .or_else(|| crate::dialogs_frame::for_feature(app, other))
                 .or_else(|| crate::dialogs_end_cap::for_feature(app, other))
-                .or_else(|| crate::dialogs_dogbone::for_feature(app, other))
+                .or_else(|| crate::dialogs_dogbone::for_feature(app, &f))
                 .or_else(|| crate::dialogs_surface::for_feature(app, other, &feature_frame(s, f.component)))?;
             let mut d = Dialog::new(kind, inputs);
             d.extra = extra;
