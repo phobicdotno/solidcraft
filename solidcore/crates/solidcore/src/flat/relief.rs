@@ -23,9 +23,6 @@ const OP: &str = "flat::relief";
 /// Most vertices in a ring.
 const MAX_RING: usize = 1_000_000;
 
-/// Largest coordinate magnitude of a ring's point accepted (mm): far past any sheet.
-const MAX_COORD: f64 = 1.0e6;
-
 /// The relief circle of an inside corner of a ring.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Relief {
@@ -44,7 +41,8 @@ pub(crate) struct Relief {
 ///
 /// # Errors
 /// [`SolidError::InvalidInput`] for options out of range, fewer than 3 or more than
-/// [`MAX_RING`] vertices, a coordinate that is not finite or larger than [`MAX_COORD`], a point
+/// [`MAX_RING`] vertices, a coordinate that is not finite or a kilometre
+/// ([`super::region::KM`], the flat module's bound) or more from the origin, a point
 /// repeated by the next (the last and the first included), or a ring that folds straight back on
 /// itself (a spike or slit of no width, which no bit cuts).
 pub(crate) fn ring_reliefs(ring: &[P2], options: &Options) -> Result<Vec<Relief>> {
@@ -108,9 +106,11 @@ fn check_ring(ring: &[P2]) -> Result<()> {
     if !ring
         .iter()
         .flatten()
-        .all(|c| c.is_finite() && c.abs() <= MAX_COORD)
+        .all(|c| c.is_finite() && c.abs() < super::region::KM)
     {
-        return Err(invalid("ring points must be finite and within 10⁶ mm"));
+        return Err(invalid(
+            "ring points must be finite and less than 10⁶ mm from the origin",
+        ));
     }
     if ring.first() == ring.last() || ring.iter().zip(ring.iter().skip(1)).any(|(p, q)| p == q) {
         return Err(invalid("a ring repeats a point"));
