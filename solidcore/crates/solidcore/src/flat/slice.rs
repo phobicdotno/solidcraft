@@ -15,6 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::finish::LABEL_MARGIN;
 use super::region::{self, Join};
 use super::{FlatError, FlatResult, Region, Ring, Shape, P2};
 
@@ -109,7 +110,8 @@ pub struct FabSettings {
     pub dowel_diameter: f64,
     /// Material kept around holes, and the width of spacer rings (mm).
     pub wall: f64,
-    /// How far a base or back plate reaches past the slices (mm).
+    /// How far a base or back plate reaches past the slices (mm), at least; the plate grows to
+    /// hold the slice numbers.
     pub plate_margin: f64,
     /// Stacked: engrave where the smaller neighbouring layer goes.
     pub guide_outline: bool,
@@ -1018,9 +1020,17 @@ fn with_foot_and_tabs(loc: &[Shape], t: f64) -> (Region, Vec<(f64, f64)>) {
     (region::union_all(&rects), tabs)
 }
 
+/// How far (mm) below its lowest slot a slice's number stands on the plate (its baseline):
+/// the number's top stays a millimetre clear of the slot.
+const NUMBER_DROP: f64 = 4.0;
+
+/// The capital height (mm) of the slice numbers on a plate: readable once cut, small enough to
+/// sit under a slot.
+const NUMBER_HEIGHT: f64 = 3.0;
+
 /// The plate in its `(a, p)` coordinates (`a` along the slicing axis, `p` along the plate):
-/// a margin past the slices, a slot (sheet plus clearance wide) for every tab, and each
-/// slice's number engraved below its slots.
+/// at least a margin past the slices, grown to hold the slice numbers, a slot (sheet plus
+/// clearance wide) for every tab, and each slice's number engraved below its slots.
 fn plate_outline(
     cs: &[f64],
     along: &[f64],
@@ -1030,12 +1040,34 @@ fn plate_outline(
     let (t, cl, m) = (s.thickness, s.clearance, s.plate_margin);
     let lo = |v: &[f64]| v.iter().copied().fold(f64::INFINITY, f64::min);
     let hi = |v: &[f64]| v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let plate = region::rect(
-        lo(cs) - t / 2.0 - m,
-        lo(along) - m,
-        hi(cs) + t / 2.0 + m,
-        hi(along) + m,
-    );
+    let mut marks = Vec::new();
+    for (k, &c) in cs.iter().enumerate() {
+        let low = slots
+            .iter()
+            .filter(|sl| sl.slice == k + 1)
+            .map(|sl| sl.a)
+            .fold(f64::INFINITY, f64::min);
+        if low.is_finite() {
+            marks.push(Mark {
+                text: (k + 1).to_string(),
+                at: [c, low - NUMBER_DROP],
+                height: NUMBER_HEIGHT,
+            });
+        }
+    }
+    // the margin is the least the plate reaches; it grows wherever a number, with the label
+    // margin round it, would leave it, so every number is engraved on material
+    let (mut a0, mut p0, mut a1) = (lo(cs) - t / 2.0 - m, lo(along) - m, hi(cs) + t / 2.0 + m);
+    for mk in &marks {
+        let lines = super::font::strokes(&mk.text, mk.height);
+        if let Some([x0, y0, x1, _]) = region::ring_bounds(&lines) {
+            let half = (x1 - x0) / 2.0 + LABEL_MARGIN;
+            a0 = a0.min(mk.at[0] - half);
+            a1 = a1.max(mk.at[0] + half);
+            p0 = p0.min(mk.at[1] + y0 - LABEL_MARGIN);
+        }
+    }
+    let plate = region::rect(a0, p0, a1, hi(along) + m);
     let w = t + cl;
     let cuts: Vec<Shape> = slots
         .iter()
@@ -1048,21 +1080,6 @@ fn plate_outline(
             )
         })
         .collect();
-    let mut marks = Vec::new();
-    for (k, &c) in cs.iter().enumerate() {
-        let low = slots
-            .iter()
-            .filter(|sl| sl.slice == k + 1)
-            .map(|sl| sl.a)
-            .fold(f64::INFINITY, f64::min);
-        if low.is_finite() {
-            marks.push(Mark {
-                text: (k + 1).to_string(),
-                at: [c, low - 4.0],
-                height: 3.0,
-            });
-        }
-    }
     (region::difference(&plate, &cuts), marks)
 }
 
@@ -2345,6 +2362,32 @@ mod tests {
         ));
         let res = make(&mut test_box(), &s(0.2)).unwrap();
         assert!(!of_kind(&res, PartKind::Spacer).is_empty());
+    }
+
+    #[test]
+    fn slice_numbers_lie_on_the_plate() {
+        let s = FabSettings {
+            axis: Axis::X,
+            count: 3,
+            plate_margin: 0.0,
+            ..settings(Style::Base)
+        };
+        let res = make(&mut test_box(), &s).unwrap();
+        let plate = of_kind(&res, PartKind::Plate)[0];
+        assert!(!plate.marks.is_empty());
+        for m in &plate.marks {
+            let lines = crate::flat::font::strokes(&m.text, m.height);
+            let [x0, _, x1, _] = region::ring_bounds(&lines).unwrap();
+            let dx = m.at[0] - (x0 + x1) / 2.0;
+            for p in lines.iter().flatten() {
+                let q = [p[0] + dx, p[1] + m.at[1]];
+                assert!(
+                    region::contains(std::slice::from_ref(&plate.shape), q),
+                    "{} at {q:?}",
+                    m.text
+                );
+            }
+        }
     }
 
     #[test]
