@@ -130,7 +130,8 @@ pub struct FabSettingsParams {
     /// width and height. Default: 5.
     #[serde(default)]
     pub margin: Option<f64>,
-    /// Engrave each part's name on it. Default: true.
+    /// Engrave each part's name on it where the name fits (stepped down to 2 mm high if it
+    /// must; a part with no room gets no name). Default: true.
     #[serde(default)]
     pub labels: Option<bool>,
     /// The capital height of the engraved names (mm), more than 0 and at most 10000. Default: 5.
