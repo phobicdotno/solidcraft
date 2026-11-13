@@ -270,19 +270,6 @@ fn corners_more_open_than_the_largest_angle_are_skipped() {
     // A square corner computed with rounding is still relieved.
     let (a, b) = walls(FRAC_PI_2 + 1e-9);
     assert!(wedge_relief(a, b, 1.0, 1.0, &square_only).unwrap().is_ok());
-    // Walls in line or folded: no corner.
-    assert_eq!(
-        wedge_relief(Vec3::X, -Vec3::X, 1.0, 1.0, &opts(Style::Normal)).unwrap(),
-        Err(Skip::Straight)
-    );
-    assert_eq!(
-        wedge_relief(Vec3::X, Vec3::X, 1.0, 1.0, &opts(Style::Normal)).unwrap(),
-        Err(Skip::Degenerate)
-    );
-    assert_eq!(
-        wedge_relief(Vec3::ZERO, Vec3::X, 1.0, 1.0, &opts(Style::Normal)).unwrap(),
-        Err(Skip::Degenerate)
-    );
 }
 
 /// A face along an edge for [`edge_corner`] and [`edge_relief`], with no sides.

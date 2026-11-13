@@ -125,14 +125,10 @@ impl Options {
 pub enum Skip {
     /// The corner is convex (an outside corner): a round bit cuts it sharp.
     Convex,
-    /// The walls are in line: no corner.
-    Straight,
     /// The corner is more open than the largest angle relieved.
     TooOpen,
     /// A minimal relief whose gap is so large that the circle reaches neither wall.
     Unreached,
-    /// A wall with no direction, or walls folded back onto each other.
-    Degenerate,
 }
 
 /// A relief in a corner, in the corner's own terms: its circle's centre as an offset from the
@@ -143,9 +139,10 @@ struct Wedge {
     centre: Vec3,
 }
 
-/// The relief of the corner whose walls leave it in directions `a` and `b`, the void the wedge
-/// between them (`a` and `b` need not be exactly unit: they are normalised), walls `la` and `lb`
-/// long (only a T-bone reads them, to choose its side).
+/// The relief of the inside corner whose walls leave it in unit directions `a` and `b`, the void
+/// the wedge between them, walls `la` and `lb` long (only a T-bone reads them, to choose its
+/// side). The walls are those [`edge_corner`] gives a concave corner: neither in line nor folded
+/// back onto each other.
 ///
 /// # Errors
 /// [`SolidError::InvalidInput`] for options out of range or a direction or length that is not
@@ -161,24 +158,15 @@ fn wedge_relief(
     if !(a.is_finite() && b.is_finite() && la.is_finite() && lb.is_finite()) {
         return Err(invalid("a corner's walls must be finite"));
     }
-    let (Ok(a), Ok(b)) = (a.unitize(), b.unitize()) else {
-        return Ok(Err(Skip::Degenerate));
-    };
     let angle = a.angle_between(b)?;
-    if angle <= STRAIGHT {
-        return Ok(Err(Skip::Degenerate));
-    }
-    if angle >= std::f64::consts::PI - STRAIGHT {
-        return Ok(Err(Skip::Straight));
-    }
     if angle > o.max_angle + ANGLE_SLACK {
         return Ok(Err(Skip::TooOpen));
     }
     let r = o.radius;
-    // a + b has length 2 cos(θ/2) > 0 for θ < π.
-    let Ok(bisector) = (a + b).unitize() else {
-        return Ok(Err(Skip::Degenerate));
-    };
+    // a + b has length 2 cos(θ/2) > 0: the walls of a concave corner are not in line.
+    let bisector = (a + b)
+        .unitize()
+        .map_err(|_| invalid("a corner's walls in line"))?;
     let centre = match o.style {
         Style::Normal => bisector * r,
         Style::Minimal { gap } => bisector * (r + gap),
