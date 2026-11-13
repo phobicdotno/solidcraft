@@ -286,8 +286,9 @@ const GAP_SLACK: f64 = 0.5;
 /// most 1000 mm), `spacing` (0 to 10 m), `count` (at most [`MAX_SLICES`]), `clearance`
 /// (0 to the thickness), `rod_diameter` and `dowel_diameter` (above 0, at most 10 m), `rod_at`
 /// (finite, within a kilometre), `dowels` (at most [`MAX_DOWELS`]), `wall` and
-/// `plate_margin` (0 to 10 m), `min_area` (0 to 100 m²), `chord` (1e-4 to 10 mm), and `axis`
-/// for a base or back plate sliced across Z.
+/// `plate_margin` (0 to 10 m), `min_area` (0 to 100 m²), `chord` (1e-4 to 10 mm), `axis`
+/// for a base or back plate sliced across Z, and `wall` for rod slices when it is at most half
+/// the clearance (no spacer ring).
 pub fn validate(s: &FabSettings) -> FlatResult<()> {
     let within = |x: f64, lo: f64, hi: f64| x.is_finite() && x >= lo && x <= hi;
     let positive = |x: f64, hi: f64| x.is_finite() && x > 0.0 && x <= hi;
@@ -347,16 +348,26 @@ pub fn validate(s: &FabSettings) -> FlatResult<()> {
             limit: "X or Y for a base or back plate",
         });
     }
+    // a spacer ring is `wall` wide around a bore half the clearance wider than the rod: a
+    // wall of at most that leaves no ring
+    if s.style == Style::Rod && s.wall <= s.clearance / 2.0 {
+        return Err(FlatError::Setting {
+            name: "wall",
+            limit: "more than half the clearance for slices on a rod",
+        });
+    }
     Ok(())
 }
 
 /// The centres of the slices along an axis the model spans from `lo` to `hi`: for stacked
-/// layers one sheet apart from `lo` (as many as fit, rounded); otherwise `count` evenly over
-/// the span, or `spacing` apart (automatic: four sheets or an eighth of the span, whichever is
-/// more) centred on the span.
+/// layers one sheet apart, the nearest whole number of layers, at least one, centred on the
+/// body; otherwise `count` evenly over the span, or `spacing` apart (automatic: four sheets or
+/// an eighth of the span, whichever is more, rounded to whole sheets for rod slices so their
+/// spacers fit exactly) centred on the span.
 ///
 /// # Errors
-/// [`FlatError::Setting`] for a span or thickness that is not finite;
+/// [`FlatError::Setting`] for a span or thickness that is not finite, and for upright or rod
+/// slices less than a sheet apart (`count` or `spacing`);
 /// [`FlatError::TooBig`] for more than [`MAX_SLICES`] slices.
 pub fn positions(lo: f64, hi: f64, s: &FabSettings, stacked: bool) -> FlatResult<Vec<f64>> {
     let (length, t) = (hi - lo, s.thickness);
@@ -378,19 +389,39 @@ pub fn positions(lo: f64, hi: f64, s: &FabSettings, stacked: bool) -> FlatResult
         if !n.is_finite() || n > MAX_SLICES as f64 {
             return Err(too_many);
         }
-        return Ok((0..n as usize).map(|i| lo + (i as f64 + 0.5) * t).collect());
+        let first = lo + (length - n * t) / 2.0;
+        return Ok((0..n as usize)
+            .map(|i| first + (i as f64 + 0.5) * t)
+            .collect());
     }
     if s.count > 0 {
         if s.count as usize > MAX_SLICES {
             return Err(too_many);
         }
         let n = f64::from(s.count);
+        if s.count > 1 && length / n < t {
+            return Err(FlatError::Setting {
+                name: "count",
+                limit: "at most the body's length divided by the sheet thickness",
+            });
+        }
         return Ok((0..s.count)
             .map(|i| lo + length * (f64::from(i) + 0.5) / n)
             .collect());
     }
+    if s.spacing > 0.0 && s.spacing < t {
+        return Err(FlatError::Setting {
+            name: "spacing",
+            limit: "at least the sheet thickness",
+        });
+    }
     let step = if s.spacing > 0.0 {
         s.spacing
+    } else if s.style == Style::Rod {
+        // whole sheets, so the spacers between neighbouring slices come out exact; four
+        // sheets at least, so the rounding never brings it under four
+        let auto = (4.0 * t).max(length / 8.0);
+        t * (auto / t).round()
     } else {
         (4.0 * t).max(length / 8.0)
     };
@@ -2055,13 +2086,24 @@ mod tests {
             make(&mut test_box(), &s),
             Err(FlatError::TooBig(_))
         ));
+        // a sheet apart over 2 m: 666 rod slices
+        let s = FabSettings {
+            axis: Axis::X,
+            spacing: 3.0,
+            ..settings(Style::Rod)
+        };
+        assert!(matches!(
+            make(&mut one_box([0.0; 3], [2000.0, 60.0, 40.0]), &s),
+            Err(FlatError::TooBig(_))
+        ));
+        // closer than a sheet is a setting out of range before it is too many
         let s = FabSettings {
             spacing: 1e-6,
             ..settings(Style::Rod)
         };
         assert!(matches!(
             make(&mut test_box(), &s),
-            Err(FlatError::TooBig(_))
+            Err(FlatError::Setting { name: "spacing", .. })
         ));
     }
 
@@ -2229,14 +2271,80 @@ mod tests {
         let auto = positions(0.0, 100.0, &s(0, 0.0), false).unwrap();
         assert_eq!(auto.len(), 8);
         assert!(close(auto[0], 6.25, 1e-12) && close(auto[7], 93.75, 1e-12));
-        // stacked: one sheet apart from the bottom, at least one layer
+        // stacked: one sheet apart, the nearest whole number of layers centred on the body
         let st = positions(0.0, 40.0, &s(0, 0.0), true).unwrap();
         assert_eq!(st.len(), 13); // 40 / 3 rounds to 13
-        assert!(close(st[0], 1.5, 1e-12));
-        assert_eq!(positions(0.0, 1.0, &s(0, 0.0), true).unwrap(), [1.5]);
+        assert!(close(st[0], 2.0, 1e-12) && close(st[12], 38.0, 1e-12), "{st:?}");
+        // a body thinner than half a sheet still gets one layer, at its middle
+        assert_eq!(positions(0.0, 1.0, &s(0, 0.0), true).unwrap(), [0.5]);
         assert_eq!(positions(0.0, 1.0, &s(0, 0.0), false).unwrap(), [0.5]);
         assert!(positions(f64::NAN, 1.0, &s(0, 0.0), false).is_err());
         assert!(positions(1.0, 0.0, &s(0, 0.0), false).is_err());
+    }
+
+    #[test]
+    fn automatic_rod_spacing_is_whole_sheets() {
+        let s = FabSettings {
+            axis: Axis::X,
+            thickness: 3.0,
+            ..settings(Style::Rod)
+        };
+        // 200 mm: an eighth is 25, rounded to 24 (eight sheets), so the gaps are 7 rings each
+        let at = positions(0.0, 200.0, &s, false).unwrap();
+        assert!(
+            at.windows(2).all(|w| close(w[1] - w[0], 24.0, 1e-9)),
+            "{at:?}"
+        );
+        let res = make(&mut one_box([0.0; 3], [200.0, 60.0, 40.0]), &s).unwrap();
+        assert!(
+            !res
+                .warnings
+                .iter()
+                .any(|w| matches!(w, Warning::GapsNotWhole { .. })),
+            "{:?}",
+            res.warnings
+        );
+        // 100 mm: 12.5 rounds to 12
+        let at = positions(0.0, 100.0, &s, false).unwrap();
+        assert!(close(at[1] - at[0], 12.0, 1e-9), "{at:?}");
+    }
+
+    #[test]
+    fn upright_slices_are_at_least_a_sheet_apart() {
+        let s = |count, spacing| FabSettings {
+            axis: Axis::X,
+            thickness: 3.0,
+            count,
+            spacing,
+            ..settings(Style::Base)
+        };
+        // 100 mm at 3 mm: 40 slices would be 2.5 apart
+        assert!(matches!(
+            positions(0.0, 100.0, &s(40, 0.0), false),
+            Err(FlatError::Setting { name: "count", .. })
+        ));
+        assert!(matches!(
+            positions(0.0, 100.0, &s(0, 2.0), false),
+            Err(FlatError::Setting { name: "spacing", .. })
+        ));
+        // 33 slices are 3.03 apart
+        assert_eq!(positions(0.0, 100.0, &s(33, 0.0), false).unwrap().len(), 33);
+    }
+
+    #[test]
+    fn a_rod_wall_must_leave_a_spacer_ring() {
+        let s = |wall| FabSettings {
+            rod_diameter: 8.0,
+            clearance: 0.2,
+            wall,
+            ..settings(Style::Rod)
+        };
+        assert!(matches!(
+            make(&mut test_box(), &s(0.1)),
+            Err(FlatError::Setting { name: "wall", .. })
+        ));
+        let res = make(&mut test_box(), &s(0.2)).unwrap();
+        assert!(!of_kind(&res, PartKind::Spacer).is_empty());
     }
 
     #[test]
