@@ -157,7 +157,7 @@ fn does_not_fit(e: &FlatError, res: &FabResult, ss: &SheetSettings) -> Option<Fa
 /// A slicing's refusal as the command's error, in the parameters' words.
 fn refusal(cmd: &str, e: &FlatError, res: Option<&FabResult>, ss: &SheetSettings) -> EngineError {
     match e {
-        FlatError::Setting(name) => bad(cmd, format!("`{}` is out of range", param_name(name))),
+        FlatError::Setting { name, limit } => bad(cmd, format!("`{}` is out of range: it must be {limit}", param_name(name))),
         FlatError::Nothing => bad(cmd, "nothing to cut: the slices miss the body"),
         FlatError::TooBig(what) => bad(cmd, format!("too much to cut: {what}")),
         FlatError::DoesNotFit { part, width, height } => {

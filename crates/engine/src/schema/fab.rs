@@ -69,33 +69,34 @@ pub struct FabSettingsParams {
     /// Ignored for a waffle, which always slices across X and Y.
     #[serde(default)]
     pub axis: Option<FabAxis>,
-    /// Sheet thickness (mm). Default: 3.
+    /// Sheet thickness (mm), more than 0 and at most 1000. Default: 3.
     #[serde(default)]
     pub thickness: Option<f64>,
-    /// Centre-to-centre distance of upright or rod slices (mm); 0 for automatic. Default: 0.
-    /// Ignored for stacked layers, which are one sheet apart, and when `count` is above 0.
+    /// Centre-to-centre distance of upright or rod slices (mm), 0 (automatic) to 10000.
+    /// Default: 0. Ignored for stacked layers, which are one sheet apart, and when `count` is
+    /// above 0.
     #[serde(default)]
     pub spacing: Option<f64>,
-    /// The number of upright or rod slices (per direction in a waffle); overrides `spacing` when
-    /// above 0. Default: 0. Ignored for stacked layers.
+    /// The number of upright or rod slices (per direction in a waffle), 0 to 500; overrides
+    /// `spacing` when above 0. Default: 0. Ignored for stacked layers.
     #[serde(default)]
     pub count: Option<u32>,
     /// Play in slots and holes (mm), from 0 to the sheet thickness. Default: 0.2.
     #[serde(default)]
     pub clearance: Option<f64>,
-    /// Rod: the rod's diameter (mm). Default: 8.
+    /// Rod: the rod's diameter (mm), more than 0 and at most 10000. Default: 8.
     #[serde(default)]
     pub rod_diameter: Option<f64>,
-    /// Stacked: dowel holes through every layer, 0 for none. Default: 2.
+    /// Stacked: dowel holes through every layer, 0 (none) to 64. Default: 2.
     #[serde(default)]
     pub dowels: Option<u32>,
-    /// Stacked: the dowels' diameter (mm). Default: 6.
+    /// Stacked: the dowels' diameter (mm), more than 0 and at most 10000. Default: 6.
     #[serde(default)]
     pub dowel_diameter: Option<f64>,
-    /// Material kept around holes, and the width of spacer rings (mm). Default: 4.
+    /// Material kept around holes, and the width of spacer rings (mm), 0 to 10000. Default: 4.
     #[serde(default)]
     pub wall: Option<f64>,
-    /// Base or back: how far the plate reaches past the slices (mm). Default: 10.
+    /// Base or back: how far the plate reaches past the slices (mm), 0 to 10000. Default: 10.
     #[serde(default)]
     pub plate_margin: Option<f64>,
     /// Stacked: engrave where the smaller neighbouring layer goes. Default: true.
@@ -104,30 +105,31 @@ pub struct FabSettingsParams {
     /// The machine. Default: laser.
     #[serde(default)]
     pub machine: Option<FabMachine>,
-    /// Laser: the kerf, the width of the line the beam burns (mm). Default: 0.15. Ignored with
-    /// `machine` cnc.
+    /// Laser: the kerf, the width of the line the beam burns (mm), 0 to 5. Default: 0.15.
+    /// Ignored with `machine` cnc.
     #[serde(default)]
     pub kerf: Option<f64>,
-    /// CNC router: the bit's diameter (mm). Default: 3.175. Ignored with `machine` laser.
+    /// CNC router: the bit's diameter (mm), 0 to 50. Default: 3.175. Ignored with `machine` laser.
     #[serde(default)]
     pub tool_diameter: Option<f64>,
-    /// Sheet width (mm). Default: 600.
+    /// Sheet width (mm), more than 0 and at most 10000. Default: 600.
     #[serde(default)]
     pub sheet_width: Option<f64>,
-    /// Sheet height (mm). Default: 400.
+    /// Sheet height (mm), more than 0 and at most 10000. Default: 400.
     #[serde(default)]
     pub sheet_height: Option<f64>,
     /// The least distance between the machine's paths round two parts on a sheet (mm), 0 to
     /// 10000; with `machine` cnc the parts end up `tool_diameter` further apart. Default: 3.
     #[serde(default)]
     pub gap: Option<f64>,
-    /// The least distance from a sheet's edge (mm). Default: 5.
+    /// The least distance from a sheet's edge (mm), 0 to 10000 and less than half the sheet's
+    /// width and height. Default: 5.
     #[serde(default)]
     pub margin: Option<f64>,
     /// Engrave each part's name on it. Default: true.
     #[serde(default)]
     pub labels: Option<bool>,
-    /// The capital height of the engraved names (mm). Default: 5.
+    /// The capital height of the engraved names (mm), more than 0 and at most 10000. Default: 5.
     #[serde(default)]
     pub label_height: Option<f64>,
 }

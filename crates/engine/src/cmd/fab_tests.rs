@@ -177,6 +177,23 @@ fn refusals_say_which_setting_and_change_nothing() {
 }
 
 #[test]
+fn an_out_of_range_setting_names_its_range() {
+    let mut s = block();
+    for (cmd, p, want) in [
+        ("fab.slice", json!({"thickness": 0}), "`thickness` is out of range: it must be more than 0 and at most 1000 mm"),
+        (
+            "fab.export_sheets",
+            json!({"margin": 300}),
+            "`margin` is out of range: it must be 0 to 10000 mm and less than half the sheet's width and height",
+        ),
+        ("fab.export_sheets", json!({"sheet_width": 0}), "`sheet_width` is out of range: it must be more than 0 and at most 10000 mm"),
+    ] {
+        let e = s.execute(cmd, &p).unwrap_err().to_string();
+        assert!(e.contains(want), "{p}: {e}");
+    }
+}
+
+#[test]
 fn a_part_bigger_than_the_sheet_is_named() {
     let mut s = block();
     let r = run(&mut s, "fab.slice", json!({"thickness": 4, "sheet_width": 80, "sheet_height": 80}));
