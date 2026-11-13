@@ -296,29 +296,61 @@ const GAP_SLACK: f64 = 0.5;
 pub fn validate(s: &FabSettings) -> FlatResult<()> {
     let within = |x: f64, lo: f64, hi: f64| x.is_finite() && x >= lo && x <= hi;
     let positive = |x: f64, hi: f64| x.is_finite() && x > 0.0 && x <= hi;
-    let checks: [(bool, &'static str); 12] = [
-        (positive(s.thickness, 1000.0), "thickness"),
-        (within(s.spacing, 0.0, MAX_LENGTH), "spacing"),
-        (s.count as usize <= MAX_SLICES, "count"),
-        (within(s.clearance, 0.0, s.thickness), "clearance"),
-        (positive(s.rod_diameter, MAX_LENGTH), "rod_diameter"),
+    let checks: [(bool, &'static str, &'static str); 12] = [
+        (
+            positive(s.thickness, 1000.0),
+            "thickness",
+            "more than 0 and at most 1000 mm",
+        ),
+        (
+            within(s.spacing, 0.0, MAX_LENGTH),
+            "spacing",
+            "0 (automatic) to 10000 mm",
+        ),
+        (s.count as usize <= MAX_SLICES, "count", "0 to 500"),
+        (
+            within(s.clearance, 0.0, s.thickness),
+            "clearance",
+            "0 to the sheet thickness",
+        ),
+        (
+            positive(s.rod_diameter, MAX_LENGTH),
+            "rod_diameter",
+            "more than 0 and at most 10000 mm",
+        ),
         (
             s.rod_at
                 .is_none_or(|p| p.iter().all(|c| within(*c, -1e6, 1e6))),
             "rod_at",
+            "within 1000000 mm of the origin on every axis",
         ),
-        (s.dowels <= MAX_DOWELS, "dowels"),
-        (positive(s.dowel_diameter, MAX_LENGTH), "dowel_diameter"),
-        (within(s.wall, 0.0, MAX_LENGTH), "wall"),
-        (within(s.plate_margin, 0.0, MAX_LENGTH), "plate_margin"),
-        (within(s.min_area, 0.0, 1e8), "min_area"),
-        (within(s.chord, 1e-4, 10.0), "chord"),
+        (s.dowels <= MAX_DOWELS, "dowels", "0 to 64"),
+        (
+            positive(s.dowel_diameter, MAX_LENGTH),
+            "dowel_diameter",
+            "more than 0 and at most 10000 mm",
+        ),
+        (within(s.wall, 0.0, MAX_LENGTH), "wall", "0 to 10000 mm"),
+        (
+            within(s.plate_margin, 0.0, MAX_LENGTH),
+            "plate_margin",
+            "0 to 10000 mm",
+        ),
+        (
+            within(s.min_area, 0.0, 1e8),
+            "min_area",
+            "0 to 100000000 mm²",
+        ),
+        (within(s.chord, 1e-4, 10.0), "chord", "0.0001 to 10 mm"),
     ];
-    if let Some(&(_, name)) = checks.iter().find(|(ok, _)| !ok) {
-        return Err(FlatError::Setting(name));
+    if let Some(&(_, name, limit)) = checks.iter().find(|(ok, ..)| !ok) {
+        return Err(FlatError::Setting { name, limit });
     }
     if matches!(s.style, Style::Base | Style::Back) && s.axis == Axis::Z {
-        return Err(FlatError::Setting("axis"));
+        return Err(FlatError::Setting {
+            name: "axis",
+            limit: "X or Y for a base or back plate",
+        });
     }
     Ok(())
 }
@@ -334,10 +366,16 @@ pub fn validate(s: &FabSettings) -> FlatResult<()> {
 pub fn positions(lo: f64, hi: f64, s: &FabSettings, stacked: bool) -> FlatResult<Vec<f64>> {
     let (length, t) = (hi - lo, s.thickness);
     if !(lo.is_finite() && hi.is_finite() && length.is_finite() && length >= 0.0) {
-        return Err(FlatError::Setting("model bounds"));
+        return Err(FlatError::Setting {
+            name: "model bounds",
+            limit: "finite",
+        });
     }
     if !(t.is_finite() && t > 0.0) {
-        return Err(FlatError::Setting("thickness"));
+        return Err(FlatError::Setting {
+            name: "thickness",
+            limit: "more than 0",
+        });
     }
     let too_many = FlatError::TooBig("more slices than allowed");
     if stacked {
@@ -1873,16 +1911,22 @@ mod tests {
             thickness: 0.0,
             ..settings(Style::Stacked)
         };
-        assert_eq!(
+        assert!(matches!(
             make(&mut test_box(), &s),
-            Err(FlatError::Setting("thickness"))
-        );
+            Err(FlatError::Setting {
+                name: "thickness",
+                ..
+            })
+        ));
         for style in [Style::Base, Style::Back] {
             let s = FabSettings {
                 axis: Axis::Z,
                 ..settings(style)
             };
-            assert_eq!(make(&mut test_box(), &s), Err(FlatError::Setting("axis")));
+            assert!(matches!(
+                make(&mut test_box(), &s),
+                Err(FlatError::Setting { name: "axis", .. })
+            ));
         }
         // a waffle ignores the axis
         let s = FabSettings {
@@ -2000,7 +2044,10 @@ mod tests {
                         Err(e) => {
                             if x.is_nan() || x == -f64::INFINITY || (x == -1.0 && name != "rod_at")
                             {
-                                assert_eq!(e, FlatError::Setting(name), "{name} = {x}");
+                                assert!(
+                                    matches!(e, FlatError::Setting { name: n, .. } if n == name),
+                                    "{name} = {x}"
+                                );
                             }
                         }
                     }
@@ -2013,7 +2060,7 @@ mod tests {
                 };
                 let r = make(&mut one_box([0.0; 3], [20.0, 10.0, 8.0]), &s);
                 if count as usize > MAX_SLICES {
-                    assert_eq!(r, Err(FlatError::Setting("count")));
+                    assert!(matches!(r, Err(FlatError::Setting { name: "count", .. })));
                 }
             }
             for dowels in [0, MAX_DOWELS, MAX_DOWELS + 1, u32::MAX] {
@@ -2023,7 +2070,7 @@ mod tests {
                 };
                 let r = make(&mut one_box([0.0; 3], [20.0, 10.0, 8.0]), &s);
                 if dowels > MAX_DOWELS {
-                    assert_eq!(r, Err(FlatError::Setting("dowels")));
+                    assert!(matches!(r, Err(FlatError::Setting { name: "dowels", .. })));
                 } else {
                     assert_sound(&r.unwrap());
                 }

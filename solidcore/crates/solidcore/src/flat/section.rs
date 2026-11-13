@@ -62,6 +62,9 @@ const TRACE_SHARE: f64 = 0.1;
 const SAMPLE_SHARE: f64 = 0.85;
 const SIMPLIFY_SHARE: f64 = 0.05;
 
+/// [`CHORD_RANGE`] in words, for [`FlatError::Setting`].
+const CHORD_LIMIT: &str = "0.0001 to 10 mm";
+
 fn chord_ok(chord: f64) -> bool {
     chord.is_finite() && (CHORD_RANGE.0..=CHORD_RANGE.1).contains(&chord)
 }
@@ -89,7 +92,10 @@ impl<'a> BrepSection<'a> {
     /// errors listing the vertices or computing the box.
     pub fn new(k: &'a Kernel, b: &'a mut Brep, chord: f64) -> FlatResult<Self> {
         if !chord_ok(chord) {
-            return Err(FlatError::Setting("chord"));
+            return Err(FlatError::Setting {
+                name: "chord",
+                limit: CHORD_LIMIT,
+            });
         }
         let ext = brep_bounding_box(k, b, true)?;
         let bounds = if ext.is_defined() {
@@ -237,10 +243,16 @@ fn section_curves(
     centre: [f64; 3],
 ) -> FlatResult<(Vec<Curve>, Vec<Option<FaceId>>)> {
     if !at.is_finite() || at.abs() >= 1e6 {
-        return Err(FlatError::Setting("section position"));
+        return Err(FlatError::Setting {
+            name: "section position",
+            limit: "finite and less than 1000000 mm from the origin",
+        });
     }
     if !chord_ok(chord) {
-        return Err(FlatError::Setting("chord"));
+        return Err(FlatError::Setting {
+            name: "chord",
+            limit: CHORD_LIMIT,
+        });
     }
     let (n, _, _) = axis.directions();
     let mut point = if centre.iter().all(|x| x.is_finite() && x.abs() < 1e6) {
@@ -646,12 +658,15 @@ mod tests {
         for c in [0.0, -1.0, f64::NAN, f64::INFINITY, 1e-9, 100.0] {
             assert!(matches!(
                 BrepSection::new(&k, &mut b, c),
-                Err(FlatError::Setting("chord"))
+                Err(FlatError::Setting { name: "chord", .. })
             ));
         }
         let mut s = BrepSection::new(&k, &mut b, CHORD).unwrap();
         for at in [f64::NAN, f64::INFINITY, -f64::INFINITY, 1e300] {
-            assert!(matches!(s.section(Axis::Z, at), Err(FlatError::Setting(_))));
+            assert!(matches!(
+                s.section(Axis::Z, at),
+                Err(FlatError::Setting { .. })
+            ));
         }
     }
 

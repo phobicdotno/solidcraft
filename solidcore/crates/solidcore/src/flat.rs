@@ -65,9 +65,14 @@ pub type Region = Vec<Shape>;
 /// Why a flat-part computation gave no result.
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum FlatError {
-    /// A setting out of range or not finite; names the setting.
-    #[error("{0} is out of range")]
-    Setting(&'static str),
+    /// A setting out of range or not finite: the setting's name and the range it must be in.
+    #[error("`{name}` must be {limit}")]
+    Setting {
+        /// The setting's name.
+        name: &'static str,
+        /// The range the setting must be in, as words ("more than 0 and at most 1000 mm").
+        limit: &'static str,
+    },
     /// The slices miss the model: nothing to cut.
     #[error("nothing to cut: the slices miss the model")]
     Nothing,

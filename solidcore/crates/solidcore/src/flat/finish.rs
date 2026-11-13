@@ -103,7 +103,10 @@ fn largest(r: Region) -> Shape {
 /// either way.
 pub fn kerf(shape: &Shape, width: f64) -> FlatResult<Shape> {
     if !width.is_finite() || width.abs() > MAX_KERF {
-        return Err(FlatError::Setting("kerf"));
+        return Err(FlatError::Setting {
+            name: "kerf",
+            limit: "finite and at most 1000 mm either way",
+        });
     }
     if width == 0.0 {
         return Ok(shape.clone());
@@ -409,31 +412,35 @@ fn within(v: f64, lo: f64, hi: f64) -> bool {
 
 /// The sheet settings checked: the first one out of range, by name.
 fn check(ss: &SheetSettings) -> FlatResult<()> {
-    let fail = |name| Err(FlatError::Setting(name));
+    const SIZE: &str = "more than 0 and at most 10000 mm";
+    let fail = |name, limit| Err(FlatError::Setting { name, limit });
     if !(within(ss.width, 0.0, 10_000.0) && ss.width > 0.0) {
-        return fail("width");
+        return fail("width", SIZE);
     }
     if !(within(ss.height, 0.0, 10_000.0) && ss.height > 0.0) {
-        return fail("height");
+        return fail("height", SIZE);
     }
     if !within(ss.gap, 0.0, 10_000.0) {
-        return fail("gap");
+        return fail("gap", "0 to 10000 mm");
     }
     if !within(ss.margin, 0.0, 10_000.0)
         || ss.width - 2.0 * ss.margin <= 0.0
         || ss.height - 2.0 * ss.margin <= 0.0
     {
-        return fail("margin");
+        return fail(
+            "margin",
+            "0 to 10000 mm and less than half the sheet's width and height",
+        );
     }
     match ss.machine {
-        Machine::Laser { kerf } if !within(kerf, 0.0, 5.0) => return fail("kerf"),
+        Machine::Laser { kerf } if !within(kerf, 0.0, 5.0) => return fail("kerf", "0 to 5 mm"),
         Machine::Router { tool_diameter } if !within(tool_diameter, 0.0, 50.0) => {
-            return fail("tool_diameter")
+            return fail("tool_diameter", "0 to 50 mm")
         }
         _ => {}
     }
     if ss.labels && !(within(ss.label_height, 0.0, 10_000.0) && ss.label_height > 0.0) {
-        return fail("label_height");
+        return fail("label_height", SIZE);
     }
     Ok(())
 }
@@ -634,7 +641,10 @@ mod tests {
             assert_eq!(kerf(&s, w), Ok(s.clone()));
         }
         for w in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            assert_eq!(kerf(&s, w), Err(FlatError::Setting("kerf")), "{w}");
+            assert!(
+                matches!(kerf(&s, w), Err(FlatError::Setting { name: "kerf", .. })),
+                "{w}"
+            );
         }
     }
 
@@ -658,7 +668,10 @@ mod tests {
     fn kerf_beyond_a_metre_is_refused() {
         let s = solid(sq(0.0, 0.0, 10.0, 10.0, true));
         for w in [1e300, -1e300, MAX_KERF * 1.001] {
-            assert_eq!(kerf(&s, w), Err(FlatError::Setting("kerf")), "{w}");
+            assert!(
+                matches!(kerf(&s, w), Err(FlatError::Setting { name: "kerf", .. })),
+                "{w}"
+            );
         }
         assert!(close(
             shape_area(&kerf(&s, MAX_KERF).unwrap()),
@@ -1190,7 +1203,10 @@ mod tests {
             };
             let routed = finish(&p, &ss);
             if v > 0.0 {
-                assert_eq!(lasered, Err(FlatError::Setting("kerf")), "kerf {v}");
+                assert!(
+                    matches!(lasered, Err(FlatError::Setting { name: "kerf", .. })),
+                    "kerf {v}"
+                );
                 assert!(matches!(routed, Err(FlatError::Kernel(_))), "bit {v}");
             } else {
                 assert_eq!(lasered.unwrap().shape, p.shape, "kerf {v}");
@@ -1389,7 +1405,10 @@ mod tests {
             ),
         ];
         for (ss, name) in cases {
-            assert_eq!(layout(&res, &ss), Err(FlatError::Setting(name)), "{ss:?}");
+            assert!(
+                matches!(layout(&res, &ss), Err(FlatError::Setting { name: n, .. }) if n == name),
+                "{ss:?}"
+            );
         }
         // labels off: the label height does not matter
         let ss = SheetSettings {

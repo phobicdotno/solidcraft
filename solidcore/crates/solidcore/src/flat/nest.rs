@@ -566,17 +566,29 @@ pub fn nest(
 ) -> FlatResult<Vec<Placement>> {
     let sane = |v: f64| v.is_finite() && v.abs() <= LIMIT;
     if !sane(sheet_w) || !sane(sheet_h) {
-        return Err(FlatError::Setting("sheet"));
+        return Err(FlatError::Setting {
+            name: "sheet",
+            limit: "finite and at most 100000 mm across and down",
+        });
     }
     if !sane(margin) || margin < 0.0 {
-        return Err(FlatError::Setting("margin"));
+        return Err(FlatError::Setting {
+            name: "margin",
+            limit: "0 to 100000 mm",
+        });
     }
     let (iw, ih) = (sheet_w - 2.0 * margin, sheet_h - 2.0 * margin);
     if !(iw > 0.0 && ih > 0.0) {
-        return Err(FlatError::Setting("sheet"));
+        return Err(FlatError::Setting {
+            name: "sheet",
+            limit: "more than twice the margin across and down",
+        });
     }
     if !sane(gap) || gap < 0.0 {
-        return Err(FlatError::Setting("gap"));
+        return Err(FlatError::Setting {
+            name: "gap",
+            limit: "0 to 100000 mm",
+        });
     }
     if outlines.is_empty() {
         return Ok(Vec::new());
@@ -591,7 +603,10 @@ pub fn nest(
         .iter()
         .any(|r| r.len() < 3 || r.iter().flatten().any(|&c| !sane(c)))
     {
-        return Err(FlatError::Setting("part"));
+        return Err(FlatError::Setting {
+            name: "part",
+            limit: "a ring of at least 3 points, each within 100000 mm of the origin",
+        });
     }
 
     let cell = MIN_CELL
@@ -1068,44 +1083,44 @@ mod tests {
     fn bad_input_errors() {
         let sq = vec![rect(5.0, 5.0, 0.0, 0.0)];
         let line = vec![vec![[0.0, 0.0], [1.0, 1.0]]];
-        assert_eq!(
+        assert!(matches!(
             nest(&line, 100.0, 100.0, 3.0, 5.0, true),
-            Err(FlatError::Setting("part"))
-        );
-        assert_eq!(
+            Err(FlatError::Setting { name: "part", .. })
+        ));
+        assert!(matches!(
             nest(&sq, 10.0, 10.0, 3.0, 5.0, true),
-            Err(FlatError::Setting("sheet"))
-        );
-        assert_eq!(
+            Err(FlatError::Setting { name: "sheet", .. })
+        ));
+        assert!(matches!(
             nest(&sq, 100.0, 9.0, 3.0, 5.0, true),
-            Err(FlatError::Setting("sheet"))
-        );
-        assert_eq!(
+            Err(FlatError::Setting { name: "sheet", .. })
+        ));
+        assert!(matches!(
             nest(&sq, 100.0, 100.0, -1.0, 5.0, true),
-            Err(FlatError::Setting("gap"))
-        );
-        assert_eq!(
+            Err(FlatError::Setting { name: "gap", .. })
+        ));
+        assert!(matches!(
             nest(&sq, 100.0, 100.0, f64::NAN, 5.0, true),
-            Err(FlatError::Setting("gap"))
-        );
-        assert_eq!(
+            Err(FlatError::Setting { name: "gap", .. })
+        ));
+        assert!(matches!(
             nest(&sq, 100.0, 100.0, 3.0, -1.0, true),
-            Err(FlatError::Setting("margin"))
-        );
-        assert_eq!(
+            Err(FlatError::Setting { name: "margin", .. })
+        ));
+        assert!(matches!(
             nest(&sq, f64::INFINITY, 100.0, 3.0, 5.0, true),
-            Err(FlatError::Setting("sheet"))
-        );
+            Err(FlatError::Setting { name: "sheet", .. })
+        ));
         let nan = vec![vec![[0.0, 0.0], [1.0, f64::NAN], [1.0, 1.0]]];
-        assert_eq!(
+        assert!(matches!(
             nest(&nan, 100.0, 100.0, 3.0, 5.0, true),
-            Err(FlatError::Setting("part"))
-        );
+            Err(FlatError::Setting { name: "part", .. })
+        ));
         let far = vec![rect(1.0, 1.0, 1e6, 0.0)];
-        assert_eq!(
+        assert!(matches!(
             nest(&far, 100.0, 100.0, 3.0, 5.0, true),
-            Err(FlatError::Setting("part"))
-        );
+            Err(FlatError::Setting { name: "part", .. })
+        ));
     }
 
     #[test]
