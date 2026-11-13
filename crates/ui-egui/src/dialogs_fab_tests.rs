@@ -383,7 +383,13 @@ fn sheets_written_after_the_window_closed_are_told_on_the_status_line() {
     tx.send(Ok(json!({"files": [{"path": "/sheets/box-sheet1.dxf"}]}))).unwrap();
     h.frames(2);
     let (text, _, error) = h.app.status.clone().expect("a status line");
-    assert!(!error && text.starts_with("Wrote 1 files") && text.contains("sheets"), "{text}");
+    assert!(!error && text.starts_with("Wrote 1 file to") && text.contains("sheets"), "{text}");
+    let (tx, rx) = std::sync::mpsc::channel();
+    h.app.fab.exporting = Some(rx);
+    tx.send(Ok(json!({"files": [{"path": "/sheets/box-sheet1.dxf"}, {"path": "/sheets/box-sheet1.svg"}]}))).unwrap();
+    h.frames(2);
+    let (text, _, _) = h.app.status.clone().expect("a status line");
+    assert!(text.starts_with("Wrote 2 files to"), "{text}");
 }
 
 #[test]
