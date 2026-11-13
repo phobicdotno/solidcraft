@@ -90,23 +90,6 @@ pub fn sheet_dxf(sheet: &SheetDrawing<'_>) -> Result<String> {
     write_dxf_drawing(&layers, &entities)
 }
 
-/// Text with `&`, `<`, `>`, `"` and `'` written as XML entities.
-fn xml_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&apos;"),
-            c if c.is_control() => {}
-            c => out.push(c),
-        }
-    }
-    out
-}
-
 /// One SVG path: SVG's y runs down, so a sheet point `(x, y)` is drawn at `(x, height - y)`.
 fn path_d(points: &[[f64; 2]], height: f64, closed: bool) -> String {
     let mut d = String::new();
@@ -131,7 +114,7 @@ pub fn sheet_svg(sheet: &SheetDrawing<'_>) -> Result<String> {
     let mut s = String::new();
     let _ = writeln!(s, r#"<?xml version="1.0" encoding="UTF-8"?>"#);
     let _ = writeln!(s, r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}mm" height="{h}mm" viewBox="0 0 {w} {h}">"#);
-    let _ = writeln!(s, "<title>{}</title>", xml_escape(&sheet.parts.join(", ")));
+    let _ = writeln!(s, "<title>{}</title>", crate::threemf::esc(&sheet.parts.join(", ")));
     let _ = writeln!(s, r#"<g id="cut" fill="none" stroke="{CUT_COLOUR}" stroke-width="0.1">"#);
     for ring in sheet.cuts.iter().filter(|r| r.len() >= 3) {
         let _ = writeln!(s, r#"<path d="{}"/>"#, path_d(ring, h, true));
