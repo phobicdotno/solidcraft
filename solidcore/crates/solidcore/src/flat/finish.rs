@@ -420,17 +420,24 @@ pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> FlatResult<Fi
         }
     }
     if ss.labels && part.kind != PartKind::Spacer {
-        let room = if marked.is_empty() {
-            shape.clone()
+        // the pieces the guide lines and marks leave, largest first: the name goes in the
+        // first that has room for it (a thin band round a neighbour's outline may have none)
+        let mut rooms: Vec<(f64, Shape)> = if marked.is_empty() {
+            vec![(0.0, shape.clone())]
         } else {
-            largest(region::difference(&material(&shape), &marked))
+            region::difference(&material(&shape), &marked)
+                .into_iter()
+                .map(|s| (region::shape_area(&s), s))
+                .collect()
         };
-        engrave.extend(label_inside(
-            &room,
-            &part.name,
-            ss.label_height,
-            LABEL_MARGIN,
-        ));
+        rooms.sort_by(|a, b| b.0.total_cmp(&a.0));
+        if let Some(name) = rooms
+            .iter()
+            .map(|(_, room)| label_inside(room, &part.name, ss.label_height, LABEL_MARGIN))
+            .find(|name| !name.is_empty())
+        {
+            engrave.extend(name);
+        }
     }
     if let Machine::Laser { kerf: k } = ss.machine {
         if k > 0.0 {
@@ -1490,6 +1497,32 @@ mod tests {
             "the name {:?} crosses the guide line",
             [x0, y0, x1, y1]
         );
+    }
+
+    #[test]
+    fn a_name_goes_in_a_smaller_piece_when_the_largest_has_no_room() {
+        // a 3 mm strip with a 20 mm square at its end, a guide line between them: the strip
+        // is the larger piece but too thin for any name
+        let mut p = part(
+            "L1",
+            PartKind::Slice,
+            solid(vec![
+                [0.0, 0.0],
+                [320.0, 0.0],
+                [320.0, 20.0],
+                [300.0, 20.0],
+                [300.0, 3.0],
+                [0.0, 3.0],
+            ]),
+        );
+        p.engrave = vec![vec![[300.0, 0.0], [300.0, 3.0]]];
+        let f = finish(&p, &sheet_settings()).unwrap();
+        let name = f.engrave.get(1..).unwrap_or_default();
+        assert!(!name.is_empty(), "no name");
+        // on the square, not the strip
+        for [x, _] in points(name) {
+            assert!(x > 300.0, "the name reaches x {x}");
+        }
     }
 
     #[test]
