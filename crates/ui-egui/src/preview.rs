@@ -113,6 +113,14 @@ type Job = Result<Built, String>;
 /// most this many kernel computations going beside the current one.
 const DETACHED: usize = 2;
 
+/// A job left behind, a preview's or Slice for Laser / CNC's: true while its thread still runs.
+type Detached = Box<dyn FnMut() -> bool + Send>;
+
+/// A job's result channel as a left-behind job: it runs until it sends or its thread ends.
+fn still_running<T: Send + 'static>(rx: Receiver<T>) -> Detached {
+    Box::new(move || matches!(rx.try_recv(), Err(TryRecvError::Empty)))
+}
+
 /// How long a joint pose for a slider value since moved past may keep computing (#14264). Past
 /// it, the pose is cancelled and the latest value starts, so only the latest keeps solving.
 const STALE_MOTION_MS: f64 = 500.0;
@@ -124,10 +132,10 @@ pub struct PreviewState {
     running: Option<(u64, Receiver<Job>)>,
     /// Asks the running job to stop between features once it is obsolete.
     running_progress: Option<Arc<Progress>>,
-    /// Jobs left behind for inputs that changed to another setup (#7167): asked to stop, their
-    /// results are dropped when they come. With [`DETACHED`] of them running, the next obsolete
-    /// job is waited for.
-    detached: Vec<Receiver<Job>>,
+    /// Jobs left behind for inputs that changed to another setup (#7167), and slicings of a closed
+    /// Slice for Laser / CNC window: asked to stop, their results are dropped when they come.
+    /// With [`DETACHED`] of them running, the next obsolete job is waited for.
+    detached: Vec<Detached>,
     /// The running job builds a tool alone (for a join, cut or intersect).
     running_tool: bool,
     /// Inputs of a joint or distance preview, excluding only its driven values.
@@ -285,7 +293,7 @@ impl PreviewState {
             }
         }
         // A detached job's result is never shown: drop it once it is done.
-        self.detached.retain(|rx| matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+        self.detached.retain_mut(|running| running());
         // The inputs moved to another setup (another selection, for the features whose distance,
         // radius or pose streams) while a job runs: its result could only be dropped, so stop
         // waiting for it and let the current inputs start now (#7167). A tool, or a value
@@ -309,11 +317,26 @@ impl PreviewState {
             progress.cancel();
         }
         if let Some((_, rx)) = self.running.take() {
-            self.detached.push(rx);
+            self.detached.push(still_running(rx));
         }
         self.running_tool = false;
         self.running_stream_key = None;
         self.running_motion = false;
+    }
+
+    /// Leave behind the job of a window that closed while it ran (Slice for Laser / CNC): ask it
+    /// to stop (`progress`) and count it among the detached jobs until its thread ends, so
+    /// `DETACHED` bounds it with the previews' own.
+    pub(crate) fn leave_behind<T: Send + 'static>(&mut self, rx: Receiver<T>, progress: &Progress) {
+        progress.cancel();
+        self.detached.push(still_running(rx));
+    }
+
+    /// Whether a new job of such a window may start: fewer than [`DETACHED`] jobs left behind
+    /// still run. Beyond them it waits, as an obsolete preview does.
+    pub(crate) fn room(&mut self) -> bool {
+        self.detached.retain_mut(|running| running());
+        self.detached.len() < DETACHED
     }
 }
 

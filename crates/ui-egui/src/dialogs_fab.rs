@@ -7,6 +7,7 @@
 //! thread of its own (on the web, where there are none, at once), so the window keeps drawing
 //! and the last result stays up meanwhile. Writing the sheets runs the same way.
 
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use egui::{Align2, FontId, Pos2, Rect, Stroke, pos2, vec2};
@@ -16,6 +17,7 @@ use solidcore_tess::PlateFrame;
 use solidcraft_engine::Sel;
 use solidcraft_engine::Session;
 use solidcraft_engine::doc::expr::Kind as ValueKind;
+use solidcraft_engine::doc::progress::Progress;
 use solidcraft_engine::geom::prelude::*;
 use solidcraft_engine::geom::{Aabb3, Mesh};
 use solidcraft_theme::Tokens;
@@ -531,6 +533,8 @@ pub struct FabRun {
     /// Settings waiting for [`DEBOUNCE_S`] to pass, since when (egui time, s).
     wanted: Option<(Key, f64)>,
     running: Option<(Key, Receiver<Computed>)>,
+    /// Asks the running slicing to stop, once the window closes.
+    progress: Option<Arc<Progress>>,
     /// The last slicing's reply or refusal.
     pub result: Option<Result<Value, String>>,
     pub(crate) problem: Option<Problem>,
@@ -540,6 +544,8 @@ pub struct FabRun {
     copies: usize,
     /// Counts the results, for the preview's key.
     generation: u64,
+    /// The sheets being written. The writing outlives the window: its outcome then goes to the
+    /// status line.
     exporting: Option<Receiver<Result<Value, String>>>,
     /// What the last export did.
     pub status: Option<Result<String, String>>,
@@ -554,10 +560,6 @@ impl FabRun {
     /// Any work still going (a slicing, a wait or an export).
     pub fn working(&self) -> bool {
         self.busy() || self.exporting.is_some()
-    }
-
-    fn close(&mut self) {
-        *self = FabRun { last: self.last.take(), ..FabRun::default() };
     }
 
     fn apply(&mut self, key: Key, done: Computed) {
@@ -591,6 +593,17 @@ impl FabRun {
             self.exporting = Some(rx);
         }
     }
+}
+
+/// The window closed: its slicing is asked to stop and left among the previews' detached jobs,
+/// which bound how many still run; the sheets being written are kept, to say how it went.
+fn close(app: &mut SolveApp) {
+    let run = &mut app.fab;
+    if let Some((_, rx)) = run.running.take() {
+        let progress = run.progress.take().unwrap_or_default();
+        app.preview.leave_behind(rx, &progress);
+    }
+    *run = FabRun { last: run.last.take(), exporting: run.exporting.take(), ..FabRun::default() };
 }
 
 /// Slice the settings of `key` on a copy of the design: the reply, and the plates and sheet fills
@@ -659,10 +672,18 @@ fn shapes(v: &Value) -> (Vec<(Mesh, bool)>, Vec<Vec<[Vec2; 3]>>, usize) {
 fn spawn(run: &mut FabRun, scratch: Session, key: Key) {
     let (tx, rx) = std::sync::mpsc::channel();
     let params = key.0.clone();
+    // Watched by `progress`, so a slicing left behind by a closed window stops its kernel work.
+    let progress = Arc::new(Progress::default());
+    let watched = progress.clone();
     match std::thread::Builder::new().name("fab-slice".into()).spawn(move || {
-        let _ = tx.send(compute(scratch, &params));
+        let stop = scratch.stop_token();
+        let done = stop.within(|| solidcraft_engine::doc::progress::watch(watched, || compute(scratch, &params)));
+        let _ = tx.send(done);
     }) {
-        Ok(_) => run.running = Some((key, rx)),
+        Ok(_) => {
+            run.running = Some((key, rx));
+            run.progress = Some(progress);
+        }
         Err(e) => run.apply(key, Computed { result: Err(e.to_string()), plates: Vec::new(), fills: Vec::new(), copies: 0 }),
     }
 }
@@ -682,8 +703,12 @@ pub(crate) fn tick(app: &mut SolveApp, ctx: &egui::Context) -> Option<Option<u64
         Kind::Fab(k) => Some((k.as_ref().clone(), d.inputs.clone())),
         _ => None,
     }) else {
-        if app.fab.open || app.fab.working() {
-            app.fab.close();
+        if app.fab.open || app.fab.busy() {
+            close(app);
+        }
+        if app.fab.exporting.is_some() {
+            poll(app);
+            ctx.request_repaint_after(std::time::Duration::from_millis(30));
         }
         return None;
     };
@@ -712,7 +737,8 @@ pub(crate) fn tick(app: &mut SolveApp, ctx: &egui::Context) -> Option<Option<u64
                 };
                 // The first slicing of a window starts at once; a change waits for the next.
                 let first = app.fab.shown.is_none();
-                if app.fab.running.is_none() && (first || now - since >= DEBOUNCE_S) {
+                // Beyond the slicings and previews left behind, a new one waits for them to end.
+                if app.fab.running.is_none() && (first || now - since >= DEBOUNCE_S) && app.preview.room() {
                     app.fab.wanted = None;
                     let scratch = app.session.scratch();
                     spawn(&mut app.fab, scratch, key);
@@ -755,7 +781,15 @@ fn poll(app: &mut SolveApp) {
         if let Some(done) = done {
             app.fab.exporting = None;
             let status = done.map(|v| exported(app, &v));
-            app.fab.status = Some(status);
+            if app.fab.open {
+                app.fab.status = Some(status);
+            } else {
+                // The window is gone: the status line says how the writing went.
+                match status {
+                    Ok(text) => app.set_status(text, false),
+                    Err(e) => app.set_status(e, true),
+                }
+            }
         }
     }
 }

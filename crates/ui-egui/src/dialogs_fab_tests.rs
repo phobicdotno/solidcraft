@@ -339,6 +339,53 @@ fn wait_ready(h: &mut Harness) {
 }
 
 #[test]
+fn a_closed_window_leaves_its_slicing_among_the_bounded_detached_jobs() {
+    let mut h = with_box();
+    open(&mut h);
+    wait_ready(&mut h);
+    // A slicing still running when the window closes.
+    let (slicing_tx, slicing_rx) = std::sync::mpsc::channel::<Computed>();
+    let progress = Arc::new(Progress::default());
+    h.app.fab.running = Some(((json!({}), 0), slicing_rx));
+    h.app.fab.progress = Some(progress.clone());
+    h.step(&json!({"widget": "Close"})).unwrap();
+    h.frames(2);
+    assert!(progress.is_cancelled() && h.app.fab.running.is_none(), "closing asks the slicing to stop");
+    // It counts with the previews left behind: with two of them running, a new job waits.
+    assert!(h.app.preview.room());
+    let (other_tx, other_rx) = std::sync::mpsc::channel::<()>();
+    h.app.preview.leave_behind(other_rx, &Progress::default());
+    assert!(!h.app.preview.room(), "the closed window's slicing still counts");
+    drop(slicing_tx);
+    assert!(h.app.preview.room(), "until its thread ends");
+    drop(other_tx);
+}
+
+#[test]
+fn sheets_written_after_the_window_closed_are_told_on_the_status_line() {
+    let mut h = with_box();
+    open(&mut h);
+    wait_ready(&mut h);
+    let (tx, rx) = std::sync::mpsc::channel();
+    h.app.fab.exporting = Some(rx);
+    h.step(&json!({"widget": "Close"})).unwrap();
+    h.frames(2);
+    assert!(h.app.dialog.is_none() && h.app.fab.exporting.is_some(), "the writing goes on");
+    tx.send(Err("the disk is full".to_string())).unwrap();
+    h.frames(2);
+    assert!(h.app.fab.exporting.is_none());
+    let (text, _, error) = h.app.status.clone().expect("a status line");
+    assert!(error && text.contains("the disk is full"), "{text}");
+    // A writing that went well says where the files are.
+    let (tx, rx) = std::sync::mpsc::channel();
+    h.app.fab.exporting = Some(rx);
+    tx.send(Ok(json!({"files": [{"path": "/sheets/box-sheet1.dxf"}]}))).unwrap();
+    h.frames(2);
+    let (text, _, error) = h.app.status.clone().expect("a status line");
+    assert!(!error && text.starts_with("Wrote 1 files") && text.contains("sheets"), "{text}");
+}
+
+#[test]
 fn a_bad_field_holds_the_export_until_it_is_mended() {
     let mut h = with_box();
     open(&mut h);
