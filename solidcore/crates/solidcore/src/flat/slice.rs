@@ -598,7 +598,8 @@ fn piece_suffix(i: usize) -> String {
 }
 
 /// Adds the pieces of `reg` of at least `min_area` as parts named `name`, or `name` with a,
-/// b, c... (largest first) and a [`Warning::FallsApart`] when there are several.
+/// b, c... (largest first) and a [`Warning::FallsApart`] when there are several. Each piece
+/// keeps the parts of `engrave` that lie on it and the `marks` whose point does.
 fn add_pieces(
     out: &mut Out,
     name: &str,
@@ -620,13 +621,18 @@ fn add_pieces(
         } else {
             name.to_string()
         };
+        let one = std::slice::from_ref(shape);
         out.parts.push(FabPart {
             name: nm,
             kind,
             shape: shape.clone(),
             frame,
-            engrave: engrave.to_vec(),
-            marks: marks.to_vec(),
+            engrave: region::clip_lines(engrave, one),
+            marks: marks
+                .iter()
+                .filter(|m| region::contains(one, m.at))
+                .cloned()
+                .collect(),
             copies: 1,
             places: Vec::new(),
         });
@@ -2253,6 +2259,34 @@ mod tests {
             })
             .collect();
         assert_eq!(res.warnings, want);
+        assert_sound(&res);
+    }
+
+    #[test]
+    fn a_layer_in_two_pieces_gives_each_only_its_own_guide_lines() {
+        // two stepped pillars: L2 falls apart, and each piece is guided by its own top
+        let mut model = Boxes(vec![
+            ([0.0; 3], [20.0, 20.0, 6.0]),
+            ([5.0, 5.0, 6.0], [15.0, 15.0, 12.0]),
+            ([40.0, 0.0, 0.0], [60.0, 20.0, 6.0]),
+            ([45.0, 5.0, 6.0], [55.0, 15.0, 12.0]),
+        ]);
+        let s = FabSettings {
+            thickness: 3.0,
+            dowels: 0,
+            ..settings(Style::Stacked)
+        };
+        let res = make(&mut model, &s).unwrap();
+        for name in ["L2a", "L2b"] {
+            let part = res.parts.iter().find(|p| p.name == name).unwrap();
+            assert!(!part.engrave.is_empty(), "{name} has no guide lines");
+            let one = std::slice::from_ref(&part.shape);
+            for line in &part.engrave {
+                for &p in line {
+                    assert!(region::contains(one, p), "{name}: guide point {p:?} is off it");
+                }
+            }
+        }
         assert_sound(&res);
     }
 
