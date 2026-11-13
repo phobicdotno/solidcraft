@@ -207,10 +207,6 @@ fn warning(w: &Warning) -> FabWarning {
             d.insert("part".into(), json!(part));
             ("rod_hub", format!("{part}: the rod misses it, so it gets a hub around the rod"))
         }
-        Warning::NoTab { part } => {
-            d.insert("part".into(), json!(part));
-            ("no_tab", format!("{part} is too narrow where it meets the plate for a tab"))
-        }
         Warning::GapsNotWhole { thickness } => {
             d.insert("thickness".into(), json!(thickness));
             (
