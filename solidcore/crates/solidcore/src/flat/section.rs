@@ -911,6 +911,113 @@ mod tests {
         assert!(close(region::area(&r), want, 1.0), "{}", region::area(&r));
     }
 
+    fn stacked(axis: Axis, thickness: f64) -> super::super::slice::FabSettings {
+        super::super::slice::FabSettings {
+            style: super::super::slice::Style::Stacked,
+            axis,
+            thickness,
+            spacing: 0.0,
+            count: 0,
+            clearance: 0.2,
+            rod_diameter: 8.0,
+            rod_at: None,
+            dowels: 0,
+            dowel_diameter: 6.0,
+            wall: 4.0,
+            plate_margin: 10.0,
+            guide_outline: false,
+            min_area: 4.0,
+            chord: CHORD,
+        }
+    }
+
+    #[test]
+    fn a_plane_that_only_touches_gives_nothing_and_no_error() {
+        let mut k = Kernel::default();
+        // tangent to a sphere at its pole, exactly and nudged
+        let mut sphere = create_sphere(&mut k, Point3::ZERO, 10.0).unwrap();
+        let r = section_at(&k, &mut sphere, Axis::Z, 10.0, CHORD, [0.0; 3]).unwrap();
+        assert!(region::area(&r) < 1e-6, "{r:?}");
+        let mut s = BrepSection::new(&k, &mut sphere, CHORD).unwrap();
+        assert!(region::area(&s.section(Axis::Z, 10.0).unwrap()) < 1e-6);
+        // on the flat end of a cylinder (coplanar with a face)
+        let mut cylinder = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
+        for at in [30.0, 0.0] {
+            let r = section_at(&k, &mut cylinder, Axis::Z, at, CHORD, [0.0; 3]).unwrap();
+            assert!(region::area(&r) < 1e-6, "z = {at}: {r:?}");
+        }
+    }
+
+    #[test]
+    fn whole_numbers_of_sheets_stack_on_layer_middles() {
+        use super::super::slice::{make, positions};
+        let mut k = Kernel::default();
+        // planes sit at the middles of the layers: 1.5, 4.5 .. 28.5 for 30 mm at 3
+        let at = positions(0.0, 30.0, &stacked(Axis::Z, 3.0), true).unwrap();
+        assert_eq!(at.len(), 10, "{at:?}");
+        let mut want = 1.5;
+        for z in &at {
+            assert!(close(*z, want, 1e-9), "{at:?}");
+            want += 3.0;
+        }
+        let mut bx = create_box(&mut k, Point3::ZERO, 40.0, 30.0, 30.0).unwrap();
+        let mut s = BrepSection::new(&k, &mut bx, CHORD).unwrap();
+        let res = make(&mut s, &stacked(Axis::Z, 3.0)).unwrap();
+        assert_eq!(res.parts.len(), 10);
+        assert!(res
+            .parts
+            .iter()
+            .all(|p| close(region::shape_area(&p.shape), 1200.0, 1e-6)));
+        let mut sphere = create_sphere(&mut k, Point3::new(0.0, 0.0, 15.0), 15.0).unwrap();
+        let mut s = BrepSection::new(&k, &mut sphere, CHORD).unwrap();
+        let res = make(&mut s, &stacked(Axis::Z, 3.0)).unwrap();
+        assert_eq!(res.parts.len(), 10, "{:?}", res.warnings);
+        // the layer at height h is the disc of radius sqrt(15^2 - (h - 15)^2)
+        for (p, z) in res.parts.iter().zip(&at) {
+            let want = PI * (225.0 - (z - 15.0).powi(2));
+            let a = region::shape_area(&p.shape);
+            assert!(close(a, want, disc_slack(15.0)), "z = {z}: {a} want {want}");
+        }
+    }
+
+    #[test]
+    #[ignore = "kernel: a plane tangent to a torus along its top circle returns that circle \
+                as one closed section curve, which encloses the full disc (notes/tangent-planes.md)"]
+    fn a_plane_on_the_top_circle_of_a_torus_gives_nothing() {
+        let mut k = Kernel::default();
+        let mut b = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
+        for z in [35.0, 5.0] {
+            let r = section_at(&k, &mut b, Axis::Z, z, CHORD, [0.0; 3]).unwrap();
+            assert!(region::area(&r) < 10.0, "z = {z}: {}", region::area(&r));
+        }
+    }
+
+    #[test]
+    #[ignore = "kernel: a plane tangent to a cylinder along a side line returns that line as \
+                an open section curve, so the section is refused as open (notes/tangent-planes.md)"]
+    fn a_plane_along_the_side_of_a_cylinder_gives_nothing() {
+        let mut k = Kernel::default();
+        let mut b = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
+        let r = section_at(&k, &mut b, Axis::Y, 10.0, CHORD, [0.0; 3]).unwrap();
+        assert!(region::area(&r) < 1e-6, "{r:?}");
+    }
+
+    #[test]
+    fn the_kernel_gives_a_tangent_side_line_once() {
+        // what the kernel returns today for the two ignored cases above
+        let mut k = Kernel::default();
+        let mut b = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
+        let (curves, _) = section_curves(&k, &mut b, Axis::Y, 10.0, CHORD, [0.0; 3]).unwrap();
+        eprintln!("R3T cylinder y=10: {} curves", curves.len());
+        let mut t = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
+        let (curves, faces) = section_curves(&k, &mut t, Axis::Z, 35.0, CHORD, [0.0; 3]).unwrap();
+        eprintln!("R3T torus z=35: {} curves faces {faces:?}", curves.len());
+        match section_at(&k, &mut b, Axis::Y, 10.0, CHORD, [0.0; 3]) {
+            Err(FlatError::OpenSection { gap, .. }) => eprintln!("R3T cylinder open gap {gap}"),
+            other => eprintln!("R3T cylinder y=10 gives {other:?}"),
+        }
+    }
+
     #[test]
     fn zz_r3_explore() {
         use super::super::slice::{make, FabSettings, Style};
