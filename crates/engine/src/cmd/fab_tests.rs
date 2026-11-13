@@ -273,42 +273,15 @@ fn exported_sheets_read_back_with_cuts_red_and_engraving_blue() {
     let ents = dxf_layers(&dxf);
     let cuts = ents.iter().filter(|(l, _)| l == "CUT").count();
     let engraved = ents.iter().filter(|(l, _)| l == "ENGRAVE").count();
-    assert_eq!(ents.iter().filter(|(l, _)| l == "SHEET").count(), 1);
+    assert_eq!(ents.iter().filter(|(l, _)| l == "SHEET").count(), 0, "no sheet outline");
     // ten layers, each an outline and two dowel holes; each named
     assert_eq!(cuts, 30, "{ents:?}");
     assert!(engraved >= 10, "{engraved}");
-    // the cut outlines are the parts grown by half the kerf each side: 100.2 x 60.2. The reader
-    // gives each polyline as its segments in order, so a closed outline is a run of segments back
-    // to its first point; the 600 x 400 sheet is one of them.
-    let mut boxes: Vec<[f64; 4]> = Vec::new();
-    let mut run: Vec<solidcore_record::Vec2> = Vec::new();
-    for g in solidcraft_io::read_dxf(&dxf).unwrap() {
-        let solidcraft_io::Geom2::Line(a, b) = g else {
-            run.clear();
-            continue;
-        };
-        if run.last() != Some(&a) {
-            run = vec![a];
-        }
-        run.push(b);
-        if run.len() > 3 && run.first() == Some(&b) {
-            let (xs, ys) = (run.iter().map(|p| p.x), run.iter().map(|p| p.y));
-            boxes.push([
-                xs.clone().fold(f64::MAX, f64::min),
-                ys.clone().fold(f64::MAX, f64::min),
-                xs.fold(f64::MIN, f64::max),
-                ys.fold(f64::MIN, f64::max),
-            ]);
-            run.clear();
-        }
-    }
-    let sizes: Vec<(f64, f64)> = boxes.iter().map(|b| (b[2] - b[0], b[3] - b[1])).collect();
-    assert_eq!(sizes.iter().filter(|&&(w, h)| close(w, 600.0, 1e-9) && close(h, 400.0, 1e-9)).count(), 1, "{sizes:?}");
-    let (w, h) = sizes
-        .iter()
-        .copied()
-        .filter(|&(w, h)| !(close(w, 600.0, 1e-9) && close(h, 400.0, 1e-9)))
-        .fold((0.0, 0.0), |a, s| if s.0 * s.1 > a.0 * a.1 { s } else { a });
+    // the cut outlines are the parts grown by half the kerf each side: 100.2 x 60.2; no outline is
+    // the 600 x 400 sheet
+    let sizes = outline_sizes(solidcraft_io::read_dxf(&dxf).unwrap());
+    assert!(!sizes.iter().any(|&(w, h)| close(w, 600.0, 1e-9) && close(h, 400.0, 1e-9)), "{sizes:?}");
+    let (w, h) = largest(&sizes);
     // the nesting may turn a part by 90°
     assert!(close(w.max(h), 100.2, 1e-3) && close(w.min(h), 60.2, 1e-3), "{w} x {h}");
     let svg = std::fs::read_to_string(files[1]["path"].as_str().unwrap()).unwrap();
@@ -331,6 +304,38 @@ fn without_a_path_the_texts_come_back_and_a_router_cuts_true_size() {
     let svg = files[0]["text"].as_str().unwrap();
     // four 100 x 60 layers, no holes, no names, nothing engraved
     assert_eq!(svg.matches("<path").count(), r["count"].as_u64().unwrap() as usize);
+    // a router cuts the outline at its size (its tool only relieves the inside corners)
+    let (w, h) = largest(&outline_sizes(solidcraft_io::read_svg(svg).unwrap()));
+    assert!(close(w.max(h), 100.0, 1e-3) && close(w.min(h), 60.0, 1e-3), "{w} x {h}");
+}
+
+/// The sizes of the closed outlines in a drawing read back. The readers give each polyline as its
+/// segments in order, so a closed outline is a run of segments back to its first point.
+fn outline_sizes(geoms: Vec<solidcraft_io::Geom2>) -> Vec<(f64, f64)> {
+    let mut sizes = Vec::new();
+    let mut run: Vec<solidcore_record::Vec2> = Vec::new();
+    for g in geoms {
+        let solidcraft_io::Geom2::Line(a, b) = g else {
+            run.clear();
+            continue;
+        };
+        if run.last() != Some(&a) {
+            run = vec![a];
+        }
+        run.push(b);
+        if run.len() > 3 && run.first() == Some(&b) {
+            let (xs, ys) = (run.iter().map(|p| p.x), run.iter().map(|p| p.y));
+            let (x0, y0) = (xs.clone().fold(f64::MAX, f64::min), ys.clone().fold(f64::MAX, f64::min));
+            sizes.push((xs.fold(f64::MIN, f64::max) - x0, ys.fold(f64::MIN, f64::max) - y0));
+            run.clear();
+        }
+    }
+    sizes
+}
+
+/// The size with the largest area.
+fn largest(sizes: &[(f64, f64)]) -> (f64, f64) {
+    sizes.iter().copied().fold((0.0, 0.0), |a, s| if s.0 * s.1 > a.0 * a.1 { s } else { a })
 }
 
 #[test]

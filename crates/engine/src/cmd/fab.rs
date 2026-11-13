@@ -58,7 +58,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             "the settings: ",
             settings_doc!(),
             "; path? (without extension: writes <path>-sheet1.dxf, <path>-sheet1.svg, ...; without it the texts are returned); \
-             formats?: [dxf, svg] (default both) → files [{sheet, format, path|text}]: DXF layers CUT (red), ENGRAVE (blue), SHEET (grey, the stock, not cut); SVG cuts stroked red, engraving blue",
+             formats?: [dxf, svg] (default both) → files [{sheet, format, path|text}]: only cut and engrave paths, no sheet outline: DXF layers CUT (red) and ENGRAVE (blue); SVG cuts stroked red, engraving blue",
         )),
 ];
 

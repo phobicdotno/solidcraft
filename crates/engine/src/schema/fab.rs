@@ -177,7 +177,8 @@ pub struct FabExportParams {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum FabFormat {
-    /// DXF (AutoCAD 2000, mm): layers CUT (red), ENGRAVE (blue), SHEET (grey).
+    /// DXF (AutoCAD 2000, mm): layers CUT (red) and ENGRAVE (blue), only the cut and engrave
+    /// paths (no sheet outline).
     Dxf,
     /// SVG (mm): cuts stroked red, engraving blue.
     Svg,
