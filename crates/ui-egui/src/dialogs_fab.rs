@@ -257,8 +257,10 @@ pub fn rows(app: &mut SolveApp, ui: &mut egui::Ui, k: &mut Fab) -> bool {
     });
 
     report(app, ui);
-    // Only the settings shown are written: a change still waiting to be sliced holds the export.
-    let can_export = app.fab.exporting.is_none()
+    // Only the settings shown are written: a change still waiting to be sliced, or a field the
+    // last result no longer matches (a bad number, a lost body pick), holds the export.
+    let can_export = app.fab.problem.is_none()
+        && app.fab.exporting.is_none()
         && !app.fab.busy()
         && app.fab.result.as_ref().is_some_and(|r| r.as_ref().is_ok_and(|v| v["sheets"].as_array().is_some_and(|s| !s.is_empty())));
     // Scenarios wait on this: a result is in and nothing newer is coming.

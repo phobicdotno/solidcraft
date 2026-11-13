@@ -326,6 +326,23 @@ fn wait_ready(h: &mut Harness) {
 }
 
 #[test]
+fn a_bad_field_holds_the_export_until_it_is_mended() {
+    let mut h = with_box();
+    open(&mut h);
+    wait_ready(&mut h);
+    assert!(crate::scenario::count_of("fab:ready") == Some(1.0));
+    let thickness = form(&mut h).thickness.clone();
+    form(&mut h).thickness = "x".into();
+    h.frames(2);
+    // The last parts stay drawn, but Export sheets… would write settings the form no longer shows.
+    assert!(h.app.fab.problem.is_some() && h.app.fab.result.is_some());
+    assert!(crate::scenario::count_of("fab:ready") == Some(0.0), "the export is held");
+    form(&mut h).thickness = thickness;
+    wait_ready(&mut h);
+    assert!(h.app.fab.problem.is_none() && crate::scenario::count_of("fab:ready") == Some(1.0));
+}
+
+#[test]
 fn a_sphere_shows_its_parts_assembled_then_its_sheets() {
     let mut h = Harness::new();
     h.app.run("solid.sphere", json!({"radius": 40})).unwrap();
