@@ -794,12 +794,12 @@ fn poll(app: &mut SolveApp) {
     }
 }
 
-/// "Wrote N files to FOLDER".
+/// "Wrote N files to FOLDER" ("1 file" for one).
 fn exported(app: &SolveApp, v: &Value) -> String {
     let files: Vec<&str> = v["files"].as_array().into_iter().flatten().filter_map(|f| f["path"].as_str()).collect();
     let folder = files.first().and_then(|f| std::path::Path::new(f).parent()).map(|p| p.display().to_string()).unwrap_or_default();
-    solidcraft_ui_text::Locale::for_language(&app.preferences.language)
-        .format("fab.exported", &[("count", &files.len().to_string()), ("folder", &folder)])
+    let key = if files.len() == 1 { "fab.exported_one" } else { "fab.exported" };
+    solidcraft_ui_text::Locale::for_language(&app.preferences.language).format(key, &[("count", &files.len().to_string()), ("folder", &folder)])
 }
 
 /// A preview key of its own, so no feature preview's key can match it.
