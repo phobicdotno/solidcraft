@@ -774,6 +774,16 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_chord_shares_add_up_to_at_most_the_chord() {
+        // tracing, sampling and simplifying each add their error to the outline's, so the
+        // outline stays within the chord only while the three shares together stay within it
+        let shares = [TRACE_SHARE, SAMPLE_SHARE, SIMPLIFY_SHARE];
+        assert!(shares.iter().all(|s| *s > 0.0), "{shares:?}");
+        let sum: f64 = shares.iter().sum();
+        assert!(sum <= 1.0, "{shares:?} add up to {sum}");
+    }
+
     /// The farthest the points of `ring` and the middles of its sides are from the circle of
     /// radius `r` about `c`.
     fn off_circle(ring: &Ring, c: P2, r: f64) -> f64 {
