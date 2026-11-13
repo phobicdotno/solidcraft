@@ -185,17 +185,20 @@ mod tests {
             thickness: -1.0,
             ..DEFAULT_SETTINGS
         };
-        assert_eq!(
+        assert!(matches!(
             slice_body(&ball, &s).unwrap().unwrap_err(),
-            FlatError::Setting("thickness")
-        );
+            FlatError::Setting {
+                name: "thickness",
+                ..
+            }
+        ));
         let s = FabSettings {
             chord: 0.0,
             ..DEFAULT_SETTINGS
         };
         assert!(matches!(
             slice_body(&ball, &s).unwrap(),
-            Err(FlatError::Setting(_))
+            Err(FlatError::Setting { .. })
         ));
     }
 }
