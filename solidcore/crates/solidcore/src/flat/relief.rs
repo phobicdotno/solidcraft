@@ -12,7 +12,7 @@
 //!
 //! Deviations: none (no upstream counterpart). No recursion.
 
-use crate::dogbone::{self, Options};
+use crate::dogbone::{self, Options, Skip};
 use crate::math::Vec3;
 use crate::{Result, SolidError};
 
@@ -38,13 +38,15 @@ pub(crate) struct Relief {
 /// The relief circles of `ring`, a closed loop (the last vertex joins the first, which is not
 /// repeated) with the material on its left: an outline counter-clockwise, a hole clockwise, as a
 /// region's rings run. A corner turning right is an inside (concave) corner and gets a relief,
-/// unless the wedge computation skips it (an angle past `max_angle`); one turning left is
-/// convex and gets none, as do a repeated point and a point in line with its neighbours. The
-/// circles come in the order of their corners.
+/// unless the wedge computation skips it (an angle past `max_angle`, or a minimal circle that
+/// reaches neither wall); one turning left is convex and gets none, as does a point in line with
+/// its neighbours. The circles come in the order of their corners.
 ///
 /// # Errors
 /// [`SolidError::InvalidInput`] for options out of range, fewer than 3 or more than
-/// [`MAX_RING`] vertices, or a coordinate that is not finite or larger than [`MAX_COORD`].
+/// [`MAX_RING`] vertices, a coordinate that is not finite or larger than [`MAX_COORD`], a point
+/// repeated by the next (the last and the first included), or a ring that folds straight back on
+/// itself (a spike or slit of no width, which no bit cuts).
 pub(crate) fn ring_reliefs(ring: &[P2], options: &Options) -> Result<Vec<Relief>> {
     let o = options.checked()?;
     check_ring(ring)?;
@@ -61,32 +63,44 @@ pub(crate) fn ring_reliefs(ring: &[P2], options: &Options) -> Result<Vec<Relief>
 }
 
 /// The relief at `at`, reached from `prev` and left towards `next`, the material on the left;
-/// `None` where the corner gets none. The options and points are checked by [`ring_reliefs`].
+/// `None` where the corner gets none. The options and points are checked by [`ring_reliefs`],
+/// so `prev`, `at` and `next` are distinct.
 ///
 /// # Errors
-/// The wedge computation's.
+/// [`SolidError::InvalidInput`] where the ring folds straight back at `at`, and the wedge
+/// computation's.
 fn corner(prev: P2, at: P2, next: P2, o: &Options) -> Result<Option<Relief>> {
     let a = Vec3::new(prev[0] - at[0], prev[1] - at[1], 0.0);
     let b = Vec3::new(next[0] - at[0], next[1] - at[1], 0.0);
     let (la, lb) = (a.length(), b.length());
-    if la == 0.0 || lb == 0.0 {
-        return Ok(None);
-    }
     // The walls' unit directions, as the wedge computation takes them.
     let (a, b) = (a / la, b / lb);
     // The turn from the incoming direction (-a) to the outgoing (b): its sine, the z of -a × b,
-    // is negative for a right turn, with the material on the left an inside corner. In line or
-    // folded straight back, it is no corner.
+    // is negative for a right turn, with the material on the left an inside corner. A turn within
+    // the straightness threshold either runs on in line (no corner) or folds straight back.
     let turn = -a.cross(b).z;
-    if turn.abs() <= dogbone::STRAIGHT || turn > 0.0 {
+    if turn.abs() <= dogbone::STRAIGHT {
+        if a.dot(b) > 0.0 {
+            return Err(invalid("a ring folds back on itself"));
+        }
         return Ok(None);
     }
-    Ok(dogbone::wedge_relief(a, b, la, lb, o)?
-        .ok()
-        .map(|w| Relief {
+    if turn > 0.0 {
+        return Ok(None);
+    }
+    Ok(match dogbone::wedge_relief(a, b, la, lb, o)? {
+        Ok(w) => Some(Relief {
             centre: [at[0] + w.centre.x, at[1] + w.centre.y],
             radius: o.radius,
-        }))
+        }),
+        // The corner is more open than `max_angle`: the documented rule.
+        Err(Skip::TooOpen) => None,
+        // A minimal circle that reaches neither wall cuts no material: the part is the same
+        // without it. The normal style's circle passes through the corner and always bites.
+        Err(Skip::Unreached) => None,
+        // An outside corner gets none; the turn test above returns those before this.
+        Err(Skip::Convex) => None,
+    })
 }
 
 fn check_ring(ring: &[P2]) -> Result<()> {
@@ -99,6 +113,9 @@ fn check_ring(ring: &[P2]) -> Result<()> {
         .all(|c| c.is_finite() && c.abs() <= MAX_COORD)
     {
         return Err(invalid("ring points must be finite and within 10⁶ mm"));
+    }
+    if ring.first() == ring.last() || ring.windows(2).any(|w| w[0] == w[1]) {
+        return Err(invalid("a ring repeats a point"));
     }
     Ok(())
 }
@@ -215,27 +232,74 @@ mod tests {
         );
     }
 
+    /// The L-shaped outline of `an_l_shaped_outline_has_one_inside_corner`, with `extra`
+    /// inserted after its inside corner (10, 10).
+    fn l_with(extra: &[P2]) -> Vec<P2> {
+        let mut l = vec![[0.0, 0.0], [30.0, 0.0], [30.0, 10.0], [10.0, 10.0]];
+        l.extend_from_slice(extra);
+        l.extend_from_slice(&[[10.0, 30.0], [0.0, 30.0]]);
+        l
+    }
+
+    fn refused(ring: &[P2], o: &Options) -> &'static str {
+        match ring_reliefs(ring, o) {
+            Err(SolidError::InvalidInput { reason, .. }) => reason,
+            other => panic!("{other:?}"),
+        }
+    }
+
     #[test]
-    fn degenerate_ring_corners_get_none() {
+    fn a_repeated_point_is_refused() {
         let o = opts(Style::Normal);
-        // A repeated point, and a point in line with its neighbours.
+        // The inside corner twice: neither copy would be a corner, and its relief would be lost.
         assert_eq!(
-            corner([0.0, 0.0], [0.0, 0.0], [1.0, 0.0], &o).unwrap(),
-            None
+            refused(&l_with(&[[10.0, 10.0]]), &o),
+            "a ring repeats a point"
         );
+        // The last point repeating the first.
+        let mut closed = l_with(&[]);
+        closed.push([0.0, 0.0]);
+        assert_eq!(refused(&closed, &o), "a ring repeats a point");
+    }
+
+    #[test]
+    fn a_ring_folding_back_is_refused() {
+        let o = opts(Style::Normal);
+        // A slit of no width from (10, 10) to (15, 10) and back.
+        assert_eq!(
+            refused(&l_with(&[[15.0, 10.0]]), &o),
+            "a ring folds back on itself"
+        );
+        // A point in line with its neighbours is no corner.
         assert_eq!(
             corner([0.0, 0.0], [1.0, 0.0], [2.0, 0.0], &o).unwrap(),
             None
         );
-        // Folded back on itself.
+        // Folded back on itself, past the next point or short of it.
+        for next in [[0.0, 0.0], [0.5, 0.0]] {
+            assert!(
+                corner([0.0, 0.0], [1.0, 0.0], next, &o).is_err(),
+                "{next:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_corner_past_the_largest_angle_gets_none() {
+        let o = Options {
+            radius: R,
+            style: Style::Normal,
+            max_angle: 3.0 * PI / 4.0,
+        };
+        // Inside corners at the origin, the walls leaving along +x and at 150° and 135°.
+        let wall = |deg: f64| [10.0 * deg.to_radians().cos(), 10.0 * deg.to_radians().sin()];
         assert_eq!(
-            corner([0.0, 0.0], [1.0, 0.0], [0.0, 0.0], &o).unwrap(),
+            corner([10.0, 0.0], [0.0, 0.0], wall(150.0), &o).unwrap(),
             None
         );
-        assert_eq!(
-            corner([0.0, 0.0], [1.0, 0.0], [0.5, 0.0], &o).unwrap(),
-            None
-        );
+        assert!(corner([10.0, 0.0], [0.0, 0.0], wall(135.0), &o)
+            .unwrap()
+            .is_some());
     }
 
     #[test]
@@ -246,10 +310,7 @@ mod tests {
             corner([0.0, 0.0], [1.0, 1.0], [2.0, 2.0], &o).unwrap(),
             None
         );
-        assert_eq!(
-            corner([0.0, 0.0], [1.0, 1.0], [0.5, 0.5], &o).unwrap(),
-            None
-        );
+        assert!(corner([0.0, 0.0], [1.0, 1.0], [0.5, 0.5], &o).is_err());
         assert_eq!(
             corner([0.0, 0.0], [1.0, 1.0], [1.0, 2.0], &o).unwrap(),
             None
