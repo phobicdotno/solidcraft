@@ -361,6 +361,12 @@ fn report(app: &SolveApp, ui: &mut egui::Ui) {
     match &app.fab.result {
         Some(Ok(v)) => {
             ui_kit::text(ui, &summary(app, v), ui_kit::Text::Report("fab_summary", false));
+            if app.fab.plates.len() < app.fab.copies {
+                let locale = solidcraft_ui_text::Locale::for_language(&app.preferences.language);
+                let line =
+                    locale.format("fab.preview_partial", &[("shown", &app.fab.plates.len().to_string()), ("total", &app.fab.copies.to_string())]);
+                ui_kit::status_line(ui, &line, ui_kit::StatusTone::Dim);
+            }
             if let Some(e) = sheets_error(app, v) {
                 ui_kit::status_line(ui, &e, ui_kit::StatusTone::Error);
             }
@@ -506,6 +512,8 @@ struct Computed {
     result: Result<Value, String>,
     plates: Vec<(Mesh, bool)>,
     fills: Vec<Vec<[Vec2; 3]>>,
+    /// Every placed copy of every part; `plates` stops at [`MAX_TRIANGLES`].
+    copies: usize,
 }
 
 /// The settings and design revision a slicing is for.
@@ -527,6 +535,8 @@ pub struct FabRun {
     pub(crate) problem: Option<Problem>,
     plates: Vec<(Mesh, bool)>,
     fills: Vec<Vec<[Vec2; 3]>>,
+    /// Every placed copy of every part, drawn or not.
+    copies: usize,
     /// Counts the results, for the preview's key.
     generation: u64,
     exporting: Option<Receiver<Result<Value, String>>>,
@@ -554,6 +564,7 @@ impl FabRun {
         self.result = Some(done.result);
         self.plates = done.plates;
         self.fills = done.fills;
+        self.copies = done.copies;
         self.generation = self.generation.wrapping_add(1);
     }
 
@@ -587,10 +598,10 @@ fn compute(scratch: Session, params: &Value) -> Computed {
     let mut s = scratch;
     match s.execute("fab.slice", params) {
         Ok(v) => {
-            let (plates, fills) = shapes(&v);
-            Computed { result: Ok(v), plates, fills }
+            let (plates, fills, copies) = shapes(&v);
+            Computed { result: Ok(v), plates, fills, copies }
         }
-        Err(e) => Computed { result: Err(e.to_string()), plates: Vec::new(), fills: Vec::new() },
+        Err(e) => Computed { result: Err(e.to_string()), plates: Vec::new(), fills: Vec::new(), copies: 0 },
     }
 }
 
@@ -603,13 +614,14 @@ fn read_vec(v: &Value) -> Option<Vec3> {
     Some(Vec3::new(v.get(0)?.as_f64()?, v.get(1)?.as_f64()?, v.get(2)?.as_f64()?))
 }
 
-/// Every copy of every part as a plate where it sits, and each sheet's fill. A plate or a fill
-/// the kernel fails on is not drawn.
-fn shapes(v: &Value) -> (Vec<(Mesh, bool)>, Vec<Vec<[Vec2; 3]>>) {
+/// Every copy of every part as a plate where it sits, up to [`MAX_TRIANGLES`], each sheet's
+/// fill, and how many copies there are in all. A plate or a fill the kernel fails on is not drawn.
+fn shapes(v: &Value) -> (Vec<(Mesh, bool)>, Vec<Vec<[Vec2; 3]>>, usize) {
     use solidcraft_engine::kernel;
     let thickness = v["thickness"].as_f64().unwrap_or(0.0);
     let mut plates = Vec::new();
     let mut triangles = 0;
+    let copies = v["parts"].as_array().into_iter().flatten().map(|p| p["places"].as_array().map_or(0, Vec::len)).sum();
     'parts: for part in v["parts"].as_array().into_iter().flatten() {
         let rings = read_rings(&part["rings"]);
         let slice = part["kind"].as_str().is_none_or(|k| k == "slice");
@@ -639,7 +651,7 @@ fn shapes(v: &Value) -> (Vec<(Mesh, bool)>, Vec<Vec<[Vec2; 3]>>) {
             kernel::guard("fill of a sheet", || Ok(solidcore_tess::fill(&rings))).unwrap_or_default()
         })
         .collect();
-    (plates, fills)
+    (plates, fills, copies)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -650,7 +662,7 @@ fn spawn(run: &mut FabRun, scratch: Session, key: Key) {
         let _ = tx.send(compute(scratch, &params));
     }) {
         Ok(_) => run.running = Some((key, rx)),
-        Err(e) => run.apply(key, Computed { result: Err(e.to_string()), plates: Vec::new(), fills: Vec::new() }),
+        Err(e) => run.apply(key, Computed { result: Err(e.to_string()), plates: Vec::new(), fills: Vec::new(), copies: 0 }),
     }
 }
 
@@ -722,7 +734,7 @@ fn poll(app: &mut SolveApp) {
             Ok(done) => Some(done),
             Err(TryRecvError::Empty) => None,
             Err(TryRecvError::Disconnected) => {
-                Some(Computed { result: Err(app.tr("fab.slicing_stopped").to_string()), plates: Vec::new(), fills: Vec::new() })
+                Some(Computed { result: Err(app.tr("fab.slicing_stopped").to_string()), plates: Vec::new(), fills: Vec::new(), copies: 0 })
             }
         };
         if let Some(done) = done

@@ -307,8 +307,9 @@ fn shapes_place_every_copy_and_fill_every_sheet() {
                   {"name": "P", "kind": "plate", "copies": 1, "rings": [square], "places": [at(-5.0)]}],
         "sheets": [{"cut_rings": [square, [[2, 2], [4, 2], [4, 4], [2, 4]]]}]
     });
-    let (plates, fills) = shapes(&v);
+    let (plates, fills, copies) = shapes(&v);
     assert_eq!(plates.len(), 3);
+    assert_eq!(copies, 3);
     assert_eq!(plates.iter().filter(|(_, slice)| *slice).count(), 2);
     let volume: f64 = plates.iter().map(|(m, _)| m.measure().volume).sum();
     assert!((volume - 3.0 * 200.0).abs() < 1e-6, "{volume}");
