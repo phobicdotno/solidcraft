@@ -1008,17 +1008,42 @@ mod tests {
 
     #[test]
     fn the_kernel_gives_a_tangent_side_line_once() {
-        // what the kernel returns today for the two ignored cases above
+        // what the kernel returns today for the two ignored cases above: the contact curve
+        // itself, once (when this fails, the kernel changed: try the ignored tests)
         let mut k = Kernel::default();
         let mut b = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
         let (curves, _) = section_curves(&k, &mut b, Axis::Y, 10.0, CHORD, [0.0; 3]).unwrap();
-        eprintln!("R3T cylinder y=10: {} curves", curves.len());
+        assert_eq!(curves.len(), 1);
+        match section_at(&k, &mut b, Axis::Y, 10.0, CHORD, [0.0; 3]) {
+            Err(FlatError::OpenSection { gap, .. }) => assert!(close(gap, 30.0, 1e-6), "{gap}"),
+            other => panic!("{other:?}"),
+        }
         let mut t = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
         let (curves, faces) = section_curves(&k, &mut t, Axis::Z, 35.0, CHORD, [0.0; 3]).unwrap();
-        eprintln!("R3T torus z=35: {} curves faces {faces:?}", curves.len());
-        match section_at(&k, &mut b, Axis::Y, 10.0, CHORD, [0.0; 3]) {
-            Err(FlatError::OpenSection { gap, .. }) => eprintln!("R3T cylinder open gap {gap}"),
-            other => eprintln!("R3T cylinder y=10 gives {other:?}"),
+        assert_eq!(curves.len(), 1);
+        assert!(matches!(faces.as_slice(), [Some(_)]), "{faces:?}");
+    }
+
+    #[test]
+    fn zz_r3_near_top() {
+        // instrumentation (removed before the final builds): what the kernel gives just under
+        // the top circle of a torus, and what dedupe keeps of it
+        let mut k = Kernel::default();
+        let mut t = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
+        for e in [1e-9, 1e-7, 1e-6, 1e-5] {
+            let z = 35.0 - e;
+            let (curves, faces) = section_curves(&k, &mut t, Axis::Z, z, CHORD, [0.0; 3]).unwrap();
+            let mut pieces = Vec::new();
+            for (c, f) in curves.iter().zip(&faces) {
+                let s = sample_curve(&k, c, CHORD * SAMPLE_SHARE).unwrap();
+                let r: Vec<f64> = s.points.iter().map(|p| p.x.hypot(p.y)).collect();
+                let (lo, hi) = r.iter().fold((f64::INFINITY, 0.0f64), |(a, b), &x| (a.min(x), b.max(x)));
+                eprintln!("R3N z=35-{e:e}: curve n{} r {lo} .. {hi} face {f:?}", r.len());
+                let flat: Ring = s.points.iter().map(|p| [p.x, p.y]).collect();
+                pieces.push((drop_repeats(flat), *f));
+            }
+            let kept = dedupe(pieces, join_tolerance(CHORD)).len();
+            eprintln!("R3N z=35-{e:e}: curves {} faces {faces:?} kept by dedupe {kept}", curves.len());
         }
     }
 
