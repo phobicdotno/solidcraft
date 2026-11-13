@@ -113,7 +113,7 @@ pub fn reason_id(why: &db::Why) -> &'static str {
     match why {
         db::Why::Corner(db::Skip::Convex) => "convex",
         db::Why::Corner(db::Skip::Straight) | db::Why::Smooth => "flat",
-        db::Why::Corner(db::Skip::TooOpen { .. }) => "too_open",
+        db::Why::Corner(db::Skip::TooOpen) => "too_open",
         db::Why::Corner(db::Skip::Unreached) => "gap_too_large",
         db::Why::Corner(db::Skip::Degenerate) => "degenerate",
         db::Why::NotStraight => "not_straight",
