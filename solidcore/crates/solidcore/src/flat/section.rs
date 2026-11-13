@@ -892,6 +892,81 @@ mod tests {
         }
     }
 
+    /// The plane Y = 30 cuts the torus `(rho - 40)^2 + (z - 20)^2 = 15^2` around Z in one closed
+    /// spiric curve, which the kernel can only trace. A point (x, z) of that plane moved onto the
+    /// exact curve along the gradient of its distance to the torus: a point of the curve, so its
+    /// distance from (x, z) is at least the distance to the curve.
+    fn onto_spiric(mut x: f64, mut z: f64) -> (f64, f64) {
+        for _ in 0..8 {
+            let rho = x.hypot(30.0);
+            let s = (rho - 40.0).hypot(z - 20.0);
+            let g = ((rho - 40.0) / s * x / rho, (z - 20.0) / s);
+            let step = (s - 15.0) / (g.0 * g.0 + g.1 * g.1);
+            x -= step * g.0;
+            z -= step * g.1;
+        }
+        (x, z)
+    }
+
+    fn to_segment_2d(p: P2, a: P2, b: P2) -> f64 {
+        let d = [b[0] - a[0], b[1] - a[1]];
+        let len2 = d[0] * d[0] + d[1] * d[1];
+        let t = if len2 > 0.0 {
+            (((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / len2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        (p[0] - a[0] - t * d[0]).hypot(p[1] - a[1] - t * d[1])
+    }
+
+    #[test]
+    fn a_traced_torus_section_stays_within_the_chord_of_the_exact_curve() {
+        // traced (not an exact circle), sampled, chained and simplified: every step's share
+        // counts, at a coarse chord and a fine one
+        let mut k = Kernel::default();
+        for chord in [0.5, 0.1] {
+            let mut b = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
+            let mut s = BrepSection::new(&k, &mut b, chord).unwrap();
+            // Y slices have x and z as their coordinates
+            let r = s.section(Axis::Y, 30.0).unwrap();
+            assert!(r.len() == 1 && r[0].holes.is_empty(), "{r:?}");
+            let ring = &r[0].outer;
+            // every point of the outline lies within the chord of the exact curve
+            let mut worst: f64 = 0.0;
+            for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
+                for t in [0.0, 0.25, 0.5, 0.75] {
+                    let p = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+                    let (x, z) = onto_spiric(p[0], p[1]);
+                    worst = worst.max((p[0] - x).hypot(p[1] - z));
+                }
+            }
+            assert!(
+                worst <= chord,
+                "chord {chord}: the outline is {worst} off the curve"
+            );
+            // and every point of the exact curve lies within the chord of the outline
+            let t0 = (-10.0_f64 / 15.0).acos();
+            let mut missed: f64 = 0.0;
+            for i in 0..=2000 {
+                let t = -t0 + 2.0 * t0 * f64::from(i) / 2000.0;
+                let rho = 40.0 + 15.0 * t.cos();
+                let x = (rho * rho - 900.0).max(0.0).sqrt();
+                for p in [[x, 20.0 + 15.0 * t.sin()], [-x, 20.0 + 15.0 * t.sin()]] {
+                    let near = ring
+                        .iter()
+                        .zip(ring.iter().cycle().skip(1))
+                        .map(|(a, b)| to_segment_2d(p, *a, *b))
+                        .fold(f64::INFINITY, f64::min);
+                    missed = missed.max(near);
+                }
+            }
+            assert!(
+                missed <= chord,
+                "chord {chord}: the curve is {missed} off the outline"
+            );
+        }
+    }
+
     #[test]
     fn near_copies_of_one_face_are_both_kept() {
         // two arcs 1e-4 apart: copies from two faces, both outlines from one face
