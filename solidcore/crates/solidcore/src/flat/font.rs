@@ -6,9 +6,6 @@
 
 use super::Ring;
 
-/// The width of a glyph's cell, as a fraction of the capital height.
-pub const WIDTH: f64 = 0.6;
-
 /// The distance from one character to the next, as a fraction of the capital height.
 pub const ADVANCE: f64 = 0.8;
 
@@ -300,6 +297,9 @@ mod tests {
     use super::*;
 
     const SUPPORTED: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -.,:/()#+_'";
+
+    /// The width of a glyph's cell, as a fraction of the capital height (x 0 to 6 on the grid).
+    const WIDTH: f64 = 0.6;
 
     fn bounds(lines: &[Ring]) -> [f64; 4] {
         let mut b = [
