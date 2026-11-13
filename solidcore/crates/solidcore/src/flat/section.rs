@@ -366,11 +366,15 @@ fn take(budget: &mut usize, n: usize) -> FlatResult<()> {
     Ok(())
 }
 
-/// The polyline without points that repeat their predecessor.
+/// How close (mm) a sample must be to the one before it to repeat it: a nanometre, the rounding
+/// between the last sample of one curve span and the first of the next.
+const REPEAT: f64 = 1e-9;
+
+/// The polyline without points that repeat their predecessor (within [`REPEAT`]).
 fn drop_repeats(r: Ring) -> Ring {
     let mut out: Ring = Vec::new();
     for p in r {
-        if out.last().is_none_or(|q| !near(*q, p, 1e-9)) {
+        if out.last().is_none_or(|q| !near(*q, p, REPEAT)) {
             out.push(p);
         }
     }

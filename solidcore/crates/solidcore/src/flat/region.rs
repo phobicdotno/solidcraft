@@ -1,9 +1,13 @@
 //! Polygonal regions: booleans, offsets, clipping of polylines, areas and point tests.
 //!
-//! Every result is normalised: disjoint [`Shape`]s, each an outline counter-clockwise with its
-//! holes clockwise, no ring with fewer than three points. Inputs may be in either direction and
-//! may overlap themselves; rings with a point that is not finite, or fewer than three points,
-//! are left out. The booleans and offsets run on iOverlay's integer engine, scaled to the
+//! Every result of the booleans, [`offset`], [`from_rings`], [`normalize`], [`disk`] and
+//! [`disk_around`] is normalised: disjoint [`Shape`]s, each an outline
+//! counter-clockwise with its holes clockwise, no ring with fewer than three points. The
+//! booleans, [`from_rings`] and [`normalize`] take rings in either direction that may overlap
+//! themselves; [`offset`] and [`map`] keep the direction they are given, so they need normalised
+//! input (every kernel caller passes one of the results above). Rings with a point that is not
+//! finite or a kilometre ([`KM`]) or more from the origin, or with fewer than three points, are
+//! left out. The booleans and offsets run on iOverlay's integer engine, scaled to the
 //! operands' bounds (a 1 m part resolves to about a nanometre).
 //!
 //! Deviations: none (no upstream counterpart). No recursion.
@@ -257,23 +261,30 @@ pub fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Region {
     }]
 }
 
+/// The fewest and the most sides [`circle_sides`] gives. 24 keeps a hole smaller than the chord
+/// round enough to seat a dowel; 1440 (a quarter degree a side) bounds a huge circle's points,
+/// so the chord holds only up to a radius of `chord / (1 - cos(pi / 1440))`, about 420 000
+/// chords, and past it each side is off by up to `r * 2.38e-6`.
+const CIRCLE_SIDES: (usize, usize) = (24, 1440);
+
 /// The number of sides of a polygon inscribed in a circle of radius `r` whose sides stay within
-/// `chord` of the circle: at least 24, at most 1440. `None` for a `chord` that is not a positive
+/// `chord` of the circle, held to [`CIRCLE_SIDES`]. `None` for a `chord` that is not a positive
 /// finite number.
 #[must_use]
 pub fn circle_sides(r: f64, chord: f64) -> Option<usize> {
     if !(chord.is_finite() && chord > 0.0) {
         return None;
     }
+    let (fewest, most) = CIRCLE_SIDES;
     if !(r.is_finite() && r > chord) {
-        return Some(24);
+        return Some(fewest);
     }
     let half = (1.0 - chord / r).clamp(-1.0, 1.0).acos();
     let n = (std::f64::consts::PI / half).ceil();
     if n.is_finite() {
-        Some((n as usize).clamp(24, 1440))
+        Some((n as usize).clamp(fewest, most))
     } else {
-        Some(1440)
+        Some(most)
     }
 }
 
@@ -358,6 +369,10 @@ pub fn pieces(r: &[Shape], min_area: f64) -> Region {
     out.into_iter().map(|(_, s)| s).collect()
 }
 
+/// How close (mm) the end of one stretch and the start of the next must be to touch: a
+/// nanometre, the rounding between two pieces' crossings of the edge they share.
+const SPAN_TOUCH: f64 = 1e-9;
+
 /// The stretches `(lo, hi)` of `y`, in order, where the vertical line at `x` runs through the
 /// region's material. Touching stretches merge.
 #[must_use]
@@ -385,7 +400,7 @@ pub fn spans_at_x(r: &[Shape], x: f64) -> Vec<(f64, f64)> {
             start = y;
         } else if was != 0 && w == 0 {
             match out.last_mut() {
-                Some(last) if start <= last.1 + 1e-9 => last.1 = last.1.max(y),
+                Some(last) if start <= last.1 + SPAN_TOUCH => last.1 = last.1.max(y),
                 _ => out.push((start, y)),
             }
         }
@@ -418,12 +433,21 @@ pub fn point_count(r: &[Shape]) -> usize {
     r.iter().flat_map(Shape::rings).map(Vec::len).sum()
 }
 
+/// The fewest points a ring needs before [`simplify_ring`] drops any: under eight, a ring split
+/// in two halves of three or four points has nothing to drop that is worth the risk of leaving
+/// fewer than three.
+const SIMPLIFY_FEWEST: usize = 8;
+
+/// The shortest chord length (mm) [`rdp`] divides by: a picometre, under any coordinate the
+/// grid resolves, so only a chord whose ends coincide is lengthened.
+const SHORTEST_CHORD: f64 = 1e-12;
+
 /// A closed ring with points dropped while it stays within `tol` of the original
 /// (Ramer–Douglas–Peucker on each half, split at the point farthest from the first).
 #[must_use]
 pub fn simplify_ring(ring: &[P2], tol: f64) -> Ring {
     let n = ring.len();
-    if n < 8 || !(tol.is_finite() && tol > 0.0) {
+    if n < SIMPLIFY_FEWEST || !(tol.is_finite() && tol > 0.0) {
         return ring.to_vec();
     }
     let Some(&first) = ring.first() else {
@@ -477,7 +501,7 @@ fn rdp(pts: &[P2], tol: f64) -> Ring {
             continue;
         };
         let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
-        let len = dx.hypot(dy).max(1e-12);
+        let len = dx.hypot(dy).max(SHORTEST_CHORD);
         let mut best = (-1.0, 0usize);
         for k in i + 1..j {
             if let Some(&p) = pts.get(k) {
@@ -646,7 +670,34 @@ mod tests {
         assert_eq!(lines.len(), 1);
         let xs: Vec<f64> = lines[0].iter().map(|p| p[0]).collect();
         assert!(xs.iter().all(|x| (-1e-9..=2.0 + 1e-9).contains(x)));
+        // the whole width inside, not a shortened piece
+        let len: f64 = lines[0]
+            .windows(2)
+            .map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]))
+            .sum();
+        assert!(close(len, 2.0, 1e-9), "{len}");
         assert!(clip_lines(&[vec![[5.0, 5.0], [6.0, 6.0]]], &r).is_empty());
+        // a line along the boundary is not inside
+        assert!(clip_lines(&[vec![[-1.0, 0.0], [3.0, 0.0]]], &r).is_empty());
+    }
+
+    #[test]
+    fn a_clockwise_ring_inside_is_a_hole_under_non_zero() {
+        let outer = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        let inner = vec![[2.0, 2.0], [2.0, 4.0], [4.0, 4.0], [4.0, 2.0]];
+        let r = from_rings(&[outer, inner], false);
+        assert!(close(area(&r), 96.0, 1e-9), "{}", area(&r));
+    }
+
+    #[test]
+    fn a_dumbbell_shrinks_into_two_pieces() {
+        let ends = union(&square(0.0, 0.0, 10.0), &square(20.0, 0.0, 10.0));
+        let d = union(&ends, &rect(10.0, 4.5, 20.0, 5.5));
+        assert_eq!(d.len(), 1);
+        // the 1 mm bar goes; each end is 8 x 8
+        let s = offset(&d, -1.0, Join::Miter);
+        assert_eq!(s.len(), 2);
+        assert!(close(area(&s), 2.0 * 64.0, 1e-6), "{}", area(&s));
     }
 
     #[test]
