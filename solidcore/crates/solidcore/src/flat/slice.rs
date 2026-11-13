@@ -223,11 +223,6 @@ pub enum Warning {
         /// The slice.
         part: String,
     },
-    /// The slice is too narrow where it meets the plate for a tab.
-    NoTab {
-        /// The slice.
-        part: String,
-    },
     /// The gaps between rod slices are not a whole number of sheets: spacers are not exact.
     GapsNotWhole {
         /// The sheet thickness (mm).
@@ -931,11 +926,6 @@ fn plated(
     for (k, cut) in cuts.iter().enumerate() {
         let loc = region::map(&cut.region, |p| map.to_local(p), false);
         let (loc, tabs) = with_foot_and_tabs(&loc, s.thickness);
-        if tabs.is_empty() {
-            out.warnings.push(Warning::NoTab {
-                part: cut.name.clone(),
-            });
-        }
         slots.extend(tabs.iter().map(|&(a, b)| Slot {
             slice: k + 1,
             at: cut.at,
@@ -977,48 +967,24 @@ fn with_foot_and_tabs(loc: &[Shape], t: f64) -> (Region, Vec<(f64, f64)>) {
         fb = mid + t;
     }
     let loc = region::union(loc, &region::rect(fa, 0.0, fb, q0 + band / 2.0));
-    let mut tabs = Vec::new();
-    // a hair of slack: a foot widened to exactly two sheets must still take a tab
-    let eps = 1e-6;
-    for (a, b) in feet(&loc) {
-        let w = b - a;
-        if w >= 6.0 * t - eps {
-            let tw = (2.0 * t).max(0.2 * w).min(40.0);
-            for f in [0.25, 0.75] {
-                tabs.push((a + w * f - tw / 2.0, a + w * f + tw / 2.0));
-            }
-        } else if w >= 2.0 * t - eps {
-            tabs.push(((a + b) / 2.0 - w / 4.0, (a + b) / 2.0 + w / 4.0));
-        }
-    }
+    // the foot is the one stretch the slice stands on, at least two sheets wide: one tab across
+    // its middle half, or two from six sheets on
+    let w = fb - fa;
+    let tabs: Vec<(f64, f64)> = if w >= 6.0 * t {
+        let tw = (2.0 * t).max(0.2 * w).min(40.0);
+        [0.25, 0.75]
+            .iter()
+            .map(|f| (fa + w * f - tw / 2.0, fa + w * f + tw / 2.0))
+            .collect()
+    } else {
+        vec![(fa + w / 4.0, fb - w / 4.0)]
+    };
     let rects: Vec<Region> = tabs
         .iter()
         .map(|&(a, b)| region::rect(a, -t, b, 0.01))
         .chain(std::iter::once(loc))
         .collect();
     (region::union_all(&rects), tabs)
-}
-
-/// The stretches of `p` where the part touches the plate (`q` near 0), stretches less than
-/// half a millimetre apart merged.
-fn feet(loc: &[Shape]) -> Vec<(f64, f64)> {
-    let Some([p0, _, p1, _]) = region::bounds(loc) else {
-        return Vec::new();
-    };
-    let band = region::intersection(loc, &region::rect(p0 - 1.0, -0.01, p1 + 1.0, 0.5));
-    let mut spans: Vec<(f64, f64)> = band
-        .iter()
-        .filter_map(|s| region::ring_bounds([&s.outer]).map(|b| (b[0], b[2])))
-        .collect();
-    spans.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut out: Vec<(f64, f64)> = Vec::new();
-    for (a, b) in spans {
-        match out.last_mut() {
-            Some(last) if a <= last.1 + 0.5 => last.1 = last.1.max(b),
-            _ => out.push((a, b)),
-        }
-    }
-    out
 }
 
 /// The plate in its `(a, p)` coordinates (`a` along the slicing axis, `p` along the plate):
