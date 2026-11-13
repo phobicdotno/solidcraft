@@ -24,6 +24,25 @@ fn rel(a: f64, b: f64) -> f64 {
     (a - b).abs() / b.abs().max(1e-12)
 }
 
+/// An empty folder in the system's temp folder, removed with what is in it when the test ends,
+/// passed or failed.
+struct TempFolder(std::path::PathBuf);
+
+impl TempFolder {
+    fn new(name: &str) -> TempFolder {
+        let dir = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        TempFolder(dir)
+    }
+}
+
+impl Drop for TempFolder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 /// Faces, edges and vertices of body `name`.
 fn counts(s: &Session, name: &str) -> [usize; 3] {
     let st = s.model.state();
@@ -281,9 +300,8 @@ fn undo_takes_the_reliefs_away_and_a_saved_design_keeps_them() {
     assert!(rel(volume(&mut s), POCKETED) < 1e-9);
     run(&mut s, "edit.redo", json!({}));
     assert!(rel(volume(&mut s), relieved) < 1e-12);
-    let dir = std::env::temp_dir().join(format!("solidcraft-dogbone-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("bones.sc");
+    let dir = TempFolder::new("solidcraft-dogbone");
+    let path = dir.0.join("bones.sc");
     run(&mut s, "file.save_as", json!({"path": path}));
     let mut back = Session::default();
     run(&mut back, "doc.open", json!({"path": path}));
@@ -293,21 +311,18 @@ fn undo_takes_the_reliefs_away_and_a_saved_design_keeps_them() {
     // The file is a design container: the design read from its bytes names the feature kind.
     let saved = crate::io::read_design(&std::fs::read(&path).unwrap()).unwrap();
     assert!(saved.to_json().contains("\"dogbone\""), "the design names the feature kind");
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn a_step_export_carries_the_reliefs() {
     let mut s = pocketed();
     run(&mut s, "solid.dogbone", json!({"faces": [[20, 15, 4]], "diameter": 3}));
-    let dir = std::env::temp_dir().join(format!("solidcraft-dogbone-step-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("bones.step");
+    let dir = TempFolder::new("solidcraft-dogbone-step");
+    let path = dir.0.join("bones.step");
     run(&mut s, "file.export", json!({"path": path, "bodies": ["Plate"]}));
     let step = std::fs::read_to_string(&path).unwrap();
     let mut back = Session::default();
     let r = run(&mut back, "file.insert_step", json!({"path": path}));
-    let _ = std::fs::remove_dir_all(&dir);
     // Four relief walls, two of them split at their seam (see the face counts above).
     assert_eq!(step.matches("CYLINDRICAL_SURFACE").count(), 6, "four relief walls");
     assert!(step.contains("1.5"));
