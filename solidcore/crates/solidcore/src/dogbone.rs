@@ -28,7 +28,7 @@
 
 use crate::eval::vec::VecExt as _;
 use crate::eval::Surface;
-use crate::math::{Point3, Vec3, EFF_ZERO};
+use crate::math::{Point3, Vec3};
 use crate::{Result, SolidError};
 
 const OP: &str = "dogbone";
@@ -43,11 +43,6 @@ const STRAIGHT: f64 = 1.0e-9;
 /// Angular slack (radians) on the largest corner angle relieved, so a corner computed at 90°
 /// plus rounding is still a 90° corner.
 const ANGLE_SLACK: f64 = 1.0e-6;
-
-/// Relative to the radius, a crossing this near the corner is at the corner: a circle through
-/// the corner crosses both walls there, and the rounding of the crossing's root leaves it a few
-/// ulps of the radius off, far below the kernel's numeric zero.
-const AT_CORNER: f64 = EFF_ZERO;
 
 /// Relative to the radius, the shortest stretch of a wall a circle must cut to bite it. A chord
 /// is `2 r sin φ` long, `φ` the angle at which the circle crosses the wall's line, so a shorter
@@ -143,19 +138,14 @@ pub enum Skip {
     Degenerate,
 }
 
-/// A relief in a corner, in the corner's own terms: offsets from the corner point.
+/// A relief in a corner, in the corner's own terms: the corner's angle, and the circle's centre
+/// as an offset from the corner point.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Wedge {
     /// The corner's (void wedge's) angle, radians in (0, π).
     angle: f64,
     /// The circle's centre less the corner point.
     centre: Vec3,
-    /// Where the circle crosses wall `a`, as distances from the corner along it: `[near, far]`
-    /// with `0 <= near <= far`, or `None` where it doesn't cut into that wall. For a circle
-    /// through the corner, `near` is 0.
-    bite_a: Option<[f64; 2]>,
-    /// The same on wall `b`.
-    bite_b: Option<[f64; 2]>,
 }
 
 /// The relief of the corner whose walls leave it in directions `a` and `b`, the void the wedge
@@ -205,34 +195,26 @@ fn wedge_relief(
             (if a_first { a } else { b }) * r
         }
     };
-    let (bite_a, bite_b) = (bite(centre, a, r), bite(centre, b, r));
-    if bite_a.is_none() && bite_b.is_none() {
+    if !bites(centre, a, r) && !bites(centre, b, r) {
         return Ok(Err(Skip::Unreached));
     }
-    Ok(Ok(Wedge {
-        angle,
-        centre,
-        bite_a,
-        bite_b,
-    }))
+    Ok(Ok(Wedge { angle, centre }))
 }
 
-/// Where the circle of radius `r` about `centre` (relative to the corner) crosses the ray from
-/// the corner along unit `d`: the stretch of the ray inside the circle, its start clamped to the
-/// corner, or `None` when the circle doesn't reach past the corner along it.
-fn bite(centre: Vec3, d: Vec3, r: f64) -> Option<[f64; 2]> {
+/// Whether the circle of radius `r` about `centre` (relative to the corner) bites the wall that
+/// leaves the corner along unit `d`: the stretch of that ray inside the circle, its start clamped
+/// to the corner, is longer than `r` times [`MIN_BITE`].
+fn bites(centre: Vec3, d: Vec3, r: f64) -> bool {
     // |s d - c|² = r²: s² - 2 s (c·d) + |c|² - r² = 0.
     let h = centre.dot(d);
     let disc = h * h - (centre.length_squared() - r * r);
     if disc < 0.0 {
-        return None;
+        return false;
     }
     let root = disc.sqrt();
     let far = h + root;
     let near = (h - root).max(0.0);
-    // A circle through the corner gives near = 0 up to rounding: exactly 0.
-    let near = if near <= r * AT_CORNER { 0.0 } else { near };
-    (far > near + r * MIN_BITE).then_some([near, far])
+    far > near + r * MIN_BITE
 }
 
 /// A straight edge of a solid, by its two ends.

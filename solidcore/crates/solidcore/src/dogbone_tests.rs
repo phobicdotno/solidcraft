@@ -1,4 +1,4 @@
-use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, PI, SQRT_2};
+use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, PI};
 
 use super::*;
 
@@ -23,6 +23,13 @@ fn close3(a: Vec3, b: Vec3) -> bool {
 /// The unit wall directions of a corner of angle `theta`: `a` along +x, `b` turned `theta` from it.
 fn walls(theta: f64) -> (Vec3, Vec3) {
     (Vec3::X, Vec3::new(theta.cos(), theta.sin(), 0.0))
+}
+
+/// How far `c` lies from the line of the wall along unit `d` through the corner (the origin): a
+/// relief circle of radius `R` about `c` cuts into that wall's line where this is less than `R`,
+/// and touches it where it is `R`.
+fn off_wall(c: Vec3, d: Vec3) -> f64 {
+    c.cross(d).length()
 }
 
 fn wedge(theta: f64, style: Style) -> Wedge {
@@ -96,12 +103,8 @@ fn a_normal_relief_of_a_square_corner_sits_on_the_bisector_through_the_corner() 
         w.centre,
         Vec3::new(R * FRAC_1_SQRT_2, R * FRAC_1_SQRT_2, 0.0)
     ));
-    // The circle crosses each wall at the corner and √2 r from it.
-    for bite in [w.bite_a, w.bite_b] {
-        let [near, far] = bite.unwrap();
-        assert_eq!(near, 0.0);
-        assert!(close(far, SQRT_2 * R, 1e-12), "{far}");
-    }
+    // The circle passes through the corner.
+    assert!(close(w.centre.length(), R, 1e-12));
     // (π/2 − 1) r² beyond the walls.
     assert!(close(
         removed_area(FRAC_PI_2, &opts(Style::Normal)).unwrap(),
@@ -120,12 +123,8 @@ fn normal_reliefs_at_60_and_120_degrees_follow_the_bisector() {
             "{theta}: {:?}",
             w.centre
         );
-        // A chord through the corner at angle θ/2 from the line to the centre: 2 r cos(θ/2).
-        for bite in [w.bite_a, w.bite_b] {
-            let [near, far] = bite.unwrap();
-            assert_eq!(near, 0.0);
-            assert!(close(far, 2.0 * R * half.cos(), 1e-12));
-        }
+        // Through the corner.
+        assert!(close(w.centre.length(), R, 1e-12));
     }
     // r² (π − θ − sin θ): 60° → (2π/3 − √3/2) r², 120° → (π/3 − √3/2) r².
     let s3 = 3f64.sqrt() / 2.0;
@@ -193,17 +192,12 @@ fn a_minimal_relief_stops_its_gap_short_of_the_corner() {
         w.centre,
         Vec3::new(s * FRAC_1_SQRT_2, s * FRAC_1_SQRT_2, 0.0)
     ));
-    // On each wall: x² − 2 x (s/√2) + s² − r² = 0.
-    let h = s * FRAC_1_SQRT_2;
-    let root = (h * h - (s * s - R * R)).sqrt();
-    for bite in [w.bite_a, w.bite_b] {
-        let [near, far] = bite.unwrap();
-        assert!(
-            close(near, h - root, 1e-12) && close(far, h + root, 1e-12),
-            "{near} {far}"
-        );
-        assert!(near > 0.0);
+    // It still cuts into both walls: its centre is s/√2 from each wall's line, less than r.
+    let (a, b) = walls(FRAC_PI_2);
+    for d in [a, b] {
+        assert!(close(off_wall(w.centre, d), s * FRAC_1_SQRT_2, 1e-12));
     }
+    assert!(s * FRAC_1_SQRT_2 < R);
     // The nearest point of the circle to the corner is `gap` from it.
     assert!(close(w.centre.length() - R, gap, 1e-12));
     // Gap 0 is the normal relief.
@@ -212,7 +206,6 @@ fn a_minimal_relief_stops_its_gap_short_of_the_corner() {
         wedge(FRAC_PI_2, Style::Normal).centre
     );
     // A gap so large the circle reaches no wall: no relief.
-    let (a, b) = walls(FRAC_PI_2);
     assert_eq!(
         wedge_relief(a, b, 1.0, 1.0, &opts(Style::Minimal { gap: R })).unwrap(),
         Err(Skip::Unreached)
@@ -221,12 +214,14 @@ fn a_minimal_relief_stops_its_gap_short_of_the_corner() {
 
 #[test]
 fn a_t_bone_bites_the_wall_it_is_told_to() {
-    // Wall a is 10 long, b 5: Longer takes a, Shorter b.
+    // Wall a is 10 long, b 5: Longer takes a, Shorter b. The centre on the bitten wall's line,
+    // r from the corner: the circle cuts that wall from the corner to 2 r along it.
+    let (a, b) = walls(FRAC_PI_2);
     let long = wedge(FRAC_PI_2, Style::TBone { side: Side::Longer });
     assert!(close3(long.centre, Vec3::new(R, 0.0, 0.0)));
-    assert_eq!(long.bite_a, Some([0.0, 2.0 * R]));
+    assert!(close(off_wall(long.centre, a), 0.0, 1e-12));
     // Tangent to the other wall at 90°: no bite there.
-    assert_eq!(long.bite_b, None);
+    assert!(close(off_wall(long.centre, b), R, 1e-12));
     let short = wedge(
         FRAC_PI_2,
         Style::TBone {
@@ -234,11 +229,9 @@ fn a_t_bone_bites_the_wall_it_is_told_to() {
         },
     );
     assert!(close3(short.centre, Vec3::new(0.0, R, 0.0)));
-    assert_eq!(short.bite_a, None);
-    let [near, far] = short.bite_b.unwrap();
-    assert!(near == 0.0 && close(far, 2.0 * R, 1e-12));
+    assert!(close(off_wall(short.centre, a), R, 1e-12));
+    assert!(close(off_wall(short.centre, b), 0.0, 1e-12));
     // Equal walls: Longer takes the first, Shorter the second.
-    let (a, b) = walls(FRAC_PI_2);
     let eq = |side| {
         wedge_relief(a, b, 3.0, 3.0, &opts(Style::TBone { side }))
             .unwrap()
@@ -247,10 +240,16 @@ fn a_t_bone_bites_the_wall_it_is_told_to() {
     };
     assert!(close3(eq(Side::Longer), Vec3::new(R, 0.0, 0.0)));
     assert!(close3(eq(Side::Shorter), Vec3::new(0.0, R, 0.0)));
-    // At 60° the circle also cuts the other wall, 2 r cos θ along it.
+    // At 60° the circle also cuts the other wall: through the corner, it crosses that wall's
+    // line again at 2 (c · b) = 2 r cos θ along it.
+    let (_, b) = walls(PI / 3.0);
     let sharp = wedge(PI / 3.0, Style::TBone { side: Side::Longer });
-    let [_, far] = sharp.bite_b.unwrap();
-    assert!(close(far, 2.0 * R * (PI / 3.0).cos(), 1e-12));
+    assert!(off_wall(sharp.centre, b) < R);
+    assert!(close(
+        2.0 * sharp.centre.dot(b),
+        2.0 * R * (PI / 3.0).cos(),
+        1e-12
+    ));
     assert_eq!(
         removed_area(FRAC_PI_2, &opts(Style::TBone { side: Side::Longer })),
         Some(PI * R * R / 2.0)
