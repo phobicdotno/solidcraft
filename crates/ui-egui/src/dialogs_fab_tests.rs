@@ -122,6 +122,15 @@ fn each_style_sends_the_settings_it_reads() {
 }
 
 #[test]
+fn the_form_takes_as_many_dowels_as_the_recipe() {
+    let h = Harness::new();
+    let app = &h.app;
+    let mut k = Fab::new(&app.session.doc);
+    k.dowels = "64".into();
+    assert_eq!(params(app, &k, &[]).unwrap()["dowels"], json!(64));
+}
+
+#[test]
 fn lengths_follow_the_design_unit() {
     let mut h = Harness::new();
     h.app.run("document.units", json!({"units": "in"})).unwrap();
