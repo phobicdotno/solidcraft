@@ -2157,7 +2157,10 @@ mod tests {
         };
         assert!(matches!(
             make(&mut test_box(), &s),
-            Err(FlatError::Setting { name: "spacing", .. })
+            Err(FlatError::Setting {
+                name: "spacing",
+                ..
+            })
         ));
     }
 
@@ -2328,7 +2331,10 @@ mod tests {
         // stacked: one sheet apart, the nearest whole number of layers centred on the body
         let st = positions(0.0, 40.0, &s(0, 0.0), true).unwrap();
         assert_eq!(st.len(), 13); // 40 / 3 rounds to 13
-        assert!(close(st[0], 2.0, 1e-12) && close(st[12], 38.0, 1e-12), "{st:?}");
+        assert!(
+            close(st[0], 2.0, 1e-12) && close(st[12], 38.0, 1e-12),
+            "{st:?}"
+        );
         // a body thinner than half a sheet still gets one layer, at its middle
         assert_eq!(positions(0.0, 1.0, &s(0, 0.0), true).unwrap(), [0.5]);
         assert_eq!(positions(0.0, 1.0, &s(0, 0.0), false).unwrap(), [0.5]);
@@ -2351,8 +2357,7 @@ mod tests {
         );
         let res = make(&mut one_box([0.0; 3], [200.0, 60.0, 40.0]), &s).unwrap();
         assert!(
-            !res
-                .warnings
+            !res.warnings
                 .iter()
                 .any(|w| matches!(w, Warning::GapsNotWhole { .. })),
             "{:?}",
@@ -2379,7 +2384,10 @@ mod tests {
         ));
         assert!(matches!(
             positions(0.0, 100.0, &s(0, 2.0), false),
-            Err(FlatError::Setting { name: "spacing", .. })
+            Err(FlatError::Setting {
+                name: "spacing",
+                ..
+            })
         ));
         // 33 slices are 3.03 apart
         assert_eq!(positions(0.0, 100.0, &s(33, 0.0), false).unwrap().len(), 33);

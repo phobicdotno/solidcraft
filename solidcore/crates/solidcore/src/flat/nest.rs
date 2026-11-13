@@ -45,11 +45,15 @@ pub struct Placement {
 
 /// Grid cells per sheet: finer packs tighter, coarser runs faster.
 const TARGET_CELLS: f64 = 120_000.0;
-/// No point in a grid finer than the kerf (mm).
+/// The finest grid cell (mm): a quarter millimetre packs as tight as any finer grid would to
+/// within the gap's own rounding, and keeps a small sheet's grid quick. It is not the kerf
+/// (the default laser kerf, 0.15 mm, is finer); parts keep apart by the gap, not by the cell.
 const MIN_CELL: f64 = 0.25;
 /// At most this many cells along a sheet side, so a long thin sheet keeps a small grid.
 const MAX_SIDE_CELLS: f64 = 4000.0;
-/// Safety on top of every growth (mm): rounding of the grid arithmetic.
+/// What (mm) every growth by the gap and the half cell diagonal is widened by, so a cell the
+/// grown part only just reaches is still marked despite the rounding of the distance test;
+/// parts end up at most this much further apart than the gap.
 const TOL: f64 = 0.01;
 /// Empty grid cells around the usable area (candidate rasters reach two cells out).
 const PAD: usize = 3;
@@ -57,8 +61,9 @@ const PAD: usize = 3;
 const FIT_EPS: f64 = 1e-9;
 /// Sheet sizes, margins, gaps and part coordinates beyond this (mm) are refused.
 const LIMIT: f64 = 1e5;
-/// The most parts one call packs.
-const MAX_PARTS: usize = 5000;
+/// The most parts one call packs (copies counted): [`super::finish::layout`] refuses more
+/// too, before it finishes any part.
+pub const MAX_PARTS: usize = 5000;
 /// The most outline points over all parts.
 const MAX_POINTS: usize = 200_000;
 /// Rasters remembered per sheet as finding no room there.

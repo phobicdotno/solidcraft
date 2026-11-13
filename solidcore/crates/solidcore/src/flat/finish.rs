@@ -46,7 +46,7 @@ pub struct SheetSettings {
     pub margin: f64,
     /// The machine.
     pub machine: Machine,
-    /// Engrave each part's name on it.
+    /// Engrave each part's name on it where the name fits.
     pub labels: bool,
     /// The capital height of the names (mm).
     pub label_height: f64,
@@ -93,7 +93,8 @@ fn largest(r: Region) -> Shape {
 }
 
 /// The shape grown by half of a laser `width` (mm): the outline out and the holes in, corners
-/// kept sharp, so the part is true size once the beam has burnt its line. A negative width
+/// kept sharp (corners sharper than [`region::MITER_MIN_ANGLE`], about 29 degrees, are
+/// bevelled), so the part is true size once the beam has burnt its line. A negative width
 /// shrinks it. The largest piece is kept if the offset splits it; a shape shrunk to nothing is
 /// empty. A width of 0 leaves the shape as given. Rings may come in either direction; the result
 /// has its outline counter-clockwise and its holes clockwise.
@@ -159,11 +160,6 @@ pub fn relieve_corners(shape: &Shape, tool_diameter: f64) -> FlatResult<Shape> {
     Ok(largest(region::difference(&[norm], &circles)))
 }
 
-/// The bounds `[xmin, ymin, xmax, ymax]` of polylines, `None` without points.
-fn line_bounds(lines: &[Ring]) -> Option<[f64; 4]> {
-    region::ring_bounds(lines)
-}
-
 /// `text` as single-stroke lines with capitals `height` mm tall, the lower-left of its box at
 /// `at` and turned `angle` radians counter-clockwise about it. Nothing for an empty text, a
 /// height that is not positive, or a point or angle that is not finite.
@@ -173,7 +169,7 @@ pub fn label(text: &str, at: [f64; 2], height: f64, angle: f64) -> Vec<Ring> {
         return Vec::new();
     }
     let lines = super::font::strokes(text, height);
-    let Some([x0, y0, _, _]) = line_bounds(&lines) else {
+    let Some([x0, y0, _, _]) = region::ring_bounds(&lines) else {
         return Vec::new();
     };
     let (s, c) = angle.sin_cos();
@@ -254,7 +250,7 @@ pub fn label_inside(shape: &Shape, text: &str, height: f64, margin: f64) -> Vec<
     let mut h = height;
     while h > MIN_LABEL + 1e-9 {
         heights.push(h);
-        h *= 0.85;
+        h *= LABEL_SHRINK;
     }
     heights.push(height.min(MIN_LABEL));
 
@@ -265,7 +261,7 @@ pub fn label_inside(shape: &Shape, text: &str, height: f64, margin: f64) -> Vec<
     ];
     for h in heights {
         for u in &unit {
-            let Some([ux0, uy0, ux1, uy1]) = line_bounds(u) else {
+            let Some([ux0, uy0, ux1, uy1]) = region::ring_bounds(u) else {
                 return Vec::new();
             };
             let (w, t) = ((ux1 - ux0) * h, (uy1 - uy0) * h);
@@ -288,9 +284,9 @@ pub fn label_inside(shape: &Shape, text: &str, height: f64, margin: f64) -> Vec<
 /// first; `None` when no candidate fits.
 fn place_box(room: &[Shape], b: [f64; 4], w: f64, t: f64) -> Option<P2> {
     let [x0, y0, x1, y1] = b;
-    let step = (w.min(t).min(5.0) / 2.0)
-        .max((x1 - x0).min(y1 - y0) / 200.0)
-        .max(0.25);
+    let step = (w.min(t).min(PLACE_STEP_MAX) / 2.0)
+        .max((x1 - x0).min(y1 - y0) / PLACE_STEPS)
+        .max(PLACE_STEP_MIN);
     let (gx0, gy0) = (x0 + w / 2.0, y0 + t / 2.0);
     let nx = grid_count(gx0, x1 - w / 2.0 + 1e-9, step);
     let ny = grid_count(gy0, y1 - t / 2.0 + 1e-9, step);
@@ -330,8 +326,25 @@ fn place_box(room: &[Shape], b: [f64; 4], w: f64, t: f64) -> Option<P2> {
     None
 }
 
-/// The smallest label height (mm) still engraved.
+/// The height the label search steps down to; a smaller label_height is engraved as given.
 pub const MIN_LABEL: f64 = 2.0;
+
+/// Each try of the label search is this much of the one before: about ten tries from a 10 mm
+/// name down to [`MIN_LABEL`].
+const LABEL_SHRINK: f64 = 0.85;
+
+/// The label's candidate centres step at most half the label box's smaller side, so no gap
+/// the box fits in is stepped over, and at most half of this (mm), so a big label still tries
+/// the narrow places of a part.
+const PLACE_STEP_MAX: f64 = 5.0;
+
+/// The candidate grid steps at least this share of the room's smaller side: a few hundred
+/// candidates across even a big part.
+const PLACE_STEPS: f64 = 200.0;
+
+/// The finest candidate step (mm): moving a label by less changes nothing worth engraving
+/// and only grows the search.
+const PLACE_STEP_MIN: f64 = 0.25;
 
 /// The room (mm) a part's name keeps from its edges and holes.
 pub const LABEL_MARGIN: f64 = 1.0;
@@ -352,23 +365,30 @@ pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> FlatResult<Fi
         }
     }
     let mut engrave = part.engrave.clone();
-    // the boxes round the marks, which the name keeps clear of
-    let mut marked: Region = Vec::new();
+    // the boxes round the engraving already on the part (guide lines) and round the marks,
+    // which the name keeps clear of
+    let grown = |[x0, y0, x1, y1]: [f64; 4], dx: f64, dy: f64| {
+        region::rect(
+            x0 + dx - LABEL_MARGIN,
+            y0 + dy - LABEL_MARGIN,
+            x1 + dx + LABEL_MARGIN,
+            y1 + dy + LABEL_MARGIN,
+        )
+    };
+    let mut marked: Region = part
+        .engrave
+        .iter()
+        .filter_map(|l| region::ring_bounds(std::slice::from_ref(l)))
+        .flat_map(|b| grown(b, 0.0, 0.0))
+        .collect();
     for m in &part.marks {
         if !(m.at[0].is_finite() && m.at[1].is_finite()) {
             continue;
         }
         let lines = super::font::strokes(&m.text, m.height);
-        if let Some([lx0, _, lx1, _]) = line_bounds(&lines) {
-            let dx = m.at[0] - (lx0 + lx1) / 2.0;
-            if let Some([x0, y0, x1, y1]) = line_bounds(&lines) {
-                marked.extend(region::rect(
-                    x0 + dx - LABEL_MARGIN,
-                    y0 + m.at[1] - LABEL_MARGIN,
-                    x1 + dx + LABEL_MARGIN,
-                    y1 + m.at[1] + LABEL_MARGIN,
-                ));
-            }
+        if let Some(b) = region::ring_bounds(&lines) {
+            let dx = m.at[0] - (b[0] + b[2]) / 2.0;
+            marked.extend(grown(b, dx, m.at[1]));
             engrave.extend(
                 lines
                     .into_iter()
@@ -401,9 +421,6 @@ pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> FlatResult<Fi
         engrave,
     })
 }
-
-/// The most parts (copies counted) one layout packs.
-pub const MAX_PIECES: u64 = 10_000;
 
 /// A setting is finite and within `lo..=hi`.
 fn within(v: f64, lo: f64, hi: f64) -> bool {
@@ -455,12 +472,12 @@ fn check(ss: &SheetSettings) -> FlatResult<()> {
 /// # Errors
 /// [`FlatError::Setting`] for sheet settings out of range (naming the field: `width`,
 /// `height`, `gap`, `margin`, `kerf`, `tool_diameter`, `label_height`);
-/// [`FlatError::TooBig`] past [`MAX_PIECES`] copies; [`FlatError::DoesNotFit`] when a part fits
+/// [`FlatError::TooBig`] past [`super::nest::MAX_PARTS`] copies; [`FlatError::DoesNotFit`] when a part fits
 /// on no sheet, its `part` being the index of the part in `res.parts` (not of the copy);
 /// the refusals of [`finish`] and the packer's other errors.
 pub fn layout(res: &FabResult, ss: &SheetSettings) -> FlatResult<Vec<Sheet>> {
     check(ss)?;
-    if res.count() > MAX_PIECES {
+    if res.count() > super::nest::MAX_PARTS as u64 {
         return Err(FlatError::TooBig("parts"));
     }
     // every copy, with the index of the part it is a copy of
@@ -932,7 +949,7 @@ mod tests {
     #[test]
     fn label_box_starts_at_its_corner() {
         let s = label("A12", [10.0, 20.0], 5.0, 0.0);
-        let b = line_bounds(&s).unwrap();
+        let b = region::ring_bounds(&s).unwrap();
         assert!(close(b[0], 10.0, 1e-12) && close(b[1], 20.0, 1e-12));
         assert!(close(b[3], 25.0, 1e-12));
         // three characters: two advances and one glyph width
@@ -942,7 +959,7 @@ mod tests {
     #[test]
     fn label_turns_upright_about_its_corner() {
         let s = label("A12", [10.0, 20.0], 5.0, FRAC_PI_2);
-        let b = line_bounds(&s).unwrap();
+        let b = region::ring_bounds(&s).unwrap();
         assert!(close(b[2], 10.0, 1e-9) && close(b[1], 20.0, 1e-9));
         assert!(close(b[2] - b[0], 5.0, 1e-9));
         assert!(close(b[3] - b[1], 11.0, 1e-9));
@@ -984,7 +1001,7 @@ mod tests {
             assert!(!(46.0 < x && x < 54.0 && y > 29.0));
         }
         // it had room for the full height
-        let b = line_bounds(&s).unwrap();
+        let b = region::ring_bounds(&s).unwrap();
         assert!(close(b[3] - b[1], 6.0, 1e-9));
     }
 
@@ -994,7 +1011,7 @@ mod tests {
         let s = label_inside(&strip, "AB", 20.0, 1.0);
         assert!(!s.is_empty());
         assert_inside(&strip, &s, 1.0);
-        let b = line_bounds(&s).unwrap();
+        let b = region::ring_bounds(&s).unwrap();
         // 20 x 0.85^10 = 3.94 mm is the first step under the 4 mm of room
         assert!(close(b[3] - b[1], 20.0 * 0.85f64.powi(10), 1e-9));
     }
@@ -1011,7 +1028,7 @@ mod tests {
         let s = label_inside(&strip, "ABCD", 5.0, 1.0);
         assert!(!s.is_empty());
         assert_inside(&strip, &s, 1.0);
-        let b = line_bounds(&s).unwrap();
+        let b = region::ring_bounds(&s).unwrap();
         let h = 5.0 * 0.85 * 0.85;
         assert!(close(b[2] - b[0], h, 1e-9));
         assert!(close(b[3] - b[1], 3.0 * h, 1e-9));
@@ -1020,7 +1037,7 @@ mod tests {
     #[test]
     fn label_inside_below_the_smallest_height_keeps_it() {
         let s = label_inside(&solid(sq(0.0, 0.0, 50.0, 50.0, true)), "X", 1.5, 1.0);
-        let b = line_bounds(&s).unwrap();
+        let b = region::ring_bounds(&s).unwrap();
         assert!(close(b[3] - b[1], 1.5, 1e-9));
     }
 
@@ -1168,7 +1185,7 @@ mod tests {
         assert_eq!(f.engrave[0], line);
         let marks = &f.engrave[1..];
         assert_eq!(marks.len(), super::super::font::strokes("12", 4.0).len());
-        let b = line_bounds(marks).unwrap();
+        let b = region::ring_bounds(marks).unwrap();
         assert!(close((b[0] + b[2]) / 2.0, 40.0, 1e-12));
         assert!(close(b[1], 10.0, 1e-12) && close(b[3], 14.0, 1e-12));
     }
@@ -1432,9 +1449,32 @@ mod tests {
     }
 
     #[test]
-    fn layout_of_no_parts_is_no_sheets_or_a_packer_error() {
-        // the packer decides what an empty list gives; it must not panic
-        let _ = layout(&result(Vec::new()), &sheet_settings());
+    fn a_name_keeps_clear_of_the_guide_lines() {
+        // a stacked layer with a guide line across its middle
+        let mut p = part("L1", PartKind::Slice, solid(sq(0.0, 0.0, 50.0, 50.0, true)));
+        p.engrave = vec![vec![[0.0, 25.0], [50.0, 25.0]]];
+        let f = finish(&p, &sheet_settings()).unwrap();
+        let name = f.engrave.get(1..).unwrap_or_default();
+        let [x0, y0, x1, y1] = region::ring_bounds(name).expect("the name is engraved");
+        let [gx0, gy0, gx1, gy1] = [
+            0.0 - LABEL_MARGIN,
+            25.0 - LABEL_MARGIN,
+            50.0 + LABEL_MARGIN,
+            25.0 + LABEL_MARGIN,
+        ];
+        assert!(
+            x1 < gx0 || x0 > gx1 || y1 < gy0 || y0 > gy1,
+            "the name {:?} crosses the guide line",
+            [x0, y0, x1, y1]
+        );
+    }
+
+    #[test]
+    fn layout_of_no_parts_is_no_sheets() {
+        assert!(matches!(
+            layout(&result(Vec::new()), &sheet_settings()),
+            Ok(sheets) if sheets.is_empty()
+        ));
     }
 
     #[test]
