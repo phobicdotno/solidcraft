@@ -247,7 +247,8 @@ fn warnings_are_worded_by_their_code() {
             "S2: the rod misses it, so it gets a hub around the rod",
             format!("The gaps between slices are not a whole number of sheets: use a spacing that is a multiple of {} for exact spacers", mm(3.0))
                 .as_str(),
-            "… and 2 more",
+            "The two sets of slices never cross: nothing holds them together",
+            "… and 1 more",
         ]
     );
     let mut v = result();
