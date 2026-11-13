@@ -309,7 +309,7 @@ fn section_curves(
         at,
         error: crate::SolidError::PortInvariant {
             operation: "flat section",
-            reason: "the kernel's section gave no curves",
+            reason: "the kernel's section gave no list of curves",
         },
     })?;
     if curves.len() > MAX_SECTION_CURVES {
