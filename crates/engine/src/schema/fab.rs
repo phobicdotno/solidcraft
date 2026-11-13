@@ -99,7 +99,8 @@ pub struct FabSettingsParams {
     /// slices more than half the clearance. Default: 4.
     #[serde(default)]
     pub wall: Option<f64>,
-    /// Base or back: how far the plate reaches past the slices (mm), 0 to 10000. Default: 10.
+    /// Base or back: how far the plate reaches past the slices (mm), at least; the plate grows
+    /// to hold the slice numbers. 0 to 10000. Default: 10.
     #[serde(default)]
     pub plate_margin: Option<f64>,
     /// Stacked: engrave where the smaller neighbouring layer goes. Default: true.
