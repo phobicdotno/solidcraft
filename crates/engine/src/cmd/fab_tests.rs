@@ -218,7 +218,7 @@ fn a_section_that_does_not_close_fails_naming_the_plane_and_the_gap() {
     let e = super::refusal("fab.slice", &FlatError::OpenSection { axis: Axis::Z, at: 12.5, gap: 0.25 }, None, &ss);
     assert!(matches!(e, crate::EngineError::Other(_)), "{e}");
     let e = e.to_string();
-    assert!(e.starts_with("fab.slice: slicing the body failed: ") && e.contains("Z = 12.5 mm") && e.contains("0.250 mm"), "{e}");
+    assert!(e.starts_with("fab.slice: slicing the body failed: ") && e.contains("Z = 12.500 mm") && e.contains("0.250 mm"), "{e}");
 }
 
 #[test]
