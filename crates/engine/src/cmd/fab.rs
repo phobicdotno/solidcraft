@@ -59,7 +59,7 @@ pub static COMMANDS: &[CommandSpec] = &[
             settings_doc!(),
             "; path? (without extension: writes <path>-sheet1.dxf, <path>-sheet1.svg, ... and removes that path's \
              older sheet files numbered past the last sheet; without it the texts are returned); \
-             formats?: [dxf, svg] (default both) → files [{sheet, format, path|text}], removed: only cut and engrave paths, no sheet outline: DXF layers CUT (red) and ENGRAVE (blue); SVG cuts stroked red, engraving blue",
+             formats?: [dxf, svg] (default both) → files [{sheet, format, path|text}], removed (how many older sheet files went); the files hold only cut and engrave paths, no sheet outline: DXF layers CUT (red) and ENGRAVE (blue); SVG cuts stroked red, engraving blue",
         )),
 ];
 
