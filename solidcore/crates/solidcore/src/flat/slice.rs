@@ -1114,9 +1114,12 @@ fn spans(r: &[Shape], u: f64) -> Vec<(f64, f64)> {
     out
 }
 
-/// Two sets of upright slices, across X and across Y, slotted where they cross: the X slice
-/// from the middle of the shared height up, the Y slice from the middle down, each slot
-/// running out to the middle of the gap beyond (or out of the part).
+/// Two sets of upright slices, across X and across Y, slotted where they cross at one height per
+/// crossing line, the middle of the longest stretch of material both have there: the X slice
+/// keeps what lies below it and the Y slice what lies above, each slot running out of the part,
+/// so the X slices stand first and the Y slices drop on from above. Where the line runs through
+/// more material, the X slice is cut through above and the Y slice below; the pieces this frees
+/// are reported.
 fn waffle(
     model: &mut dyn Sectioner,
     s: &FabSettings,
@@ -1138,39 +1141,30 @@ fn waffle(
             // the X slice is (y, z), the Y slice (x, z): each along the line where they cross
             let a = spans(&xc.region, yc.at);
             let bb = spans(&yc.region, xc.at);
+            // the longest stretch both slices have material on, the lowest of equal ones
+            let mut shared: Option<(f64, f64)> = None;
             for &(p, q) in &a {
                 for &(r, u) in &bb {
                     let (z0, z1) = (p.max(r), q.min(u));
-                    if z1 - z0 <= 2.0 * t {
-                        continue;
+                    if z1 > z0 && shared.is_none_or(|(s0, s1)| z1 - z0 > s1 - s0) {
+                        shared = Some((z0, z1));
                     }
-                    let zm = (z0 + z1) / 2.0;
-                    let above = a
-                        .iter()
-                        .map(|s| s.0)
-                        .filter(|&v| v > z1 - 1e-6)
-                        .fold(hi, f64::min);
-                    let below = bb
-                        .iter()
-                        .map(|s| s.1)
-                        .filter(|&v| v < z0 + 1e-6)
-                        .fold(lo, f64::max);
-                    let top = if above < hi { (z1 + above) / 2.0 } else { hi };
-                    let bottom = if below > lo { (z0 + below) / 2.0 } else { lo };
-                    cx.extend(region::rect(
-                        yc.at - w / 2.0,
-                        zm - cl / 2.0,
-                        yc.at + w / 2.0,
-                        top,
-                    ));
-                    cy.extend(region::rect(
-                        xc.at - w / 2.0,
-                        bottom,
-                        xc.at + w / 2.0,
-                        zm + cl / 2.0,
-                    ));
                 }
             }
+            let Some((z0, z1)) = shared else { continue };
+            let zm = (z0 + z1) / 2.0;
+            cx.extend(region::rect(
+                yc.at - w / 2.0,
+                zm - cl / 2.0,
+                yc.at + w / 2.0,
+                hi,
+            ));
+            cy.extend(region::rect(
+                xc.at - w / 2.0,
+                lo,
+                xc.at + w / 2.0,
+                zm + cl / 2.0,
+            ));
         }
     }
     for (set, cuts, axis) in [(&xs, &cut_x, Axis::X), (&ys, &cut_y, Axis::Y)] {
@@ -1741,6 +1735,7 @@ mod tests {
         }
         assert!(res.warnings.is_empty());
         assert_sound(&res);
+        line_split(&res);
     }
 
     #[test]
@@ -1754,6 +1749,122 @@ mod tests {
         assert_eq!(res.parts.len(), 12);
         assert!(res.warnings.is_empty(), "{:?}", res.warnings);
         assert_sound(&res);
+        line_split(&res);
+    }
+
+    /// The lowest and highest material of `part` along its line at `u`, `None` with none.
+    fn line(part: &FabPart, u: f64) -> Option<(f64, f64)> {
+        let spans = region::spans_at_x(std::slice::from_ref(&part.shape), u);
+        Some((
+            spans.first()?.0,
+            spans.iter().map(|s| s.1).fold(f64::MIN, f64::max),
+        ))
+    }
+
+    /// The waffle's assembly rule: on every crossing line where both have material, an X part's
+    /// material ends below where the Y part's begins, so the Y slices drop onto the standing X
+    /// slices from above.
+    fn line_split(res: &FabResult) {
+        let set = |c: char| -> Vec<&FabPart> {
+            res.parts.iter().filter(|p| p.name.starts_with(c)).collect()
+        };
+        for x in set('X') {
+            for y in set('Y') {
+                // an X part lies at x = its frame's origin, a Y part at y = its frame's
+                let (Some((_, top)), Some((bottom, _))) =
+                    (line(x, y.frame.origin[1]), line(y, x.frame.origin[0]))
+                else {
+                    continue;
+                };
+                assert!(top < bottom, "{} {}: {top} {bottom}", x.name, y.name);
+            }
+        }
+    }
+
+    #[test]
+    fn waffle_thin_crossings_are_slotted() {
+        // a 5 mm plate: every crossing shares less than 2 t, and still gets its half-laps
+        let mut model = one_box([0.0; 3], [100.0, 100.0, 5.0]);
+        let s = FabSettings {
+            thickness: 3.0,
+            count: 3,
+            clearance: 0.2,
+            ..settings(Style::Waffle)
+        };
+        let res = make(&mut model, &s).unwrap();
+        let names: Vec<&str> = res.parts.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["X1", "X2", "X3", "Y1", "Y2", "Y3"]);
+        // the X slots from 2.4 up, the Y slots from 2.6 down, three in each part
+        for p in &res.parts {
+            let a = region::shape_area(&p.shape);
+            assert!(close(a, 500.0 - 3.0 * 3.2 * 2.6, 1e-4), "{}: {a}", p.name);
+        }
+        for x in res.parts.iter().filter(|p| p.name.starts_with('X')) {
+            for y in res.parts.iter().filter(|p| p.name.starts_with('Y')) {
+                let (Some((_, top)), Some((bottom, _))) =
+                    (line(x, y.frame.origin[1]), line(y, x.frame.origin[0]))
+                else {
+                    panic!("{} {}", x.name, y.name)
+                };
+                assert!(
+                    close(top, 2.4, 1e-6) && close(bottom, 2.6, 1e-6),
+                    "{top} {bottom}"
+                );
+            }
+        }
+        assert!(res.warnings.is_empty(), "{:?}", res.warnings);
+        assert_sound(&res);
+        line_split(&res);
+    }
+
+    #[test]
+    fn waffle_crossing_two_layers_cuts_one_slice_through() {
+        // a bookshelf: a wall at x 0..10 and two shelves; slices at 2, 14, 26 and 38 both ways
+        let mut model = Boxes(vec![
+            ([0.0; 3], [10.0, 40.0, 50.0]),
+            ([0.0; 3], [40.0, 40.0, 20.0]),
+            ([0.0, 0.0, 30.0], [40.0, 40.0, 50.0]),
+        ]);
+        let s = FabSettings {
+            thickness: 3.0,
+            clearance: 0.2,
+            ..settings(Style::Waffle)
+        };
+        let res = make(&mut model, &s).unwrap();
+        let names: Vec<&str> = res.parts.iter().map(|p| p.name.as_str()).collect();
+        let mut want = vec!["X1".to_string()];
+        for i in 2..=4 {
+            want.extend("abcdef".chars().map(|c| format!("X{i}{c}")));
+        }
+        want.extend((1..=4).map(|i| format!("Y{i}")));
+        assert_eq!(names, want);
+        // through the wall, one stretch (0, 50) cut at 25; through the shelves, two equal ones
+        // cut at the lower's middle, 10: the upper shelf of each X slice is cut through
+        let area = |name: &str| {
+            let p = res.parts.iter().find(|p| p.name == name).unwrap();
+            region::shape_area(&p.shape)
+        };
+        assert!(close(area("X1"), 2000.0 - 4.0 * 3.2 * 25.1, 1e-4));
+        for i in 2..=4 {
+            assert!(close(
+                area(&format!("X{i}a")),
+                800.0 - 4.0 * 3.2 * 10.1,
+                1e-4
+            ));
+        }
+        for i in 1..=4 {
+            let y = 1700.0 - 3.2 * 25.1 - 3.0 * 3.2 * 10.1;
+            assert!(close(area(&format!("Y{i}")), y, 1e-4));
+        }
+        let apart: Vec<Warning> = (2..=4)
+            .map(|i| Warning::FallsApart {
+                part: format!("X{i}"),
+                pieces: 6,
+            })
+            .collect();
+        assert_eq!(res.warnings, apart);
+        assert_sound(&res);
+        line_split(&res);
     }
 
     #[test]
