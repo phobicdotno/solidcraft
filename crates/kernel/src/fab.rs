@@ -2,9 +2,10 @@
 //! sheets, through solidcore's recipe ([`solidcore_ops::fab`]). Nothing here computes geometry;
 //! every call into solidcore runs under [`crate::guard`].
 
+use solidcore_ops::fab::Sheet;
 pub use solidcore_ops::fab::{
-    Axis, DEFAULT_KERF, DEFAULT_SETTINGS, DEFAULT_SHEETS, DEFAULT_TOOL_DIAMETER, FabResult, FabSettings, FlatError, Frame, Machine, PartKind, Shape,
-    Sheet, SheetSettings, Style, Warning,
+    Axis, DEFAULT_KERF, DEFAULT_SETTINGS, DEFAULT_SHEETS, DEFAULT_TOOL_DIAMETER, FabResult, FabSettings, FlatError, Frame, MAX_DOWELS, MAX_SLICES,
+    Machine, PartKind, Shape, SheetSettings, Style, Warning,
 };
 
 use crate::{Body, KernelError, Result};
