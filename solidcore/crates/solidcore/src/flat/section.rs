@@ -115,12 +115,6 @@ impl<'a> BrepSection<'a> {
         })
     }
 
-    /// The chord tolerance (mm).
-    #[must_use]
-    pub fn chord(&self) -> f64 {
-        self.chord
-    }
-
     /// The plane position actually sectioned for `axis = at`: `at` moved by the first of
     /// [`NUDGES`] that keeps [`VERTEX_CLEARANCE`] from every vertex (the last one tried when
     /// none does). A plane strictly inside the body's bounds is never nudged out of them, so a
@@ -163,25 +157,15 @@ impl Sectioner for BrepSection<'_> {
 }
 
 /// The material of body `b` on the plane `axis = at` exactly (no nudging), in the slice
-/// coordinates of [`Axis::directions`], its outlines within `chord` mm of the exact section.
+/// coordinates of [`Axis::directions`], its outlines within `chord` mm of the exact section. The
+/// plane's point is `centre` moved onto the plane (the body's middle, so the kernel's bounded
+/// plane sits over the body however far it is from the origin).
 ///
 /// # Errors
 /// [`FlatError::Setting`] for `at` not finite or a chord out of range; [`FlatError::TooBig`]
 /// past [`MAX_SECTION_CURVES`] or [`MAX_SECTION_SAMPLES`]; [`FlatError::Section`] for the
 /// kernel's section and evaluation errors; [`FlatError::OpenSection`] for section curves that
 /// do not close into outlines.
-pub fn plane_section(
-    k: &Kernel,
-    b: &mut Brep,
-    axis: Axis,
-    at: f64,
-    chord: f64,
-) -> FlatResult<Region> {
-    section_at(k, b, axis, at, chord, [0.0; 3])
-}
-
-/// [`plane_section`] with the plane's point taken at `centre` moved onto the plane (the body's
-/// middle, so the kernel's bounded plane sits over the body however far it is from the origin).
 fn section_at(
     k: &Kernel,
     b: &mut Brep,
@@ -917,13 +901,13 @@ mod tests {
             raw(&k, &mut sph, Axis::Z, at, &format!("sphere z={at}"));
             show(
                 &format!("sphere plane_section z={at}"),
-                &plane_section(&k, &mut sph, Axis::Z, at, CHORD),
+                &section_at(&k, &mut sph, Axis::Z, at, CHORD, [0.0; 3]),
             );
         }
         raw(&k, &mut sph, Axis::X, 10.0, "sphere x=10");
         show(
             "sphere plane_section x=10",
-            &plane_section(&k, &mut sph, Axis::X, 10.0, CHORD),
+            &section_at(&k, &mut sph, Axis::X, 10.0, CHORD, [0.0; 3]),
         );
         // a cylinder's flat ends
         let mut cyl = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
@@ -946,13 +930,13 @@ mod tests {
             raw(&k, &mut cyl, Axis::Z, at, &format!("cylinder z={at}"));
             show(
                 &format!("cylinder plane_section z={at}"),
-                &plane_section(&k, &mut cyl, Axis::Z, at, CHORD),
+                &section_at(&k, &mut cyl, Axis::Z, at, CHORD, [0.0; 3]),
             );
         }
         raw(&k, &mut cyl, Axis::X, 10.0, "cylinder x=10");
         show(
             "cylinder plane_section x=10",
-            &plane_section(&k, &mut cyl, Axis::X, 10.0, CHORD),
+            &section_at(&k, &mut cyl, Axis::X, 10.0, CHORD, [0.0; 3]),
         );
         // a box's faces
         let mut bx = create_box(&mut k, Point3::ZERO, 20.0, 20.0, 30.0).unwrap();
@@ -960,7 +944,7 @@ mod tests {
             raw(&k, &mut bx, Axis::Z, at, &format!("box z={at}"));
             show(
                 &format!("box plane_section z={at}"),
-                &plane_section(&k, &mut bx, Axis::Z, at, CHORD),
+                &section_at(&k, &mut bx, Axis::Z, at, CHORD, [0.0; 3]),
             );
         }
         // a flat torus at its highest and lowest circles
@@ -985,7 +969,7 @@ mod tests {
             raw(&k, &mut tor, Axis::Z, at, &format!("torus z={at}"));
             show(
                 &format!("torus plane_section z={at}"),
-                &plane_section(&k, &mut tor, Axis::Z, at, CHORD),
+                &section_at(&k, &mut tor, Axis::Z, at, CHORD, [0.0; 3]),
             );
         }
         // whole numbers of sheets, stacked
