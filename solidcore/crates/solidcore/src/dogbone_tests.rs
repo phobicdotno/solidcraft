@@ -98,7 +98,6 @@ fn grid_area(c: Vec3, r: f64, theta: f64) -> f64 {
 #[test]
 fn a_normal_relief_of_a_square_corner_sits_on_the_bisector_through_the_corner() {
     let w = wedge(FRAC_PI_2, Style::Normal);
-    assert!(close(w.angle, FRAC_PI_2, 1e-15));
     assert!(close3(
         w.centre,
         Vec3::new(R * FRAC_1_SQRT_2, R * FRAC_1_SQRT_2, 0.0)
@@ -264,8 +263,9 @@ fn corners_more_open_than_the_largest_angle_are_skipped() {
         style: Style::Normal,
         max_angle: FRAC_PI_2,
     };
-    assert!(
-        matches!(wedge_relief(a, b, 1.0, 1.0, &square_only).unwrap(), Err(Skip::TooOpen { angle }) if close(angle, FRAC_PI_2 + 0.01, 1e-12))
+    assert_eq!(
+        wedge_relief(a, b, 1.0, 1.0, &square_only).unwrap(),
+        Err(Skip::TooOpen)
     );
     // A square corner computed with rounding is still relieved.
     let (a, b) = walls(FRAC_PI_2 + 1e-9);
@@ -424,7 +424,6 @@ fn a_relief_cylinder_runs_the_edge_and_its_extensions() {
     assert!(close3(c.base, Vec3::new(2.0 + d, 3.0 + d, 4.0)));
     assert!(close3(c.axis, Vec3::Z));
     assert_eq!((c.radius, c.height), (R, 7.5));
-    assert!(close(c.angle, FRAC_PI_2, 1e-15));
     // Extended below the start too, and running the other way.
     let c = relief_cylinder(
         &edge(Vec3::new(0.0, 0.0, 6.0), Vec3::ZERO),
@@ -444,10 +443,10 @@ fn a_relief_cylinder_runs_the_edge_and_its_extensions() {
         style: Style::Normal,
         max_angle: 1.0,
     };
-    assert!(matches!(
+    assert_eq!(
         relief_cylinder(&edge(Vec3::ZERO, Vec3::Z), walls, [1.0; 2], [0.0; 2], &open).unwrap(),
-        Err(Skip::TooOpen { .. })
-    ));
+        Err(Skip::TooOpen)
+    );
 }
 
 #[test]
@@ -568,8 +567,8 @@ fn an_edge_relief_reads_its_walls_and_ends() {
         style: Style::Normal,
         max_angle: 1.0,
     };
-    assert!(matches!(
+    assert_eq!(
         edge_relief(&up, &walls, [floor, top], &narrow).unwrap(),
-        EdgeRelief::Skipped(Skip::TooOpen { .. })
-    ));
+        EdgeRelief::Skipped(Skip::TooOpen)
+    );
 }

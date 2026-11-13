@@ -127,23 +127,18 @@ pub enum Skip {
     Convex,
     /// The walls are in line: no corner.
     Straight,
-    /// The corner is more open than the largest angle relieved: its angle (radians).
-    TooOpen {
-        /// The corner's (void wedge's) angle, radians.
-        angle: f64,
-    },
+    /// The corner is more open than the largest angle relieved.
+    TooOpen,
     /// A minimal relief whose gap is so large that the circle reaches neither wall.
     Unreached,
     /// A wall with no direction, or walls folded back onto each other.
     Degenerate,
 }
 
-/// A relief in a corner, in the corner's own terms: the corner's angle, and the circle's centre
-/// as an offset from the corner point.
+/// A relief in a corner, in the corner's own terms: its circle's centre as an offset from the
+/// corner point.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Wedge {
-    /// The corner's (void wedge's) angle, radians in (0, π).
-    angle: f64,
     /// The circle's centre less the corner point.
     centre: Vec3,
 }
@@ -177,7 +172,7 @@ fn wedge_relief(
         return Ok(Err(Skip::Straight));
     }
     if angle > o.max_angle + ANGLE_SLACK {
-        return Ok(Err(Skip::TooOpen { angle }));
+        return Ok(Err(Skip::TooOpen));
     }
     let r = o.radius;
     // a + b has length 2 cos(θ/2) > 0 for θ < π.
@@ -198,7 +193,7 @@ fn wedge_relief(
     if !bites(centre, a, r) && !bites(centre, b, r) {
         return Ok(Err(Skip::Unreached));
     }
-    Ok(Ok(Wedge { angle, centre }))
+    Ok(Ok(Wedge { centre }))
 }
 
 /// Whether the circle of radius `r` about `centre` (relative to the corner) bites the wall that
@@ -307,8 +302,6 @@ pub struct ReliefCylinder {
     pub radius: f64,
     /// Its length along the axis.
     pub height: f64,
-    /// The corner's (void wedge's) angle, radians.
-    pub angle: f64,
 }
 
 /// What [`edge_relief`] decides for a straight edge between two planar faces.
@@ -521,7 +514,6 @@ fn relief_cylinder(
         axis,
         radius: o.radius,
         height: l + before + after,
-        angle: w.angle,
     }))
 }
 
