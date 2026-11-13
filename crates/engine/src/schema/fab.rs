@@ -117,7 +117,8 @@ pub struct FabSettingsParams {
     /// Sheet height (mm). Default: 400.
     #[serde(default)]
     pub sheet_height: Option<f64>,
-    /// The least distance between parts on a sheet (mm). Default: 3.
+    /// The least distance between the machine's paths round two parts on a sheet (mm), 0 to
+    /// 10000; with `machine` cnc the parts end up `tool_diameter` further apart. Default: 3.
     #[serde(default)]
     pub gap: Option<f64>,
     /// The least distance from a sheet's edge (mm). Default: 5.
