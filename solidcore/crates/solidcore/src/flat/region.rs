@@ -282,6 +282,31 @@ pub fn disk(c: P2, r: f64, chord: f64) -> Region {
     let Some(n) = circle_sides(r, chord) else {
         return Vec::new();
     };
+    regular(c, r, n)
+}
+
+/// A polygon round the circle of radius `r` about `c`, so the whole disc lies inside it: its
+/// sides touch the circle at their middles and its vertices, one at angle 0, lie at most `chord`
+/// outside it (while the [`circle_sides`] of the circle of radius `r + chord` stay under their
+/// 1440). Empty for a radius that is not positive, and for a `chord` that is not a positive
+/// finite number.
+#[must_use]
+pub fn disk_around(c: P2, r: f64, chord: f64) -> Region {
+    let ok = r.is_finite() && r > 0.0 && sane(c);
+    if !ok {
+        return Vec::new();
+    }
+    // The n sides inscribed in the circle of radius r + chord stay within chord of it, so
+    // cos(π / n) >= 1 - chord / (r + chord) = r / (r + chord): drawn round the circle of radius
+    // r, their vertices at r / cos(π / n) are at most r + chord from the centre.
+    let Some(n) = circle_sides(r + chord, chord) else {
+        return Vec::new();
+    };
+    regular(c, r / (std::f64::consts::PI / n as f64).cos(), n)
+}
+
+/// The regular polygon of `n` vertices on the circle of radius `r` about `c`, one at angle 0.
+fn regular(c: P2, r: f64, n: usize) -> Region {
     let outer = (0..n)
         .map(|i| {
             let a = std::f64::consts::TAU * i as f64 / n as f64;
@@ -569,6 +594,31 @@ mod tests {
         assert!(std::f64::consts::PI * r * r - area(&d) < std::f64::consts::TAU * r * 0.01);
         assert!(disk([0.0, 0.0], 0.0, 0.01).is_empty());
         assert!(disk([0.0, 0.0], f64::NAN, 0.01).is_empty());
+    }
+
+    #[test]
+    fn a_disk_around_holds_its_circle_within_its_chord() {
+        let (c, r, chord) = ([1.0, 2.0], 2.0, 0.005);
+        let d = disk_around(c, r, chord);
+        let ring = &d[0].outer;
+        // pi / acos(1 - 0.005 / 2.005) = 44.47...: 45 sides
+        assert_eq!(Some(ring.len()), circle_sides(r + chord, chord));
+        let from_c = |p: P2| (p[0] - c[0]).hypot(p[1] - c[1]);
+        for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
+            // every vertex outside the circle by at most the chord, every side touching it at
+            // its middle
+            assert!(from_c(*a) > r && from_c(*a) <= r + chord, "{a:?}");
+            let m = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
+            assert!(close(from_c(m), r, 1e-12), "{m:?}");
+        }
+        assert!(close(ring[0][1], c[1], 0.0) && ring[0][0] > c[0]);
+        // so the disc is inside it and the ring of the chord round the circle holds it
+        let pi = std::f64::consts::PI;
+        assert!(area(&d) > pi * r * r && area(&d) < pi * (r + chord) * (r + chord));
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(disk_around(c, bad, chord).is_empty(), "{bad}");
+            assert!(disk_around(c, r, bad).is_empty(), "{bad}");
+        }
     }
 
     #[test]

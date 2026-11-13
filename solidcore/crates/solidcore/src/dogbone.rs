@@ -48,7 +48,7 @@ const ANGLE_SLACK: f64 = 1.0e-6;
 /// Relative to the radius, a crossing this near the corner is at the corner: a circle through
 /// the corner crosses both walls there, and the rounding of the crossing's root leaves it a few
 /// ulps of the radius off, far below the kernel's numeric zero.
-pub(crate) const AT_CORNER: f64 = EFF_ZERO;
+const AT_CORNER: f64 = EFF_ZERO;
 
 /// Relative to the radius, the shortest stretch of a wall a circle must cut to bite it. A chord
 /// is `2 r sin φ` long, `φ` the angle at which the circle crosses the wall's line, so a shorter
@@ -154,9 +154,9 @@ pub(crate) struct Wedge {
     /// Where the circle crosses wall `a`, as distances from the corner along it: `[near, far]`
     /// with `0 <= near <= far`, or `None` where it doesn't cut into that wall. For a circle
     /// through the corner, `near` is 0.
-    pub(crate) bite_a: Option<[f64; 2]>,
+    bite_a: Option<[f64; 2]>,
     /// The same on wall `b`.
-    pub(crate) bite_b: Option<[f64; 2]>,
+    bite_b: Option<[f64; 2]>,
 }
 
 /// The relief of the corner whose walls leave it in directions `a` and `b`, the void the wedge

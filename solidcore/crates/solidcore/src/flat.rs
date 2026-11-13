@@ -8,9 +8,9 @@
 //!   section curves;
 //! - [`slice`]: the five ways of building a solid back up from flat parts (stacked layers,
 //!   slices on a rod, on a base plate or a back plate, a waffle grid);
-//! - [`finish`]: a part as a machine cuts it (laser kerf, router corner reliefs) and its
-//!   engraved labels;
-//! - `relief`: the router's corner reliefs spliced into a part's rings, placed by the wedge
+//! - [`finish`]: a part as a machine cuts it (laser kerf, router corner reliefs cut out of its
+//!   material) and its engraved labels;
+//! - `relief`: the circles of the router's corner reliefs in a part's rings, placed by the wedge
 //!   computation of [`crate::dogbone`];
 //! - [`font`]: single-stroke lettering for those labels;
 //! - [`nest`]: parts packed onto sheets.
@@ -107,7 +107,8 @@ pub enum FlatError {
         /// How far apart the open outline's ends are (mm).
         gap: f64,
     },
-    /// The kernel failed reading the body (its vertices or its bounding box).
+    /// The kernel failed reading the body (its vertices or its bounding box), or refused a
+    /// part's corner reliefs ([`finish::relieve_corners`]).
     #[error(transparent)]
     Kernel(#[from] crate::SolidError),
 }

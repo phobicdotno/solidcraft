@@ -93,15 +93,24 @@ fn largest(r: Region) -> Shape {
 /// The shape grown by half of a laser `width` (mm): the outline out and the holes in, corners
 /// kept sharp, so the part is true size once the beam has burnt its line. A negative width
 /// shrinks it. The largest piece is kept if the offset splits it; a shape shrunk to nothing is
-/// empty. A width of 0, not finite or beyond [`MAX_KERF`] mm either way leaves the shape as
-/// given. Rings may come in either direction; the result has its outline counter-clockwise and
-/// its holes clockwise.
-#[must_use]
-pub fn kerf(shape: &Shape, width: f64) -> Shape {
-    if width == 0.0 || !width.is_finite() || width.abs() > MAX_KERF {
-        return shape.clone();
+/// empty. A width of 0 leaves the shape as given. Rings may come in either direction; the result
+/// has its outline counter-clockwise and its holes clockwise.
+///
+/// # Errors
+/// [`FlatError::Setting`] (`kerf`) for a width that is not finite or beyond [`MAX_KERF`] mm
+/// either way.
+pub fn kerf(shape: &Shape, width: f64) -> FlatResult<Shape> {
+    if !width.is_finite() || width.abs() > MAX_KERF {
+        return Err(FlatError::Setting("kerf"));
     }
-    largest(region::offset(&material(shape), width / 2.0, Join::Miter))
+    if width == 0.0 {
+        return Ok(shape.clone());
+    }
+    Ok(largest(region::offset(
+        &material(shape),
+        width / 2.0,
+        Join::Miter,
+    )))
 }
 
 /// The largest kerf width [`kerf`] applies (mm): no beam is a metre wide, and offsets that far
@@ -112,54 +121,39 @@ pub const MAX_KERF: f64 = 1000.0;
 /// slots and sharper corners get one and gently bent outlines (a sliced curve) do not.
 pub const RELIEF_MAX_ANGLE: f64 = 0.75 * std::f64::consts::PI;
 
-/// How far a relief's arc may stray from its circle (mm).
+/// How far the polygon that cuts a relief reaches past the relief's circle, at most (mm).
 pub const RELIEF_CHORD: f64 = 0.005;
 
 /// The shape with a dogbone relief cut into every inside corner a router bit of
 /// `tool_diameter` mm cannot reach: a circle of the bit's radius through the corner, its centre
 /// on the corner's bisector ([`crate::dogbone`]), for corners whose void angle is at most
-/// [`RELIEF_MAX_ANGLE`]. Each ring gets its arcs spliced in; where reliefs at both ends of a short
-/// edge overlap, their circles are cut out of the material instead. The largest piece is kept.
-/// A diameter that is not positive and finite leaves the shape as given.
-#[must_use]
-pub fn relieve_corners(shape: &Shape, tool_diameter: f64) -> Shape {
+/// [`RELIEF_MAX_ANGLE`]. The circles of every ring, outline and holes, are cut out of the
+/// material in one region difference, so a relief that reaches into the next relief, through a
+/// thin wall or into a hole takes what it covers there too. Each circle is cut as a polygon round
+/// it ([`region::disk_around`]), so the corner, which lies on the circle, keeps no notch, and the
+/// cut is over by at most [`RELIEF_CHORD`]. The largest piece is kept.
+///
+/// # Errors
+/// [`FlatError::Kernel`] with the relief computation's [`crate::SolidError::InvalidInput`] for
+/// a diameter that is not positive and finite or past 2 km, and for a shape whose material has
+/// no outline of three or more points, more than a million points in a ring or a point beyond a
+/// kilometre.
+pub fn relieve_corners(shape: &Shape, tool_diameter: f64) -> FlatResult<Shape> {
     let options = crate::dogbone::Options {
         radius: tool_diameter / 2.0,
         style: crate::dogbone::Style::Normal,
         max_angle: RELIEF_MAX_ANGLE,
     };
-    let Ok(options) = options.checked() else {
-        return shape.clone();
-    };
     let norm = largest(material(shape));
-    if norm.outer.len() < 3 {
-        return shape.clone();
-    }
-    let spliced: Option<Vec<Ring>> = norm
-        .rings()
-        .map(|r| relief::relieved_ring(r, &options, RELIEF_CHORD).ok())
-        .collect();
-    if let Some(rings) = spliced {
-        return largest(region::from_rings(&rings, true));
-    }
-    // an edge too short for the reliefs at both its ends: cut every relief circle out instead,
-    // each a polygon round the circle so the corner itself is cut
     let mut circles: Region = Vec::new();
     for ring in norm.rings() {
-        let Ok(corners) = relief::ring_reliefs(ring, &options) else {
-            return norm.clone();
-        };
-        for c in corners {
+        for c in relief::ring_reliefs(ring, &options)? {
             if let Corner::Relief(r) = c {
-                circles.extend(region::disk(
-                    r.centre,
-                    r.radius + RELIEF_CHORD,
-                    RELIEF_CHORD,
-                ));
+                circles.extend(region::disk_around(r.centre, r.radius, RELIEF_CHORD));
             }
         }
     }
-    largest(region::difference(&[norm], &circles))
+    Ok(largest(region::difference(&[norm], &circles)))
 }
 
 /// The bounds `[xmin, ymin, xmax, ymax]` of polylines, `None` without points.
@@ -344,12 +338,14 @@ pub const LABEL_MARGIN: f64 = 1.0;
 /// size. Each [`super::slice::Mark`] is centred on its point's x with its baseline on its y.
 /// Settings are taken as given: a kerf or tool that is not positive does nothing, a label
 /// height that is not positive engraves no name.
-#[must_use]
-pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> Finished {
+///
+/// # Errors
+/// The refusals of [`relieve_corners`] and [`kerf`].
+pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> FlatResult<Finished> {
     let mut shape = part.shape.clone();
     if let Machine::Router { tool_diameter } = ss.machine {
         if tool_diameter > 0.0 {
-            shape = relieve_corners(&shape, tool_diameter);
+            shape = relieve_corners(&shape, tool_diameter)?;
         }
     }
     let mut engrave = part.engrave.clone();
@@ -392,15 +388,15 @@ pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> Finished {
     }
     if let Machine::Laser { kerf: k } = ss.machine {
         if k > 0.0 {
-            shape = kerf(&shape, k);
+            shape = kerf(&shape, k)?;
         }
     }
-    Finished {
+    Ok(Finished {
         name: part.name.clone(),
         kind: part.kind,
         shape,
         engrave,
-    }
+    })
 }
 
 /// The most parts (copies counted) one layout packs.
@@ -451,7 +447,7 @@ fn check(ss: &SheetSettings) -> FlatResult<()> {
 /// `height`, `gap`, `margin`, `kerf`, `tool_diameter`, `label_height`);
 /// [`FlatError::TooBig`] past [`MAX_PIECES`] copies; [`FlatError::DoesNotFit`] when a part fits
 /// on no sheet, its `part` being the index of the part in `res.parts` (not of the copy);
-/// the packer's other errors.
+/// the refusals of [`finish`] and the packer's other errors.
 pub fn layout(res: &FabResult, ss: &SheetSettings) -> FlatResult<Vec<Sheet>> {
     check(ss)?;
     if res.count() > MAX_PIECES {
@@ -460,7 +456,7 @@ pub fn layout(res: &FabResult, ss: &SheetSettings) -> FlatResult<Vec<Sheet>> {
     // every copy, with the index of the part it is a copy of
     let mut pieces: Vec<(usize, Finished)> = Vec::new();
     for (i, part) in res.parts.iter().enumerate() {
-        let f = finish(part, ss);
+        let f = finish(part, ss)?;
         for _ in 0..part.copies {
             pieces.push((i, f.clone()));
         }
@@ -504,6 +500,8 @@ pub fn layout(res: &FabResult, ss: &SheetSettings) -> FlatResult<Vec<Sheet>> {
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2};
+
     use super::super::region::{area, contains, ring_area, shape_area};
     use super::super::slice::{Axis, FabPart, Mark};
     use super::*;
@@ -599,7 +597,7 @@ mod tests {
 
     #[test]
     fn kerf_grows_a_square_and_keeps_its_corners() {
-        let g = kerf(&solid(sq(0.0, 0.0, 50.0, 50.0, true)), 0.2);
+        let g = kerf(&solid(sq(0.0, 0.0, 50.0, 50.0, true)), 0.2).unwrap();
         assert!(close(shape_area(&g), 50.2 * 50.2, 1e-3));
         assert_eq!(g.outer.len(), 4);
         assert!(g.holes.is_empty());
@@ -615,7 +613,7 @@ mod tests {
             outer: sq(0.0, 0.0, 50.0, 50.0, true),
             holes: vec![sq(20.0, 20.0, 30.0, 30.0, false)],
         };
-        let g = kerf(&holed, 0.2);
+        let g = kerf(&holed, 0.2).unwrap();
         assert_eq!(g.holes.len(), 1);
         assert!(ring_area(&g.outer) > 0.0 && ring_area(&g.holes[0]) < 0.0);
         assert!(close(-ring_area(&g.holes[0]), 9.8 * 9.8, 1e-3));
@@ -623,17 +621,20 @@ mod tests {
     }
 
     #[test]
-    fn kerf_of_zero_or_not_finite_leaves_the_shape() {
+    fn kerf_of_zero_leaves_the_shape_and_of_no_number_is_refused() {
         let s = solid(sq(0.0, 0.0, 10.0, 10.0, true));
-        for w in [0.0, -0.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            assert_eq!(kerf(&s, w), s);
+        for w in [0.0, -0.0] {
+            assert_eq!(kerf(&s, w), Ok(s.clone()));
+        }
+        for w in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(kerf(&s, w), Err(FlatError::Setting("kerf")), "{w}");
         }
     }
 
     #[test]
     fn kerf_takes_rings_in_either_direction() {
         let cw = solid(sq(0.0, 0.0, 10.0, 10.0, false));
-        let g = kerf(&cw, 1.0);
+        let g = kerf(&cw, 1.0).unwrap();
         assert!(close(shape_area(&g), 121.0, 1e-3));
         assert!(ring_area(&g.outer) > 0.0);
         // a counter-clockwise hole is still a hole
@@ -641,18 +642,19 @@ mod tests {
             outer: sq(0.0, 0.0, 50.0, 50.0, false),
             holes: vec![sq(20.0, 20.0, 30.0, 30.0, true)],
         };
-        let g = kerf(&holed, 0.2);
+        let g = kerf(&holed, 0.2).unwrap();
         assert_eq!(g.holes.len(), 1);
         assert!(close(shape_area(&g), 50.2 * 50.2 - 9.8 * 9.8, 1e-3));
     }
 
     #[test]
-    fn kerf_beyond_a_metre_leaves_the_shape() {
+    fn kerf_beyond_a_metre_is_refused() {
         let s = solid(sq(0.0, 0.0, 10.0, 10.0, true));
-        assert_eq!(kerf(&s, 1e300), s);
-        assert_eq!(kerf(&s, -1e300), s);
+        for w in [1e300, -1e300, MAX_KERF * 1.001] {
+            assert_eq!(kerf(&s, w), Err(FlatError::Setting("kerf")), "{w}");
+        }
         assert!(close(
-            shape_area(&kerf(&s, MAX_KERF)),
+            shape_area(&kerf(&s, MAX_KERF).unwrap()),
             1010.0 * 1010.0,
             1e-3
         ));
@@ -661,9 +663,9 @@ mod tests {
     #[test]
     fn negative_kerf_shrinks_and_can_shrink_to_nothing() {
         let s = solid(sq(0.0, 0.0, 10.0, 10.0, true));
-        assert!(close(shape_area(&kerf(&s, -2.0)), 64.0, 1e-3));
-        assert_eq!(kerf(&s, -20.0), Shape::default());
-        assert_eq!(kerf(&Shape::default(), 1.0), Shape::default());
+        assert!(close(shape_area(&kerf(&s, -2.0).unwrap()), 64.0, 1e-3));
+        assert_eq!(kerf(&s, -20.0), Ok(Shape::default()));
+        assert_eq!(kerf(&Shape::default(), 1.0), Ok(Shape::default()));
     }
 
     #[test]
@@ -683,7 +685,7 @@ mod tests {
             [20.0, 20.0],
             [0.0, 20.0],
         ]);
-        let g = kerf(&dumbbell, -1.0);
+        let g = kerf(&dumbbell, -1.0).unwrap();
         assert!(close(shape_area(&g), 19.0 * 19.0, 1e-3));
         let b = region::ring_bounds([&g.outer]).unwrap();
         assert!(close(b[2], 19.5, 1e-5));
@@ -699,12 +701,41 @@ mod tests {
         ]
     }
 
+    /// The farthest a point of `out`'s rings, or the middle of one of their sides, lies inside
+    /// the circle of radius `r` about `c` (mm); 0 or less when none is inside.
+    fn inside_circle(out: &Shape, c: P2, r: f64) -> f64 {
+        let short = |p: P2| r - (p[0] - c[0]).hypot(p[1] - c[1]);
+        out.rings()
+            .flat_map(|ring| ring.iter().zip(ring.iter().cycle().skip(1)))
+            .map(|(a, b)| short(*a).max(short([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0])))
+            .fold(f64::NEG_INFINITY, f64::max)
+    }
+
+    /// The most a relief of radius `r` in a square inside corner cuts past its circle (mm²): its
+    /// polygon lies within the circle of radius `r + RELIEF_CHORD`, so what it cuts past the
+    /// circle lies in the ring between the two, on the material's side of one of the corner's
+    /// walls. Each wall's line is `r sin 45°` from the centre, so on the material's side of it
+    /// the ring spans an angle of at most `φ = 2 acos(r sin 45° / (r + RELIEF_CHORD))`, and the
+    /// ring's area over an angle `φ` is `φ / 2 ((r + RELIEF_CHORD)² − r²)`: twice that for the
+    /// two walls.
+    fn square_corner_slack(r: f64) -> f64 {
+        let outer = r + RELIEF_CHORD;
+        let phi = 2.0 * (r * FRAC_1_SQRT_2 / outer).acos();
+        phi * (outer * outer - r * r)
+    }
+
+    /// What a normal relief of radius `r` takes of a square inside corner, in closed form: two
+    /// circular segments cut off by the walls at `r sin 45°` from its centre, `(π/2 − 1) r²`.
+    fn square_corner_area(r: f64) -> f64 {
+        (FRAC_PI_2 - 1.0) * r * r
+    }
+
     #[test]
     fn reliefs_go_into_the_slot_bottom_corners_only() {
         // the slot (x 47..53, from y 30 up) has two inside corners, (47, 30) and (53, 30); a 4 mm
         // bit's circle runs through each with its centre on the bisector, in the slot
         let s = slot_plate();
-        let out = relieve_corners(&s, 4.0);
+        let out = relieve_corners(&s, 4.0).unwrap();
         assert!(out.holes.is_empty());
         for (c, v) in [([53.0, 30.0], [-1.0, 1.0]), ([47.0, 30.0], [1.0, 1.0])] {
             for p in bitten(c, v) {
@@ -722,28 +753,30 @@ mod tests {
         ] {
             assert!(contains(&material(&out), p), "{p:?}");
         }
-        // what goes is two lenses: a normal relief of a square corner takes two circular
-        // segments, cut off by the walls at r sin 45° from its centre, (π/2 − 1) r² together
+        // what goes is the two corners' segments, and at most the chord's slack more
         let r = 2.0;
         let removed = shape_area(&s) - shape_area(&out);
-        let each = (std::f64::consts::FRAC_PI_2 - 1.0) * r * r;
-        // each arc is a polygon within RELIEF_CHORD inside its circle: about 2/3 of the chord
-        // times the arc's length less per relief
+        let each = square_corner_area(r);
         assert!(
-            removed < 2.0 * each && close(removed, 2.0 * each, 0.05),
+            removed >= 2.0 * each - 1e-6 && removed <= 2.0 * (each + square_corner_slack(r)),
             "{removed} vs 2 x {each}"
         );
     }
 
     #[test]
-    fn reliefs_go_into_every_corner_of_a_square_hole() {
+    fn a_square_pocket_loses_its_four_corners_to_within_the_chord() {
+        // a 20 x 20 pocket in a 60 x 60 plate, a 4 mm bit
         let plate = Shape {
             outer: sq(0.0, 0.0, 60.0, 60.0, true),
             holes: vec![sq(20.0, 20.0, 40.0, 40.0, false)],
         };
-        let out = relieve_corners(&plate, 4.0);
+        let r = 2.0;
+        let out = relieve_corners(&plate, 2.0 * r).unwrap();
         assert_eq!(out.holes.len(), 1);
-        // a hole's corners open into the hole
+        // a hole's corners open into the hole: each relief's centre on the corner's bisector, in
+        // the hole, r from the corner; no material is left inside a relief's circle, so no notch
+        // of a corner stays
+        let d = r * FRAC_1_SQRT_2;
         for c in [[20.0, 20.0], [40.0, 20.0], [40.0, 40.0], [20.0, 40.0]] {
             let v = [
                 if c[0] < 30.0 { 1.0 } else { -1.0 },
@@ -752,14 +785,26 @@ mod tests {
             for p in bitten(c, v) {
                 assert!(!contains(&material(&out), p), "{c:?} {p:?}");
             }
+            let centre = [c[0] + d * v[0], c[1] + d * v[1]];
+            let inside = inside_circle(&out, centre, r);
+            assert!(inside <= 1e-9, "{c:?}: {inside}");
         }
         // the outline's corners are outside corners: untouched
         assert!(close(ring_area(&out.outer), 3600.0, 1e-9));
+        // the four corners' segments go, and at most the chord's slack more (the polygon engine
+        // resolves a 60 mm part far below the 1e-6 mm² allowed under the exact value)
+        let removed = shape_area(&plate) - shape_area(&out);
+        let exact = 4.0 * square_corner_area(r);
+        assert!(
+            removed >= exact - 1e-6 && removed <= exact + 4.0 * square_corner_slack(r),
+            "{removed} vs {exact}"
+        );
     }
 
     #[test]
-    fn a_slot_narrower_than_two_bits_is_relieved_by_a_boolean() {
-        // a 3 mm slot with a 4 mm bit: the two corner circles overlap on the slot's bottom edge
+    fn a_slot_narrower_than_two_bits_loses_its_whole_bottom_edge() {
+        // a 3 mm slot with a 4 mm bit: the two corner circles overlap across the slot's bottom
+        // edge, and each reaches past the far corner's wall too
         let s = solid(vec![
             [0.0, 0.0],
             [20.0, 0.0],
@@ -770,26 +815,79 @@ mod tests {
             [8.5, 10.0],
             [0.0, 10.0],
         ]);
-        let out = relieve_corners(&s, 4.0);
-        assert!(shape_area(&out) < shape_area(&s));
+        let r = 2.0;
+        let out = relieve_corners(&s, 2.0 * r).unwrap();
         for (c, v) in [([8.5, 5.0], [1.0, 1.0]), ([11.5, 5.0], [-1.0, 1.0])] {
             for p in bitten(c, v) {
                 assert!(!contains(&material(&out), p), "{c:?} {p:?}");
             }
+            let d = r * FRAC_1_SQRT_2;
+            let centre = [c[0] + d * v[0], c[1] + d * v[1]];
+            let inside = inside_circle(&out, centre, r);
+            assert!(inside <= 1e-9, "{c:?}: {inside}");
         }
-        assert!(contains(&material(&out), [1.0, 1.0]));
+        // the bottom edge between the corners is gone; the material out of the circles' reach
+        // stays
+        assert!(!contains(&material(&out), [10.0, 4.9]));
+        for p in [[1.0, 1.0], [10.0, 2.9], [6.4, 9.0], [13.6, 9.0]] {
+            assert!(contains(&material(&out), p), "{p:?}");
+        }
     }
 
     #[test]
-    fn no_bit_or_a_bad_bit_leaves_the_shape() {
-        let s = slot_plate();
-        for d in [0.0, -4.0, f64::NAN, f64::INFINITY] {
-            assert_eq!(relieve_corners(&s, d), s);
+    fn a_relief_that_reaches_into_a_hole_opens_it() {
+        // an L whose inside corner (10, 10) opens to x > 10, y > 10, and a round hole of radius
+        // 2.5 whose edge comes within 0.5 mm of the corner's wall x = 10. The relief circle
+        // (radius 2, its centre on the bisector) reaches 0.586 mm past that wall: through it and
+        // into the hole, which opens to the void
+        let r = 2.0;
+        let d = r * FRAC_1_SQRT_2;
+        let mut hole = region::disk([7.0, 10.0 + d], 2.5, 0.001)[0].outer.clone();
+        hole.reverse();
+        let l = Shape {
+            outer: vec![
+                [0.0, 0.0],
+                [30.0, 0.0],
+                [30.0, 10.0],
+                [10.0, 10.0],
+                [10.0, 30.0],
+                [0.0, 30.0],
+            ],
+            holes: vec![hole],
+        };
+        let out = relieve_corners(&l, 2.0 * r).unwrap();
+        assert!(out.holes.is_empty(), "{:?}", out.holes.len());
+        let inside = inside_circle(&out, [10.0 + d, 10.0 + d], r);
+        assert!(inside <= 1e-9, "{inside}");
+        // the wall where the circle and the hole meet is cut through; the hole's far side and
+        // the rest of the wall stay
+        assert!(contains(&material(&l), [9.7, 10.0 + d]));
+        assert!(!contains(&material(&out), [9.7, 10.0 + d]));
+        for p in [[3.0, 10.0 + d], [9.75, 15.0], [9.75, 9.0]] {
+            assert!(contains(&material(&out), p), "{p:?}");
         }
+    }
+
+    #[test]
+    fn a_bad_bit_or_a_shape_without_material_is_refused() {
+        let s = slot_plate();
+        for d in [0.0, -4.0, f64::NAN, f64::INFINITY, 5e6] {
+            assert!(
+                matches!(
+                    relieve_corners(&s, d),
+                    Err(FlatError::Kernel(crate::SolidError::InvalidInput { .. }))
+                ),
+                "{d}"
+            );
+        }
+        assert!(matches!(
+            relieve_corners(&Shape::default(), 4.0),
+            Err(FlatError::Kernel(crate::SolidError::InvalidInput { .. }))
+        ));
         // an outline with no inside corner gets nothing
         let sq_shape = solid(sq(0.0, 0.0, 10.0, 10.0, true));
         assert!(close(
-            shape_area(&relieve_corners(&sq_shape, 3.0)),
+            shape_area(&relieve_corners(&sq_shape, 3.0).unwrap()),
             100.0,
             1e-9
         ));
@@ -939,7 +1037,7 @@ mod tests {
             PartKind::Slice,
             solid(sq(0.0, 0.0, 100.0, 50.0, true)),
         );
-        let f = finish(&p, &laser(0.2, false));
+        let f = finish(&p, &laser(0.2, false)).unwrap();
         let b = region::ring_bounds([&f.shape.outer]).unwrap();
         assert!(close(b[2] - b[0], 100.2, 1e-5) && close(b[3] - b[1], 50.2, 1e-5));
         assert!(close(b[0], -0.1, 1e-5));
@@ -951,7 +1049,7 @@ mod tests {
     #[test]
     fn names_are_engraved_inside_the_true_size() {
         let p = part("S3", PartKind::Slice, ring_plate());
-        let f = finish(&p, &laser(0.2, true));
+        let f = finish(&p, &laser(0.2, true)).unwrap();
         assert!(!f.engrave.is_empty());
         assert_inside(&p.shape, &f.engrave, LABEL_MARGIN);
         assert_eq!(f.engrave, label_inside(&p.shape, "S3", 5.0, LABEL_MARGIN));
@@ -964,13 +1062,16 @@ mod tests {
             PartKind::Spacer,
             solid(sq(0.0, 0.0, 50.0, 50.0, true)),
         );
-        assert!(finish(&p, &laser(0.2, true)).engrave.is_empty());
+        assert!(finish(&p, &laser(0.2, true)).unwrap().engrave.is_empty());
         let plate = part(
             "Base plate",
             PartKind::Plate,
             solid(sq(0.0, 0.0, 200.0, 80.0, true)),
         );
-        assert!(!finish(&plate, &laser(0.2, true)).engrave.is_empty());
+        assert!(!finish(&plate, &laser(0.2, true))
+            .unwrap()
+            .engrave
+            .is_empty());
     }
 
     #[test]
@@ -988,7 +1089,7 @@ mod tests {
                 height: 4.0,
             })
             .collect();
-        let f = finish(&p, &laser(0.0, true));
+        let f = finish(&p, &laser(0.0, true)).unwrap();
         // the numbers' strokes come first; every later stroke (the name) stays out of their band
         let numbers: usize = (0..10)
             .map(|i| super::super::font::strokes(&format!("{}", i + 1), 4.0).len())
@@ -1029,7 +1130,7 @@ mod tests {
                 height: 0.0,
             },
         ];
-        let f = finish(&p, &laser(0.2, false));
+        let f = finish(&p, &laser(0.2, false)).unwrap();
         assert_eq!(f.engrave[0], line);
         let marks = &f.engrave[1..];
         assert_eq!(marks.len(), super::super::font::strokes("12", 4.0).len());
@@ -1047,36 +1148,39 @@ mod tests {
             },
             ..sheet_settings()
         };
-        let f = finish(&p, &ss);
-        assert_eq!(f.shape, relieve_corners(&p.shape, 3.175));
+        let f = finish(&p, &ss).unwrap();
+        assert_eq!(f.shape, relieve_corners(&p.shape, 3.175).unwrap());
         assert!(shape_area(&f.shape) < shape_area(&p.shape));
         assert!(!f.engrave.is_empty());
         assert_inside(&p.shape, &f.engrave, LABEL_MARGIN);
     }
 
     #[test]
-    fn finish_never_panics_on_hostile_settings() {
+    fn finish_refuses_a_kerf_or_bit_out_of_range_and_never_panics() {
         let p = part("L1", PartKind::Slice, slot_plate());
         let bad = [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e300];
         for v in bad {
-            let f = finish(&p, &laser(v, true));
-            if v.is_nan() || v <= 0.0 || v > MAX_KERF {
-                assert_eq!(f.shape, p.shape, "kerf {v}");
-            }
+            // a kerf or bit that is not positive does nothing; one past its range is refused
+            let lasered = finish(&p, &laser(v, true));
             let ss = SheetSettings {
                 machine: Machine::Router { tool_diameter: v },
                 label_height: v,
                 ..sheet_settings()
             };
-            let f = finish(&p, &ss);
-            assert_eq!(f.shape, p.shape);
-            if v.is_nan() || v <= 0.0 || v.is_infinite() {
+            let routed = finish(&p, &ss);
+            if v > 0.0 {
+                assert_eq!(lasered, Err(FlatError::Setting("kerf")), "kerf {v}");
+                assert!(matches!(routed, Err(FlatError::Kernel(_))), "bit {v}");
+            } else {
+                assert_eq!(lasered.unwrap().shape, p.shape, "kerf {v}");
+                let f = routed.unwrap();
+                assert_eq!(f.shape, p.shape, "bit {v}");
                 assert!(f.engrave.is_empty(), "label height {v}");
             }
         }
         // a part with no material
         let empty = part("E", PartKind::Slice, Shape::default());
-        let f = finish(&empty, &laser(0.2, true));
+        let f = finish(&empty, &laser(0.2, true)).unwrap();
         assert!(f.engrave.is_empty());
         assert_eq!(area(&[f.shape]), 0.0);
     }

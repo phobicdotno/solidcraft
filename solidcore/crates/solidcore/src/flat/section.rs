@@ -210,7 +210,19 @@ fn section_at(
         }
     }
     let rings = outlines(pieces, axis, at, chord)?;
+    let (j, c, n) = JOINS.with(|x| x.replace((0.0, 0.0, 0)));
+    let (dd, dn) = DEDUPE.with(|x| x.replace((0.0, 0)));
+    eprintln!("R2D {axis:?} {at} chord {chord} dedupe {dd:e} copies {dn}");
+    eprintln!(
+        "R2 {axis:?} {at} chord {chord} tol {} join {j:e} close {c:e} joins {n}",
+        join_tolerance(chord)
+    );
     Ok(region::from_rings(&rings, true))
+}
+
+thread_local! {
+    static DEDUPE: std::cell::Cell<(f64, usize)> = const { std::cell::Cell::new((0.0, 0)) };
+    static JOINS: std::cell::Cell<(f64, f64, usize)> = const { std::cell::Cell::new((0.0, 0.0, 0)) };
 }
 
 /// The sampled pieces of the section by the plane `axis = at` as its outlines: copies left
@@ -339,6 +351,19 @@ fn dedupe(pieces: Vec<Ring>, tol: f64) -> Vec<Ring> {
             near(m, n, tol)
                 && ((near(a, c, tol) && near(b, d, tol)) || (near(a, d, tol) && near(b, c, tol)))
         });
+        if copy {
+            let dist = |p: P2, q: P2| (p[0] - q[0]).hypot(p[1] - q[1]);
+            let best = keys
+                .iter()
+                .map(|&(c, n, d)| {
+                    dist(m, n).max(dist(a, c).max(dist(b, d)).min(dist(a, d).max(dist(b, c))))
+                })
+                .fold(f64::INFINITY, f64::min);
+            DEDUPE.with(|x| {
+                let (dm, n) = x.get();
+                x.set((dm.max(best), n + 1));
+            });
+        }
         if !copy {
             keys.push((a, m, b));
             kept.push(r);
@@ -369,6 +394,12 @@ fn chain(mut pieces: Vec<Ring>, tol: f64) -> Result<Vec<Ring>, f64> {
             let Some(mut next) = pieces.get_mut(i).map(std::mem::take) else {
                 break;
             };
+            let q = if reversed { next.last() } else { next.first() };
+            let dj = q.map_or(f64::NAN, |q| (q[0] - end[0]).hypot(q[1] - end[1]));
+            JOINS.with(|x| {
+                let (j, c, n) = x.get();
+                x.set((j.max(dj), c, n + 1));
+            });
             if reversed {
                 next.reverse();
             }
@@ -380,6 +411,11 @@ fn chain(mut pieces: Vec<Ring>, tol: f64) -> Result<Vec<Ring>, f64> {
         if !near(start, end, tol) {
             return Err((start[0] - end[0]).hypot(start[1] - end[1]));
         }
+        let dc = (start[0] - end[0]).hypot(start[1] - end[1]);
+        JOINS.with(|x| {
+            let (j, c, n) = x.get();
+            x.set((j, c.max(dc), n));
+        });
         cur.pop();
         if cur.len() >= 3 {
             rings.push(cur);
@@ -792,6 +828,361 @@ mod tests {
                     let off = off_circle(&r[0].outer, centre, radius);
                     assert!(off <= chord, "{axis:?} = {at}, chord {chord}: {off} off");
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn zz_r3_explore() {
+        use super::super::slice::{make, FabSettings, Style};
+        let mut k = Kernel::default();
+        let show = |name: &str, r: &FlatResult<Region>| match r {
+            Ok(reg) => eprintln!(
+                "R3 {name}: ok shapes {} area {} points {} bounds {:?}",
+                reg.len(),
+                region::area(reg),
+                region::point_count(reg),
+                region::bounds(reg)
+            ),
+            Err(e) => eprintln!("R3 {name}: err {e}"),
+        };
+        let raw = |k: &Kernel, b: &mut Brep, axis: Axis, at: f64, name: &str| match section_curves(
+            k, b, axis, at, CHORD, [0.0; 3],
+        ) {
+            Ok(cs) => {
+                let lens: Vec<String> = cs
+                    .iter()
+                    .map(|c| {
+                        let s = sample_curve(k, c, CHORD).unwrap();
+                        let f = s.points.first().copied();
+                        let l = s.points.last().copied();
+                        format!(
+                            "{:?} n{} first {:?} last {:?}",
+                            std::mem::discriminant(c.kind()),
+                            s.points.len(),
+                            f.map(|p| [p.x, p.y, p.z]),
+                            l.map(|p| [p.x, p.y, p.z])
+                        )
+                    })
+                    .collect();
+                eprintln!("R3 {name}: curves {}: {lens:?}", cs.len());
+            }
+            Err(e) => eprintln!("R3 {name}: curves err {e}"),
+        };
+        let fab = |style: Style, axis: Axis, t: f64| FabSettings {
+            style,
+            axis,
+            thickness: t,
+            spacing: 0.0,
+            count: 0,
+            clearance: 0.2,
+            rod_diameter: 8.0,
+            rod_at: None,
+            dowels: 0,
+            dowel_diameter: 6.0,
+            wall: 4.0,
+            plate_margin: 10.0,
+            guide_outline: false,
+            min_area: 4.0,
+            chord: CHORD,
+        };
+        let slicing = |name: &str, r: FlatResult<super::super::slice::FabResult>| match r {
+            Ok(res) => eprintln!(
+                "R3 {name}: ok parts {} areas {:?} warnings {:?}",
+                res.parts.len(),
+                res.parts
+                    .iter()
+                    .map(|p| (
+                        p.name.clone(),
+                        (region::shape_area(&p.shape) * 1000.0).round() / 1000.0
+                    ))
+                    .collect::<Vec<_>>(),
+                res.warnings
+            ),
+            Err(e) => eprintln!("R3 {name}: err {e}"),
+        };
+        // a sphere touched at its top
+        let mut sph = create_sphere(&mut k, Point3::ZERO, 10.0).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut sph, CHORD).unwrap();
+            eprintln!(
+                "R3 sphere vertices {:?} nudged z=10 -> {}",
+                s.vertices,
+                s.nudged(Axis::Z, 10.0)
+            );
+            show("sphere section z=10 (nudged)", &s.section(Axis::Z, 10.0));
+            show("sphere section x=10 (nudged)", &s.section(Axis::X, 10.0));
+        }
+        for at in [10.0, 10.0 - 1e-6, 10.0 + 1e-6] {
+            raw(&k, &mut sph, Axis::Z, at, &format!("sphere z={at}"));
+            show(
+                &format!("sphere plane_section z={at}"),
+                &plane_section(&k, &mut sph, Axis::Z, at, CHORD),
+            );
+        }
+        raw(&k, &mut sph, Axis::X, 10.0, "sphere x=10");
+        show(
+            "sphere plane_section x=10",
+            &plane_section(&k, &mut sph, Axis::X, 10.0, CHORD),
+        );
+        // a cylinder's flat ends
+        let mut cyl = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut cyl, CHORD).unwrap();
+            eprintln!(
+                "R3 cylinder vertices {:?} nudged z=30 -> {} z=0 -> {}",
+                s.vertices,
+                s.nudged(Axis::Z, 30.0),
+                s.nudged(Axis::Z, 0.0)
+            );
+            show("cylinder section z=30 (nudged)", &s.section(Axis::Z, 30.0));
+            show("cylinder section z=0 (nudged)", &s.section(Axis::Z, 0.0));
+            show(
+                "cylinder section x=10 (nudged, tangent to the side)",
+                &s.section(Axis::X, 10.0),
+            );
+        }
+        for at in [30.0, 0.0] {
+            raw(&k, &mut cyl, Axis::Z, at, &format!("cylinder z={at}"));
+            show(
+                &format!("cylinder plane_section z={at}"),
+                &plane_section(&k, &mut cyl, Axis::Z, at, CHORD),
+            );
+        }
+        raw(&k, &mut cyl, Axis::X, 10.0, "cylinder x=10");
+        show(
+            "cylinder plane_section x=10",
+            &plane_section(&k, &mut cyl, Axis::X, 10.0, CHORD),
+        );
+        // a box's faces
+        let mut bx = create_box(&mut k, Point3::ZERO, 20.0, 20.0, 30.0).unwrap();
+        for at in [30.0, 0.0] {
+            raw(&k, &mut bx, Axis::Z, at, &format!("box z={at}"));
+            show(
+                &format!("box plane_section z={at}"),
+                &plane_section(&k, &mut bx, Axis::Z, at, CHORD),
+            );
+        }
+        // a flat torus at its highest and lowest circles
+        let mut tor = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut tor, CHORD).unwrap();
+            eprintln!(
+                "R3 torus vertices {:?} nudged z=35 -> {} z=5 -> {}",
+                s.vertices,
+                s.nudged(Axis::Z, 35.0),
+                s.nudged(Axis::Z, 5.0)
+            );
+            show("torus section z=35 (nudged)", &s.section(Axis::Z, 35.0));
+            show("torus section z=5 (nudged)", &s.section(Axis::Z, 5.0));
+            show("torus section x=55 (nudged)", &s.section(Axis::X, 55.0));
+            show(
+                "torus section x=25 (nudged, inner tangent)",
+                &s.section(Axis::X, 25.0),
+            );
+        }
+        for at in [35.0, 5.0, 35.0 - 1e-6] {
+            raw(&k, &mut tor, Axis::Z, at, &format!("torus z={at}"));
+            show(
+                &format!("torus plane_section z={at}"),
+                &plane_section(&k, &mut tor, Axis::Z, at, CHORD),
+            );
+        }
+        // whole numbers of sheets, stacked
+        let mut b30 = create_box(&mut k, Point3::ZERO, 40.0, 30.0, 30.0).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut b30, CHORD).unwrap();
+            slicing(
+                "box 30 tall, stacked at 3",
+                make(&mut s, &fab(Style::Stacked, Axis::Z, 3.0)),
+            );
+            slicing(
+                "box 30 tall, rod along Z at 3",
+                make(&mut s, &fab(Style::Rod, Axis::Z, 3.0)),
+            );
+        }
+        let mut s30 = create_sphere(&mut k, Point3::new(0.0, 0.0, 15.0), 15.0).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut s30, CHORD).unwrap();
+            slicing(
+                "sphere d 30, stacked at 3",
+                make(&mut s, &fab(Style::Stacked, Axis::Z, 3.0)),
+            );
+            slicing(
+                "sphere d 30, stacked along X at 3",
+                make(&mut s, &fab(Style::Stacked, Axis::X, 3.0)),
+            );
+        }
+        let mut b285 = create_box(&mut k, Point3::ZERO, 40.0, 30.0, 28.5).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut b285, CHORD).unwrap();
+            eprintln!(
+                "R3 box 28.5 positions {:?}",
+                super::super::slice::positions(0.0, 28.5, &fab(Style::Stacked, Axis::Z, 3.0), true)
+            );
+            slicing(
+                "box 28.5 tall, stacked at 3 (last layer on the top face)",
+                make(&mut s, &fab(Style::Stacked, Axis::Z, 3.0)),
+            );
+        }
+        let mut s285 = create_sphere(&mut k, Point3::new(0.0, 0.0, 14.25), 14.25).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut s285, CHORD).unwrap();
+            slicing(
+                "sphere d 28.5, stacked at 3 (last layer on the pole)",
+                make(&mut s, &fab(Style::Stacked, Axis::Z, 3.0)),
+            );
+        }
+        let mut cyl285 = create_cylinder(&mut k, Point3::ZERO, 10.0, 28.5).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut cyl285, CHORD).unwrap();
+            slicing(
+                "cylinder 28.5 tall, stacked at 3 (last layer on the top face)",
+                make(&mut s, &fab(Style::Stacked, Axis::Z, 3.0)),
+            );
+        }
+        let mut cy = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut cy, CHORD).unwrap();
+            eprintln!(
+                "R3 cylinder nudged y=10 -> {} y=-10 -> {} x=-10 -> {}",
+                s.nudged(Axis::Y, 10.0),
+                s.nudged(Axis::Y, -10.0),
+                s.nudged(Axis::X, -10.0)
+            );
+            show(
+                "cylinder section y=10 (tangent side line, no vertex)",
+                &s.section(Axis::Y, 10.0),
+            );
+            show(
+                "cylinder section x=-10 (tangent side line, no vertex)",
+                &s.section(Axis::X, -10.0),
+            );
+            show(
+                "cylinder section y=10-1e-6",
+                &s.section(Axis::Y, 10.0 - 1e-6),
+            );
+        }
+        let mut cyl14 = create_cylinder(&mut k, Point3::ZERO, 14.25, 30.0).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut cyl14, CHORD).unwrap();
+            slicing(
+                "cylinder r 14.25 stacked along Y at 3 (last layer tangent to the side)",
+                make(&mut s, &fab(Style::Stacked, Axis::Y, 3.0)),
+            );
+            slicing(
+                "cylinder r 14.25 stacked along X at 3 (last layer on the seam line)",
+                make(&mut s, &fab(Style::Stacked, Axis::X, 3.0)),
+            );
+        }
+        let mut s285x = create_sphere(&mut k, Point3::ZERO, 14.25).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut s285x, CHORD).unwrap();
+            slicing(
+                "sphere d 28.5 stacked along X at 3 (last layer tangent at a point)",
+                make(&mut s, &fab(Style::Stacked, Axis::X, 3.0)),
+            );
+        }
+        let mut tor4 = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut tor4, CHORD).unwrap();
+            eprintln!(
+                "R3 torus positions at 4 {:?}",
+                super::super::slice::positions(5.0, 35.0, &fab(Style::Stacked, Axis::Z, 4.0), true)
+            );
+            slicing(
+                "torus stacked at 4 (last layer on the top circle)",
+                make(&mut s, &fab(Style::Stacked, Axis::Z, 4.0)),
+            );
+            for dz in [1e-9, 1e-7, 1e-5, 1e-4, 1e-3, 1e-2, 0.1] {
+                show(
+                    &format!("torus section z=35-{dz}"),
+                    &s.section(Axis::Z, 35.0 - dz),
+                );
+            }
+        }
+        let mut tor2 = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
+        {
+            let mut s = BrepSection::new(&k, &mut tor2, CHORD).unwrap();
+            slicing(
+                "torus stacked at 3",
+                make(&mut s, &fab(Style::Stacked, Axis::Z, 3.0)),
+            );
+            slicing(
+                "torus stacked at 2.5 (height 30, 12 layers)",
+                make(&mut s, &fab(Style::Stacked, Axis::Z, 2.5)),
+            );
+        }
+    }
+
+    #[test]
+    fn zz_r1_measure() {
+        let mut k = Kernel::default();
+        for chord in [CHORD, 0.5, 0.001, 0.1] {
+            let mut cylinder = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
+            let mut sphere = create_sphere(&mut k, Point3::new(0.0, 0.0, 50.0), 50.0).unwrap();
+            for (name, b, cuts) in [
+                (
+                    "cylinder",
+                    &mut cylinder,
+                    vec![(Axis::Z, 15.0, [0.0, 0.0], 10.0)],
+                ),
+                (
+                    "sphere",
+                    &mut sphere,
+                    vec![
+                        (Axis::Z, 80.0, [0.0, 0.0], 40.0),
+                        (Axis::X, 30.0, [0.0, 50.0], 40.0),
+                    ],
+                ),
+            ] {
+                let mut s = BrepSection::new(&k, b, chord).unwrap();
+                for (axis, at, centre, radius) in cuts {
+                    let r = s.section(axis, at).unwrap();
+                    let off = off_circle(&r[0].outer, centre, radius);
+                    eprintln!(
+                        "R1 {name} {axis:?}={at} chord {chord}: off {off:e} = {} chord, points {}",
+                        off / chord,
+                        r[0].outer.len()
+                    );
+                }
+            }
+            let mut torus = create_torus(&mut k, Point3::ZERO, 40.0, 15.0).unwrap();
+            let mut s = BrepSection::new(&k, &mut torus, chord).unwrap();
+            for at in [30.0, 45.0, 10.0] {
+                let r = s.section(Axis::X, at).unwrap();
+                let dist = |q: P2| {
+                    let (x, y, z) = (at, q[0], q[1]);
+                    let rho = x.hypot(y);
+                    let dd = (rho - 40.0).hypot(z);
+                    let g = dd - 15.0;
+                    let ny = y / rho * (rho - 40.0) / dd;
+                    let nz = z / dd;
+                    g.abs() / ny.hypot(nz)
+                };
+                let mut far: f64 = 0.0;
+                let mut pts = 0;
+                for shape in &r {
+                    for ring in shape.rings() {
+                        pts += ring.len();
+                        for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
+                            far = far
+                                .max(dist(*a))
+                                .max(dist([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0]));
+                        }
+                    }
+                }
+                let curves = section_curves(&k, &mut *s.b, Axis::X, at, chord, [0.0; 3]).unwrap();
+                let mut trace: f64 = 0.0;
+                for c in &curves {
+                    let ivl = c.natural_interval();
+                    for i in 0..=2000 {
+                        let t = ivl.min() + (ivl.max() - ivl.min()) * f64::from(i) / 2000.0;
+                        let p = c.evaluate_point(&k, t).unwrap();
+                        trace = trace.max(dist([p.y, p.z]));
+                    }
+                }
+                eprintln!("R1 torus X={at} chord {chord}: shapes {} points {pts} off {far:e} = {} chord; traced curves {} off {trace:e} = {} chord", r.len(), far / chord, curves.len(), trace / chord);
             }
         }
     }
