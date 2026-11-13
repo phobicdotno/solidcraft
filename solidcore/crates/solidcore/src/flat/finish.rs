@@ -349,6 +349,33 @@ const PLACE_STEP_MIN: f64 = 0.25;
 /// The room (mm) a part's name keeps from its edges and holes.
 pub const LABEL_MARGIN: f64 = 1.0;
 
+/// Everything within `m` mm of the polylines, and a little more at their corners: a rectangle
+/// round each segment, reaching `m` to both its sides and past both its ends (a square of side
+/// `2 m` round a segment of no length).
+fn line_band(lines: &[Ring], m: f64) -> Region {
+    let quads: Vec<Ring> = lines
+        .iter()
+        .flat_map(|l| l.iter().zip(l.iter().skip(1)))
+        .map(|(&a, &b)| {
+            let len = (b[0] - a[0]).hypot(b[1] - a[1]);
+            // `u` along the segment and `n` to its left, each `m` long
+            let u = if len > 0.0 {
+                [(b[0] - a[0]) / len * m, (b[1] - a[1]) / len * m]
+            } else {
+                [m, 0.0]
+            };
+            let n = [-u[1], u[0]];
+            vec![
+                [a[0] - u[0] - n[0], a[1] - u[1] - n[1]],
+                [b[0] + u[0] - n[0], b[1] + u[1] - n[1]],
+                [b[0] + u[0] + n[0], b[1] + u[1] + n[1]],
+                [a[0] - u[0] + n[0], a[1] - u[1] + n[1]],
+            ]
+        })
+        .collect();
+    region::from_rings(&quads, false)
+}
+
 /// The part as the machine cuts it, with its engraving: router reliefs, the slot numbers and
 /// guide lines, its name (not on spacers), then the laser kerf last so the name sits on the true
 /// size. Each [`super::slice::Mark`] is centred on its point's x with its baseline on its y.
@@ -365,8 +392,9 @@ pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> FlatResult<Fi
         }
     }
     let mut engrave = part.engrave.clone();
-    // the boxes round the engraving already on the part (guide lines) and round the marks,
-    // which the name keeps clear of
+    // what the name keeps clear of: the band along each guide line already on the part (not
+    // its box: a guide is a neighbour's whole outline, and the name may sit inside it) and the
+    // box round each mark
     let grown = |[x0, y0, x1, y1]: [f64; 4], dx: f64, dy: f64| {
         region::rect(
             x0 + dx - LABEL_MARGIN,
@@ -375,12 +403,7 @@ pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> FlatResult<Fi
             y1 + dy + LABEL_MARGIN,
         )
     };
-    let mut marked: Region = part
-        .engrave
-        .iter()
-        .filter_map(|l| region::ring_bounds(std::slice::from_ref(l)))
-        .flat_map(|b| grown(b, 0.0, 0.0))
-        .collect();
+    let mut marked: Region = line_band(&part.engrave, LABEL_MARGIN);
     for m in &part.marks {
         if !(m.at[0].is_finite() && m.at[1].is_finite()) {
             continue;

@@ -1642,6 +1642,51 @@ mod tests {
         assert_sound(&res);
     }
 
+    /// The distance from `p` to the segment `a`-`b`.
+    fn to_segment(p: P2, a: P2, b: P2) -> f64 {
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let len2 = dx * dx + dy * dy;
+        let t = if len2 > 0.0 {
+            (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        (p[0] - a[0] - t * dx).hypot(p[1] - a[1] - t * dy)
+    }
+
+    #[test]
+    fn stacked_sphere_names_sit_inside_the_guide_lines_and_clear_of_them() {
+        use crate::flat::finish::{finish, Machine, SheetSettings};
+        // 3 mm layers of a round body: the band outside each smaller neighbour's outline is
+        // under 2 mm wide on most of them, so the name has to go inside it
+        let res = make(&mut test_sphere(), &settings(Style::Stacked)).unwrap();
+        let ss = SheetSettings {
+            width: 600.0,
+            height: 400.0,
+            gap: 3.0,
+            margin: 5.0,
+            machine: Machine::Laser { kerf: 0.0 },
+            labels: true,
+            label_height: 5.0,
+        };
+        let guided: Vec<&FabPart> = res.parts.iter().filter(|p| !p.engrave.is_empty()).collect();
+        assert!(guided.len() > 20);
+        for p in guided {
+            assert!(p.marks.is_empty());
+            let f = finish(p, &ss).unwrap();
+            let name = f.engrave.get(p.engrave.len()..).unwrap_or_default();
+            assert!(!name.is_empty(), "{} has no name", p.name);
+            for &q in name.iter().flatten() {
+                for line in &p.engrave {
+                    for (&a, &b) in line.iter().zip(line.iter().skip(1)) {
+                        let d = to_segment(q, a, b);
+                        assert!(d >= LABEL_MARGIN, "{}: {d} from a guide line", p.name);
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn rod_spacers_fill_the_gaps() {
         let s = FabSettings {
