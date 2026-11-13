@@ -7,8 +7,7 @@
 //! that the bit reaches (or nearly reaches) the sharp corner. [`edge_relief`] decides, for one
 //! such edge as the caller reads it from a solid, whether it is an inside corner and which
 //! cylinder relieves it. For the caller's choice of edges, [`outward`] gives a planar face's
-//! outward normal and [`Edge::lean`] how far an edge leans from the bit's axis. The corner
-//! reliefs of the flat parts of [`crate::flat`] are placed by the same wedge computation.
+//! outward normal and [`Edge::lean`] how far an edge leans from the bit's axis.
 //!
 //! A corner is described from the void's side: `a` and `b` are the unit directions of its two
 //! walls away from the edge, square to it, the void (where the bit runs) is the wedge between
@@ -161,8 +160,7 @@ pub(crate) struct Wedge {
 
 /// The relief of the corner whose walls leave it in directions `a` and `b`, the void the wedge
 /// between them (`a` and `b` need not be exactly unit: they are normalised), walls `la` and `lb`
-/// long (only a T-bone reads them, to choose its side). Works in a plane (z = 0) and in space
-/// alike.
+/// long (only a T-bone reads them, to choose its side).
 ///
 /// # Errors
 /// [`SolidError::InvalidInput`] for options out of range or a direction or length that is not

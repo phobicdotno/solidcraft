@@ -11,7 +11,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::region::{self, Join};
-use super::relief::{self, Corner};
+use super::relief;
 use super::slice::{FabResult, PartKind};
 use super::{FlatError, FlatResult, Region, Ring, Shape, P2};
 
@@ -147,10 +147,8 @@ pub fn relieve_corners(shape: &Shape, tool_diameter: f64) -> FlatResult<Shape> {
     let norm = largest(material(shape));
     let mut circles: Region = Vec::new();
     for ring in norm.rings() {
-        for c in relief::ring_reliefs(ring, &options)? {
-            if let Corner::Relief(r) = c {
-                circles.extend(region::disk_around(r.centre, r.radius, RELIEF_CHORD));
-            }
+        for r in relief::ring_reliefs(ring, &options)? {
+            circles.extend(region::disk_around(r.centre, r.radius, RELIEF_CHORD));
         }
     }
     Ok(largest(region::difference(&[norm], &circles)))

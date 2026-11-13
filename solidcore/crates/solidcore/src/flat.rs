@@ -15,17 +15,15 @@
 //! - [`font`]: single-stroke lettering for those labels;
 //! - [`nest`]: parts packed onto sheets.
 //!
-//! Regions here are polygons, not the exact lines-arcs-Béziers regions of [`crate::prism`]: a
-//! sliced model needs hundreds of booleans and offsets per recompute (slots, tabs, dowel holes,
-//! kerf, label room), with non-zero winding for self-overlapping offsets. Measured (median of
-//! seven runs on one desktop machine): growing a 160-sided polygon by half a 0.15 mm kerf takes
-//! the kernel's exact profile offset
-//! ([`create_offset_profile`](crate::primitive::api_primitives::create_offset_profile)) about
-//! 66 ms, and the polygon engine here (iOverlay, MIT OR Apache-2.0) about 0.05 ms; cutting ten
-//! slots and four holes from a 200 x 120 mm plate takes the exact 2D boolean
-//! ([`boolean_2d`](crate::boolean::api_brep::boolean_2d)) about 12 ms, and this engine about
-//! 0.05 ms. Section outlines are made from the exact section curves and stay within the
-//! caller's chord tolerance of the exact section.
+//! Regions here are polygons, not the exact lines-arcs-Béziers regions of [`crate::prism`]: each
+//! part of a sliced model takes many booleans and offsets (slots, tabs, dowel holes, kerf, label
+//! room), some of them offsets that overlap themselves and need non-zero winding, and a polygon
+//! engine (iOverlay, MIT OR Apache-2.0) does that work far more cheaply than the kernel's exact
+//! profile offset
+//! ([`create_offset_profile`](crate::primitive::api_primitives::create_offset_profile)) and exact
+//! 2D boolean ([`boolean_2d`](crate::boolean::api_brep::boolean_2d)). Section outlines are made
+//! from the exact section curves and stay within the caller's chord tolerance of the exact
+//! section.
 //!
 //! Deviations: none (no upstream counterpart). No recursion.
 

@@ -12,7 +12,7 @@
 //!
 //! Deviations: none (no upstream counterpart). No recursion.
 
-use crate::dogbone::{self, Options, Skip};
+use crate::dogbone::{self, Options};
 use crate::math::Vec3;
 use crate::{Result, SolidError};
 
@@ -26,33 +26,26 @@ const MAX_RING: usize = 1_000_000;
 /// Largest coordinate magnitude of a ring's point accepted (mm): far past any sheet.
 const MAX_COORD: f64 = 1.0e6;
 
-/// What one vertex of a ring gets.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Corner {
-    /// A relief.
-    Relief(Relief),
-    /// No relief, and why.
-    Skipped(Skip),
-}
-
-/// A relief at a vertex of a ring.
+/// The relief circle of an inside corner of a ring.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Relief {
-    /// The relief circle's centre.
+    /// The circle's centre.
     pub(crate) centre: P2,
     /// Its radius: the bit's.
     pub(crate) radius: f64,
 }
 
-/// The relief (or why none) at each vertex of `ring`, a closed loop (the last vertex joins the
-/// first, which is not repeated) with the material on its left: an outline counter-clockwise, a
-/// hole clockwise, as a region's rings run. A corner turning right is an inside (concave) corner
-/// and gets a relief; one turning left is convex.
+/// The relief circles of `ring`, a closed loop (the last vertex joins the first, which is not
+/// repeated) with the material on its left: an outline counter-clockwise, a hole clockwise, as a
+/// region's rings run. A corner turning right is an inside (concave) corner and gets a relief,
+/// unless the wedge computation skips it (an angle past `max_angle`); one turning left is
+/// convex and gets none, as do a repeated point and a point in line with its neighbours. The
+/// circles come in the order of their corners.
 ///
 /// # Errors
 /// [`SolidError::InvalidInput`] for options out of range, fewer than 3 or more than
 /// [`MAX_RING`] vertices, or a coordinate that is not finite or larger than [`MAX_COORD`].
-pub(crate) fn ring_reliefs(ring: &[P2], options: &Options) -> Result<Vec<Corner>> {
+pub(crate) fn ring_reliefs(ring: &[P2], options: &Options) -> Result<Vec<Relief>> {
     let o = options.checked()?;
     check_ring(ring)?;
     let mut out = Vec::new();
@@ -62,49 +55,36 @@ pub(crate) fn ring_reliefs(ring: &[P2], options: &Options) -> Result<Vec<Corner>
         let (Some(prev), Some(next)) = (prev, next) else {
             return Err(invalid("a ring's vertices"));
         };
-        out.push(corner(*prev, *at, *next, &o)?);
+        out.extend(corner(*prev, *at, *next, &o)?);
     }
     Ok(out)
 }
 
-/// The relief at `at`, reached from `prev` and left towards `next`, the material on the left.
+/// The relief at `at`, reached from `prev` and left towards `next`, the material on the left;
+/// `None` where the corner gets none. The options and points are checked by [`ring_reliefs`].
 ///
 /// # Errors
-/// As [`ring_reliefs`].
-fn corner(prev: P2, at: P2, next: P2, options: &Options) -> Result<Corner> {
-    let o = options.checked()?;
-    if ![prev, at, next].iter().flatten().all(|c| c.is_finite()) {
-        return Err(invalid("ring points must be finite"));
-    }
+/// The wedge computation's.
+fn corner(prev: P2, at: P2, next: P2, o: &Options) -> Result<Option<Relief>> {
     let a = Vec3::new(prev[0] - at[0], prev[1] - at[1], 0.0);
     let b = Vec3::new(next[0] - at[0], next[1] - at[1], 0.0);
     let (la, lb) = (a.length(), b.length());
     if la == 0.0 || lb == 0.0 {
-        return Ok(Corner::Skipped(Skip::Degenerate));
+        return Ok(None);
     }
     // The turn from the incoming direction (-a) to the outgoing (b), on unit directions: its
     // sine, the z of -a × b, is negative for a right turn, with the material on the left an
-    // inside corner; `along` is its cosine.
+    // inside corner. In line or folded straight back, it is no corner.
     let turn = -a.cross(b).z / (la * lb);
-    let along = -a.dot(b) / (la * lb);
-    if turn.abs() <= dogbone::STRAIGHT {
-        // In line, or folded straight back.
-        return Ok(Corner::Skipped(if along > 0.0 {
-            Skip::Straight
-        } else {
-            Skip::Degenerate
-        }));
+    if turn.abs() <= dogbone::STRAIGHT || turn > 0.0 {
+        return Ok(None);
     }
-    if turn > 0.0 {
-        return Ok(Corner::Skipped(Skip::Convex));
-    }
-    Ok(match dogbone::wedge_relief(a, b, la, lb, &o)? {
-        Ok(w) => Corner::Relief(Relief {
+    Ok(dogbone::wedge_relief(a, b, la, lb, o)?
+        .ok()
+        .map(|w| Relief {
             centre: [at[0] + w.centre.x, at[1] + w.centre.y],
             radius: o.radius,
-        }),
-        Err(skip) => Corner::Skipped(skip),
-    })
+        }))
 }
 
 fn check_ring(ring: &[P2]) -> Result<()> {
@@ -149,14 +129,11 @@ mod tests {
         (a - b).abs() <= tol
     }
 
-    /// The relief circles' centres of `corners`, each of radius `R`; every corner has one.
-    fn centres(corners: &[Corner]) -> Vec<P2> {
-        corners
+    /// The centres of `reliefs`, each of radius `R`.
+    fn centres(reliefs: &[Relief]) -> Vec<P2> {
+        reliefs
             .iter()
-            .map(|c| {
-                let Corner::Relief(r) = c else {
-                    panic!("{c:?}")
-                };
+            .map(|r| {
                 assert_eq!(r.radius, R);
                 r.centre
             })
@@ -190,10 +167,7 @@ mod tests {
         );
         // The same rectangle as an outline (counter-clockwise): four convex corners.
         let outline: Vec<P2> = hole.iter().rev().copied().collect();
-        assert!(ring_reliefs(&outline, &o)
-            .unwrap()
-            .iter()
-            .all(|c| *c == Corner::Skipped(Skip::Convex)));
+        assert!(ring_reliefs(&outline, &o).unwrap().is_empty());
     }
 
     #[test]
@@ -207,24 +181,12 @@ mod tests {
             [10.0, 30.0],
             [0.0, 30.0],
         ];
-        let corners = ring_reliefs(&l, &opts(Style::Normal)).unwrap();
-        let inside: Vec<usize> = corners
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| matches!(c, Corner::Relief(_)))
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(inside, vec![3]);
-        assert_eq!(
-            corners
-                .iter()
-                .filter(|c| **c == Corner::Skipped(Skip::Convex))
-                .count(),
-            5
-        );
         // The void at (10, 10) is the quadrant x > 10, y > 10.
         let d = R * FRAC_1_SQRT_2;
-        assert_near(&centres(&corners[3..4]), &[[10.0 + d, 10.0 + d]]);
+        assert_near(
+            &centres(&ring_reliefs(&l, &opts(Style::Normal)).unwrap()),
+            &[[10.0 + d, 10.0 + d]],
+        );
     }
 
     #[test]
@@ -252,25 +214,25 @@ mod tests {
     }
 
     #[test]
-    fn degenerate_ring_corners_are_skipped() {
+    fn degenerate_ring_corners_get_none() {
         let o = opts(Style::Normal);
         // A repeated point, and a point in line with its neighbours.
         assert_eq!(
             corner([0.0, 0.0], [0.0, 0.0], [1.0, 0.0], &o).unwrap(),
-            Corner::Skipped(Skip::Degenerate)
+            None
         );
         assert_eq!(
             corner([0.0, 0.0], [1.0, 0.0], [2.0, 0.0], &o).unwrap(),
-            Corner::Skipped(Skip::Straight)
+            None
         );
         // Folded back on itself.
         assert_eq!(
             corner([0.0, 0.0], [1.0, 0.0], [0.0, 0.0], &o).unwrap(),
-            Corner::Skipped(Skip::Degenerate)
+            None
         );
         assert_eq!(
             corner([0.0, 0.0], [1.0, 0.0], [0.5, 0.0], &o).unwrap(),
-            Corner::Skipped(Skip::Degenerate)
+            None
         );
     }
 
@@ -280,37 +242,30 @@ mod tests {
         // Along a diagonal: straight on, and folded back.
         assert_eq!(
             corner([0.0, 0.0], [1.0, 1.0], [2.0, 2.0], &o).unwrap(),
-            Corner::Skipped(Skip::Straight)
+            None
         );
         assert_eq!(
             corner([0.0, 0.0], [1.0, 1.0], [0.5, 0.5], &o).unwrap(),
-            Corner::Skipped(Skip::Degenerate)
+            None
         );
         assert_eq!(
             corner([0.0, 0.0], [1.0, 1.0], [1.0, 2.0], &o).unwrap(),
-            Corner::Skipped(Skip::Convex)
+            None
         );
-        assert!(matches!(
-            corner([0.0, 0.0], [1.0, 1.0], [2.0, 1.0], &o).unwrap(),
-            Corner::Relief(_)
-        ));
+        assert!(corner([0.0, 0.0], [1.0, 1.0], [2.0, 1.0], &o)
+            .unwrap()
+            .is_some());
         // Long edges turning by less than the straightness threshold (radians, not the cross
         // product of the edges, which is a million times larger here) are in line.
         let tiny = 2e-10f64;
         let long = [1000.0 * tiny.cos(), 1000.0 * tiny.sin()];
-        assert_eq!(
-            corner([-1000.0, 0.0], [0.0, 0.0], long, &o).unwrap(),
-            Corner::Skipped(Skip::Straight)
-        );
+        assert_eq!(corner([-1000.0, 0.0], [0.0, 0.0], long, &o).unwrap(), None);
         // Short edges turning by more than it are corners.
         let small = [1e-3 * (1e-6f64).cos(), 1e-3 * (1e-6f64).sin()];
-        assert_eq!(
-            corner([-1e-3, 0.0], [0.0, 0.0], small, &o).unwrap(),
-            Corner::Skipped(Skip::Convex)
-        );
+        assert_eq!(corner([-1e-3, 0.0], [0.0, 0.0], small, &o).unwrap(), None);
         // An inside corner of uneven edges is relieved whatever their lengths: a square corner,
         // its centre on the bisector.
-        let Corner::Relief(r) = corner([1000.0, 0.0], [0.0, 0.0], [0.0, 0.01], &o).unwrap() else {
+        let Some(r) = corner([1000.0, 0.0], [0.0, 0.0], [0.0, 0.01], &o).unwrap() else {
             panic!()
         };
         let d = R * FRAC_1_SQRT_2;
