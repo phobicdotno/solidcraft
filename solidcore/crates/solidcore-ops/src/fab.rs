@@ -16,11 +16,8 @@
 use solidcore::flat::{finish, section, slice};
 
 pub use solidcore::flat::finish::{Machine, Sheet, SheetSettings};
-pub use solidcore::flat::nest::Placement;
-pub use solidcore::flat::slice::{
-    Axis, FabPart, FabResult, FabSettings, Frame, Mark, PartKind, Style, Warning,
-};
-pub use solidcore::flat::{FlatError, Region, Ring, Shape, P2};
+pub use solidcore::flat::slice::{Axis, FabResult, FabSettings, Frame, PartKind, Style, Warning};
+pub use solidcore::flat::{FlatError, Shape};
 
 use crate::body::Body;
 use crate::session::{with_body, Answer};
