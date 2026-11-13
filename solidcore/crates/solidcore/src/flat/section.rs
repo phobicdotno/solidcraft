@@ -771,7 +771,7 @@ mod tests {
         );
         let text = err.unwrap_err().to_string();
         assert!(
-            text.contains("Y = 12.5 mm") && text.contains("0.500 mm"),
+            text.contains("Y = 12.500 mm") && text.contains("0.500 mm"),
             "{text}"
         );
     }
