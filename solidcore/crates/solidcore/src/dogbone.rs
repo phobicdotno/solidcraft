@@ -145,8 +145,8 @@ struct Wedge {
 /// back onto each other.
 ///
 /// # Errors
-/// [`SolidError::InvalidInput`] for options out of range or a direction or length that is not
-/// finite.
+/// [`SolidError::InvalidInput`] for options out of range, a direction or length that is not
+/// finite, or walls in line.
 fn wedge_relief(
     a: Vec3,
     b: Vec3,
