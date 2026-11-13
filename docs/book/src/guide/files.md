@@ -149,9 +149,9 @@ from above; a crossing through two layers of material (a shelf, an arch) cuts on
 slices through, and the warning names the slices that fall apart. The window shows the parts assembled in the viewport as you change the settings; **Sheets**
 shows them packed onto sheets of the size you give, cuts in one colour and engraving in another.
 The parts allow for a laser's kerf, or get reliefs in their inside corners for a CNC router's
-bit. **Export sheets…** writes each sheet as DXF (layers CUT, ENGRAVE and SHEET) and SVG
-(`fab.export_sheets`). Neither command changes the design: run it again after a change and the
-parts follow the body.
+bit. **Export sheets…** writes each sheet as DXF (layers CUT and ENGRAVE) and SVG
+(`fab.export_sheets`), with the cut and engrave paths only and no sheet outline. Neither
+command changes the design: run it again after a change and the parts follow the body.
 
 Closed meshes can be rebuilt as solids with the `mesh.convert` command (command palette,
 scripts and the control channel): a mesh with a constant cross-section as analytic planar and
