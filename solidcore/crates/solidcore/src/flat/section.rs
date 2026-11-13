@@ -27,7 +27,7 @@ use crate::topology::brep::p1 as brep1;
 use crate::topology::brep::planar_section::{
     create_planar_section_curves, PlanarSectionOptions, SectionOutputs,
 };
-use crate::topology::{vertex, Brep};
+use crate::topology::{vertex, Brep, FaceId};
 
 use super::region;
 use super::slice::{Axis, Sectioner};
@@ -174,11 +174,11 @@ fn section_at(
     chord: f64,
     centre: [f64; 3],
 ) -> FlatResult<Region> {
-    let curves = section_curves(k, b, axis, at, chord, centre)?;
+    let (curves, faces) = section_curves(k, b, axis, at, chord, centre)?;
     let (_, u, v) = axis.directions();
     let mut budget = MAX_SECTION_SAMPLES;
-    let mut pieces: Vec<Ring> = Vec::new();
-    for c in &curves {
+    let mut pieces: Vec<(Ring, Option<FaceId>)> = Vec::new();
+    for (i, c) in curves.iter().enumerate() {
         let samples = sample_curve(k, c, chord * SAMPLE_SHARE)
             .map_err(|error| FlatError::Section { axis, at, error })?;
         take(&mut budget, samples.points.len())?;
@@ -190,7 +190,7 @@ fn section_at(
             .collect();
         let flat = drop_repeats(flat);
         if flat.len() >= 2 {
-            pieces.push(flat);
+            pieces.push((flat, faces.get(i).copied().flatten()));
         }
     }
     let rings = outlines(pieces, axis, at, chord)?;
@@ -215,7 +215,12 @@ thread_local! {
 /// # Errors
 /// [`FlatError::OpenSection`] with the gap when the pieces do not close into rings within
 /// the join tolerance: the section is incomplete.
-fn outlines(pieces: Vec<Ring>, axis: Axis, at: f64, chord: f64) -> FlatResult<Vec<Ring>> {
+fn outlines(
+    pieces: Vec<(Ring, Option<FaceId>)>,
+    axis: Axis,
+    at: f64,
+    chord: f64,
+) -> FlatResult<Vec<Ring>> {
     let tol = join_tolerance(chord);
     let rings =
         chain(dedupe(pieces, tol), tol).map_err(|gap| FlatError::OpenSection { axis, at, gap })?;
@@ -226,7 +231,8 @@ fn outlines(pieces: Vec<Ring>, axis: Axis, at: f64, chord: f64) -> FlatResult<Ve
 }
 
 /// The kernel's exact section curves of body `b` by the plane `axis = at` through `centre`
-/// moved onto the plane (see [`section_at`]), traced within `TRACE_SHARE` of `chord`.
+/// moved onto the plane (see [`section_at`]), traced within `TRACE_SHARE` of `chord`, and the
+/// face each curve lies on (all `None` when the kernel does not give one face per curve).
 fn section_curves(
     k: &Kernel,
     b: &mut Brep,
@@ -234,7 +240,7 @@ fn section_curves(
     at: f64,
     chord: f64,
     centre: [f64; 3],
-) -> FlatResult<Vec<Curve>> {
+) -> FlatResult<(Vec<Curve>, Vec<Option<FaceId>>)> {
     if !at.is_finite() || at.abs() >= 1e6 {
         return Err(FlatError::Setting("section position"));
     }
@@ -254,6 +260,7 @@ fn section_curves(
         approx_tol_3d: Some(chord * TRACE_SHARE),
         outputs: SectionOutputs {
             curves_3d: true,
+            faces: true,
             ..SectionOutputs::default()
         },
         ..PlanarSectionOptions::default()
@@ -270,7 +277,11 @@ fn section_curves(
     if curves.len() > MAX_SECTION_CURVES {
         return Err(FlatError::TooBig("section curves"));
     }
-    Ok(curves)
+    let faces = match made.faces {
+        Some(f) if f.len() == curves.len() => f.into_iter().map(Some).collect(),
+        _ => vec![None; curves.len()],
+    };
+    Ok((curves, faces))
 }
 
 fn dot(p: Point3, d: [f64; 3]) -> f64 {
@@ -317,29 +328,42 @@ fn near(a: P2, b: P2, tol: f64) -> bool {
     (a[0] - b[0]).hypot(a[1] - b[1]) <= tol
 }
 
+/// How close (mm) the ends and middles of two polylines of one face must be for them to be
+/// copies (a curve on the seam of a periodic face, traced from both of its sides).
+const SAME_FACE_COPY: f64 = 1e-6;
+
 /// The polylines with copies left out: a curve on a seam may come from the faces on both of
 /// its sides. Two polylines are copies when their ends and middles meet within `tol`, in
-/// either direction.
-fn dedupe(pieces: Vec<Ring>, tol: f64) -> Vec<Ring> {
+/// either direction, and they come from different faces (or a face is not known). Two
+/// polylines of one face are copies only within [`SAME_FACE_COPY`]: just under the top of a
+/// torus its one face gives two circles far closer than `tol`, and both are outlines.
+fn dedupe(pieces: Vec<(Ring, Option<FaceId>)>, tol: f64) -> Vec<Ring> {
     // the middle is the mean of the two middle points, the same in either direction
     let key = |r: &Ring| -> Option<(P2, P2, P2)> {
         let (m0, m1) = (r.get((r.len() - 1) / 2)?, r.get(r.len() / 2)?);
         let mid = [(m0[0] + m1[0]) / 2.0, (m0[1] + m1[1]) / 2.0];
         Some((*r.first()?, mid, *r.last()?))
     };
+    let meets = |(a, m, b): (P2, P2, P2), (c, n, d): (P2, P2, P2), tol: f64| {
+        near(m, n, tol)
+            && ((near(a, c, tol) && near(b, d, tol)) || (near(a, d, tol) && near(b, c, tol)))
+    };
     let mut kept: Vec<Ring> = Vec::new();
-    let mut keys: Vec<(P2, P2, P2)> = Vec::new();
-    for r in pieces {
+    let mut keys: Vec<((P2, P2, P2), Option<FaceId>)> = Vec::new();
+    for (r, face) in pieces {
         let Some((a, m, b)) = key(&r) else { continue };
-        let copy = keys.iter().any(|&(c, n, d)| {
-            near(m, n, tol)
-                && ((near(a, c, tol) && near(b, d, tol)) || (near(a, d, tol) && near(b, c, tol)))
+        let copy = keys.iter().any(|&(other, f)| {
+            let tol = match (face, f) {
+                (Some(x), Some(y)) if x == y => tol.min(SAME_FACE_COPY),
+                _ => tol,
+            };
+            meets((a, m, b), other, tol)
         });
         if copy {
             let dist = |p: P2, q: P2| (p[0] - q[0]).hypot(p[1] - q[1]);
             let best = keys
                 .iter()
-                .map(|&(c, n, d)| {
+                .map(|&((c, n, d), _)| {
                     dist(m, n).max(dist(a, c).max(dist(b, d)).min(dist(a, d).max(dist(b, c))))
                 })
                 .fold(f64::INFINITY, f64::min);
@@ -349,7 +373,7 @@ fn dedupe(pieces: Vec<Ring>, tol: f64) -> Vec<Ring> {
             });
         }
         if !copy {
-            keys.push((a, m, b));
+            keys.push(((a, m, b), face));
             kept.push(r);
         }
     }
@@ -660,7 +684,10 @@ mod tests {
         let b: Ring = vec![[1.0, 1.0], [1.0, 0.0]]; // reversed
         let c: Ring = vec![[1.0, 1.0], [0.0, 1.0], [0.0, 0.0]];
         let copy: Ring = vec![[1.0, 0.0], [0.0, 0.0]];
-        let pieces = dedupe(vec![a, b, c, copy], 1e-3);
+        let pieces = dedupe(
+            [a, b, c, copy].into_iter().map(|r| (r, None)).collect(),
+            1e-3,
+        );
         assert_eq!(pieces.len(), 3);
         let rings = chain(pieces, 1e-3).unwrap();
         assert_eq!(rings.len(), 1);
@@ -693,7 +720,7 @@ mod tests {
         assert!(close(gap(vec![square, open]), 2f64.sqrt(), 1e-12));
         // the outlines of a section carry the plane and the gap
         let err = outlines(
-            vec![vec![[0.0, 0.0], [5.0, 0.0], [0.0, 0.5]]],
+            vec![(vec![[0.0, 0.0], [5.0, 0.0], [0.0, 0.5]], None)],
             Axis::Y,
             12.5,
             CHORD,
@@ -755,7 +782,7 @@ mod tests {
             (&mut cylinder, Axis::Z, 15.0, false),
             (&mut torus, Axis::X, 30.0, true),
         ] {
-            let curves = section_curves(&k, b, axis, at, CHORD, [0.0; 3]).unwrap();
+            let (curves, _) = section_curves(&k, b, axis, at, CHORD, [0.0; 3]).unwrap();
             assert!(!curves.is_empty(), "{axis:?} = {at}");
             if spline {
                 assert!(
@@ -827,6 +854,64 @@ mod tests {
     }
 
     #[test]
+    fn near_copies_of_one_face_are_both_kept() {
+        // two arcs 1e-4 apart: copies from two faces, both outlines from one face
+        let arc = |r: f64| -> Ring {
+            (0..=8)
+                .map(|i| {
+                    let t = f64::from(i) * PI / 8.0;
+                    [r * t.cos(), r * t.sin()]
+                })
+                .collect()
+        };
+        let mut k = Kernel::default();
+        let b = create_box(&mut k, Point3::ZERO, 1.0, 1.0, 1.0).unwrap();
+        let fs = brep1::faces(&b, None).unwrap();
+        let (f0, f1) = (fs.first().copied().unwrap(), fs.get(1).copied().unwrap());
+        let two = |x, y| dedupe(vec![(arc(40.0), x), (arc(40.0001), y)], 0.01).len();
+        assert_eq!(two(Some(f0), Some(f1)), 1);
+        assert_eq!(two(None, Some(f0)), 1);
+        assert_eq!(two(Some(f0), Some(f0)), 2);
+        // a seam traced from both of its sides by one face is still one curve
+        let same = dedupe(vec![(arc(40.0), Some(f0)), (arc(40.0), Some(f0))], 0.01);
+        assert_eq!(same.len(), 1);
+    }
+
+    #[test]
+    fn the_kernel_gives_one_face_per_section_curve() {
+        let mut k = Kernel::default();
+        let mut b = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
+        for (axis, at) in [(Axis::Z, 20.0), (Axis::X, 0.0), (Axis::Z, 34.0)] {
+            let (curves, faces) = section_curves(&k, &mut b, axis, at, CHORD, [0.0; 3]).unwrap();
+            assert!(!curves.is_empty());
+            assert_eq!(faces.len(), curves.len());
+            assert!(
+                faces.iter().all(Option::is_some),
+                "{axis:?} {at}: {faces:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn just_under_the_top_of_a_torus_is_a_thin_ring_not_a_disc() {
+        // the two circles of radius 40 +- sqrt(2 * 15 * 1e-7) are 3.5e-3 mm apart, under the
+        // join tolerance: the section is a ring of about 0.87 mm^2 (or nothing), never the
+        // disc of the outer circle (about 5026 mm^2)
+        let mut k = Kernel::default();
+        let mut b = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
+        for e in [1e-7, 1e-9] {
+            let r = section_at(&k, &mut b, Axis::Z, 35.0 - e, CHORD, [0.0; 3]).unwrap();
+            let a = region::area(&r);
+            assert!(a < 10.0, "z = 35 - {e}: area {a}");
+            assert!(!region::contains(&r, [0.0, 0.0]), "z = 35 - {e}");
+        }
+        // further down both circles are kept as before
+        let r = section_at(&k, &mut b, Axis::Z, 35.0 - 1e-5, CHORD, [0.0; 3]).unwrap();
+        let want = 160.0 * PI * (30.0 * 1e-5f64).sqrt();
+        assert!(close(region::area(&r), want, 1.0), "{}", region::area(&r));
+    }
+
+    #[test]
     fn zz_r3_explore() {
         use super::super::slice::{make, FabSettings, Style};
         let mut k = Kernel::default();
@@ -843,7 +928,7 @@ mod tests {
         let raw = |k: &Kernel, b: &mut Brep, axis: Axis, at: f64, name: &str| match section_curves(
             k, b, axis, at, CHORD, [0.0; 3],
         ) {
-            Ok(cs) => {
+            Ok((cs, _)) => {
                 let lens: Vec<String> = cs
                     .iter()
                     .map(|c| {
@@ -1166,7 +1251,8 @@ mod tests {
                         }
                     }
                 }
-                let curves = section_curves(&k, &mut *s.b, Axis::X, at, chord, [0.0; 3]).unwrap();
+                let (curves, _) =
+                    section_curves(&k, &mut *s.b, Axis::X, at, chord, [0.0; 3]).unwrap();
                 let mut trace: f64 = 0.0;
                 for c in &curves {
                     let ivl = c.natural_interval();
