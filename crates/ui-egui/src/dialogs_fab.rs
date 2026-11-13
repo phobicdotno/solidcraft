@@ -452,7 +452,6 @@ pub(crate) fn warnings(app: &SolveApp, v: &Value) -> Vec<String> {
             "falls_apart" => locale.format("fab.warn_falls_apart", &[("part", &text(w, "part")), ("pieces", &text(w, "pieces"))]),
             "dowels_short" => locale.format("fab.warn_dowels_short", &[("placed", &text(w, "placed")), ("wanted", &text(w, "wanted"))]),
             "rod_hub" => locale.format("fab.warn_rod_hub", &[("part", &text(w, "part"))]),
-            "no_tab" => locale.format("fab.warn_no_tab", &[("part", &text(w, "part"))]),
             "gaps_not_whole" => locale.format("fab.warn_gaps_not_whole", &[("thickness", &length(w, "thickness"))]),
             "never_cross" => locale.text("fab.warn_never_cross").to_string(),
             _ => w["message"].as_str().unwrap_or_default().to_string(),

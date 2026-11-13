@@ -194,7 +194,6 @@ fn result() -> Value {
             {"code": "falls_apart", "message": "S1 falls apart into 2 pieces", "part": "S1", "pieces": 2},
             {"code": "dowels_short", "message": "Room for 1 of 2 dowel holes in every layer", "placed": 1, "wanted": 2},
             {"code": "rod_hub", "message": "S2: …", "part": "S2"},
-            {"code": "no_tab", "message": "S3 …", "part": "S3"},
             {"code": "gaps_not_whole", "message": "…", "thickness": 3.0},
             {"code": "never_cross", "message": "The two sets of slices never cross: nothing holds them together"},
             {"code": "something_new", "message": "Something new"}
@@ -232,7 +231,6 @@ fn warnings_are_worded_by_their_code() {
             "S1 falls apart into 2 pieces",
             "Room for 1 of 2 dowel holes in every layer",
             "S2: the rod misses it, so it gets a hub around the rod",
-            "S3 is too narrow where it meets the plate for a tab",
             format!("The gaps between slices are not a whole number of sheets: use a spacing that is a multiple of {} for exact spacers", mm(3.0))
                 .as_str(),
             "… and 2 more",
