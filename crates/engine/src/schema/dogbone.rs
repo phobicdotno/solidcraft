@@ -33,20 +33,21 @@ pub struct DogboneParams {
     /// the straight edges along the face's normal at its corners, are relieved.
     #[serde(default)]
     pub faces: Option<FaceRefs>,
-    /// The router bit's diameter: each relief is a round hole of this diameter.
+    /// The router bit's diameter: each relief is a round hole of this diameter. More than 0 and
+    /// at most 100000 mm.
     pub diameter: LengthExpr,
     /// Default: normal.
     #[serde(default)]
     pub style: Option<DogboneStyleParam>,
-    /// Minimal style only: how far short of the sharp corner the relief stops. Default: 5% of
-    /// the diameter.
+    /// Minimal style only: how far short of the sharp corner the relief stops, at least 0 and at
+    /// most 100000 mm. Default: 5% of the diameter.
     #[serde(default)]
     pub gap: Option<LengthExpr>,
     /// T-bone style only: which wall each relief bites. Default: longer.
     #[serde(default)]
     pub side: Option<DogboneSideParam>,
-    /// The largest corner angle relieved: corners more open are skipped. Default: 90 deg (square
-    /// and sharper corners).
+    /// The largest corner angle relieved, more than 0 deg and at most 180 deg: corners more open
+    /// are skipped. Default: 90 deg (square and sharper corners).
     #[serde(default)]
     pub max_angle: Option<AngleExpr>,
     /// The bit's axis: picked edges not along it are skipped. Default: any direction (a picked
