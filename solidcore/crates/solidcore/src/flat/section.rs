@@ -882,8 +882,11 @@ mod tests {
                         r.len() == 1 && r[0].holes.is_empty(),
                         "{axis:?} = {at}: {r:?}"
                     );
+                    // the kernel traces a circle exactly: only sampling and simplifying
+                    // add their shares
                     let off = off_circle(&r[0].outer, centre, radius);
-                    assert!(off <= chord, "{axis:?} = {at}, chord {chord}: {off} off");
+                    let share = (SAMPLE_SHARE + SIMPLIFY_SHARE) * chord;
+                    assert!(off <= share, "{axis:?} = {at}, chord {chord}: {off} off");
                 }
             }
         }
