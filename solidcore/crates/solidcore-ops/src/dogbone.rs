@@ -67,16 +67,12 @@ pub struct Cylinder {
     pub radius: f64,
     /// Its length along the axis.
     pub height: f64,
-    /// The corner's (void wedge's) angle, radians.
-    pub angle: f64,
 }
 
-/// A relief to cut: the edge it relieves and the cylinder.
+/// A relief to cut: where its edge is and the cylinder.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tool {
-    /// The record edge relieved.
-    pub edge: usize,
-    /// The middle of that edge.
+    /// The middle of the record edge relieved.
     pub at: [f64; 3],
     /// The cylinder to cut.
     pub cylinder: Cylinder,
@@ -250,14 +246,12 @@ fn relieve(
     let at_ends = [at_start.as_slice(), at_end.as_slice()];
     match k::edge_relief(&line, &[wa, wb], at_ends, options).map_err(status)? {
         k::EdgeRelief::Relief(c) => out.tools.push(Tool {
-            edge: e,
             at,
             cylinder: Cylinder {
                 base: record_vec3(c.base),
                 axis: record_vec3(c.axis),
                 radius: c.radius,
                 height: c.height,
-                angle: c.angle,
             },
         }),
         k::EdgeRelief::Smooth => skip(Why::Smooth, out),

@@ -169,7 +169,6 @@ fn a_pockets_four_corners_get_blind_reliefs_from_the_floor_up() {
             "{c:?}"
         );
         assert_eq!(c.radius, R);
-        assert!((c.angle - FRAC_PI_2).abs() < 1e-12);
     }
     // Cut: the volume falls by four reliefs, (π/2 − 1) r² over the pocket's 6 mm depth each.
     let before = 40.0 * 30.0 * 10.0 - 20.0 * 14.0 * 6.0;
@@ -183,22 +182,19 @@ fn a_picked_floor_relieves_the_pockets_corners() {
     let body = pocketed();
     let r = record(&body);
     let floor = flat_face(&r, 4.0, [10.0, 8.0], [30.0, 22.0]);
+    let corners = vertical_edges(&r, &POCKET);
     let by_face = plan(&r, &[], &[floor], &options(Style::Normal)).unwrap();
-    let by_edges = plan(
-        &r,
-        &vertical_edges(&r, &POCKET),
-        &[],
-        &options(Style::Normal),
-    )
-    .unwrap();
+    let by_edges = plan(&r, &corners, &[], &options(Style::Normal)).unwrap();
     assert!(by_face.skipped.is_empty(), "{:?}", by_face.skipped);
-    let mut a: Vec<usize> = by_face.tools.iter().map(|t| t.edge).collect();
-    let mut b: Vec<usize> = by_edges.tools.iter().map(|t| t.edge).collect();
-    a.sort_unstable();
-    b.sort_unstable();
-    assert_eq!(a, b);
+    // The same four reliefs, whatever the order.
+    assert_eq!(by_face.tools.len(), 4);
+    assert_eq!(by_edges.tools.len(), 4);
+    assert!(
+        by_face.tools.iter().all(|t| by_edges.tools.contains(t)),
+        "{by_face:?} vs {by_edges:?}"
+    );
     // The same edge picked twice, and by its face too: one relief.
-    let e = b[0];
+    let e = corners[0];
     let again = plan(&r, &[e, e], &[floor], &options(Style::Normal)).unwrap();
     assert_eq!(again.tools.len(), 4);
 }
@@ -335,7 +331,7 @@ fn edges_that_are_no_inside_corner_are_skipped_with_the_reason() {
     assert!(p
         .skipped
         .iter()
-        .all(|s| matches!(s.why, Why::Corner(Skip::TooOpen { .. }))));
+        .all(|s| s.why == Why::Corner(Skip::TooOpen)));
 }
 
 #[test]
