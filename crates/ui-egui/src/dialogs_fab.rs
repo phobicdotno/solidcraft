@@ -423,7 +423,8 @@ pub(crate) fn summary(app: &SolveApp, v: &Value) -> String {
         })
         .collect();
     let kinds = words.join(locale.text("fab.list_separator"));
-    let parts = v["count"].as_u64().unwrap_or_else(|| kinds_total(v)).to_string();
+    let total = v["count"].as_u64().unwrap_or_else(|| kinds_total(v));
+    let parts = locale.format(if total == 1 { "fab.parts_one" } else { "fab.parts_many" }, &[("count", &total.to_string())]);
     let sheets = v["sheets"].as_array().map_or(0, Vec::len);
     let key = match sheets {
         0 => "fab.summary_no_sheets",

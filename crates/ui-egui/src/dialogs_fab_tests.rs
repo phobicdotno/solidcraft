@@ -226,6 +226,11 @@ fn the_summary_counts_parts_by_kind_and_sheets() {
     assert_eq!(summary(&h.app, &v), "5 parts (4 slices, 1 plate) on 1 sheet");
     v["sheets"] = json!([]);
     assert_eq!(summary(&h.app, &v), "5 parts (4 slices, 1 plate)");
+    // one part reads as one
+    v["parts"] = json!([{"name": "S1", "kind": "slice", "copies": 1}]);
+    v["count"] = json!(1);
+    v["sheets"] = json!([{"parts": []}]);
+    assert_eq!(summary(&h.app, &v), "1 part (1 slice) on 1 sheet");
 }
 
 #[test]
