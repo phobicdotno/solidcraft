@@ -894,11 +894,11 @@ mod tests {
         let mut k = Kernel::default();
         for chord in [CHORD, 0.5] {
             let mut cylinder = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
-            let mut wide = create_cylinder(&mut k, Point3::ZERO, 23.0, 30.0).unwrap();
+            let mut wide = create_cylinder(&mut k, Point3::ZERO, 24.5, 30.0).unwrap();
             let mut sphere = create_sphere(&mut k, Point3::new(0.0, 0.0, 50.0), 50.0).unwrap();
             for (b, cuts) in [
                 (&mut cylinder, vec![(Axis::Z, 15.0, [0.0, 0.0], 10.0)]),
-                (&mut wide, vec![(Axis::Z, 15.0, [0.0, 0.0], 23.0)]),
+                (&mut wide, vec![(Axis::Z, 15.0, [0.0, 0.0], 24.5)]),
                 (
                     &mut sphere,
                     vec![
@@ -919,8 +919,9 @@ mod tests {
                     // chord for tracing. The sampler halves its step until a span fits its
                     // share, so the spans' error comes in steps of about 4. At chord 0.5 the
                     // 10 mm circle's spans, a sixteenth of it each, are 0.42 of the chord off
-                    // it (measured); the 23 mm circle's would be 0.96 off, which only the
-                    // whole chord for sampling lets pass
+                    // it; the 24.5 mm circle's, a thirty-second each, are 0.24 off, and with the
+                    // whole chord for sampling they are a sixteenth each and 0.94 off, which
+                    // this bound refuses (0.42 measured, the others from the spans' sagitta)
                     let off = off_circle(&r[0].outer, centre, radius);
                     assert!(
                         off <= 0.9 * chord,
