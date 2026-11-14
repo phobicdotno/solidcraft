@@ -422,18 +422,14 @@ pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> FlatResult<Fi
     if ss.labels && part.kind != PartKind::Spacer {
         // the pieces the guide lines and marks leave, largest first: the name goes in the
         // first that has room for it (a thin band round a neighbour's outline may have none)
-        let mut rooms: Vec<(f64, Shape)> = if marked.is_empty() {
-            vec![(0.0, shape.clone())]
+        let rooms: Region = if marked.is_empty() {
+            vec![shape.clone()]
         } else {
-            region::difference(&material(&shape), &marked)
-                .into_iter()
-                .map(|s| (region::shape_area(&s), s))
-                .collect()
+            region::pieces(&region::difference(&material(&shape), &marked), 0.0)
         };
-        rooms.sort_by(|a, b| b.0.total_cmp(&a.0));
         if let Some(name) = rooms
             .iter()
-            .map(|(_, room)| label_inside(room, &part.name, ss.label_height, LABEL_MARGIN))
+            .map(|room| label_inside(room, &part.name, ss.label_height, LABEL_MARGIN))
             .find(|name| !name.is_empty())
         {
             engrave.extend(name);

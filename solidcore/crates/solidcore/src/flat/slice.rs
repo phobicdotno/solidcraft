@@ -1667,7 +1667,7 @@ mod tests {
     }
 
     #[test]
-    fn stacked_sphere_names_sit_inside_the_guide_lines_and_clear_of_them() {
+    fn stacked_sphere_names_keep_clear_of_the_guide_lines() {
         use crate::flat::finish::{finish, Machine, SheetSettings};
         // 3 mm layers of a round body: the band outside each smaller neighbour's outline is
         // under 2 mm wide on most of them, so the name has to go inside it
