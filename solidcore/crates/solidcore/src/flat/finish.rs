@@ -42,7 +42,9 @@ pub struct SheetSettings {
     /// laser between the burnt outlines, for a router between the bit's paths, so the parts
     /// themselves end up the bit's diameter further apart.
     pub gap: f64,
-    /// The least distance from the sheet's edge (mm).
+    /// The least distance from the sheet's edge to the path the machine follows round a part
+    /// (mm), as `gap` measures: for a laser to the burnt outline, for a router to the bit's path,
+    /// so a router's parts sit half the bit's diameter further in.
     pub margin: f64,
     /// The machine.
     pub machine: Machine,
@@ -448,6 +450,16 @@ pub fn finish(part: &super::slice::FabPart, ss: &SheetSettings) -> FlatResult<Fi
     })
 }
 
+/// The largest sheet width and height, gap, margin and name height (mm) [`layout`] takes.
+pub(crate) const SETTING_LIMIT: f64 = 10_000.0;
+/// The limit text of a size above 0 and at most [`SETTING_LIMIT`].
+const SIZE_TEXT: &str = "more than 0 and at most 10000 mm";
+/// The limit text of the gap: 0 to [`SETTING_LIMIT`].
+const GAP_TEXT: &str = "0 to 10000 mm";
+/// The limit text of the margin: 0 to [`SETTING_LIMIT`], and room left inside it.
+const MARGIN_TEXT: &str = "0 to 10000 mm and less than half the sheet's width and height \
+     (with a router, half the bit's diameter more)";
+
 /// A setting is finite and within `lo..=hi`.
 fn within(v: f64, lo: f64, hi: f64) -> bool {
     v.is_finite() && v >= lo && v <= hi
@@ -455,25 +467,28 @@ fn within(v: f64, lo: f64, hi: f64) -> bool {
 
 /// The sheet settings checked: the first one out of range, by name.
 fn check(ss: &SheetSettings) -> FlatResult<()> {
-    const SIZE: &str = "more than 0 and at most 10000 mm";
     let fail = |name, limit| Err(FlatError::Setting { name, limit });
-    if !(within(ss.width, 0.0, 10_000.0) && ss.width > 0.0) {
-        return fail("width", SIZE);
+    if !(within(ss.width, 0.0, SETTING_LIMIT) && ss.width > 0.0) {
+        return fail("width", SIZE_TEXT);
     }
-    if !(within(ss.height, 0.0, 10_000.0) && ss.height > 0.0) {
-        return fail("height", SIZE);
+    if !(within(ss.height, 0.0, SETTING_LIMIT) && ss.height > 0.0) {
+        return fail("height", SIZE_TEXT);
     }
-    if !within(ss.gap, 0.0, 10_000.0) {
-        return fail("gap", "0 to 10000 mm");
+    if !within(ss.gap, 0.0, SETTING_LIMIT) {
+        return fail("gap", GAP_TEXT);
     }
-    if !within(ss.margin, 0.0, 10_000.0)
-        || ss.width - 2.0 * ss.margin <= 0.0
-        || ss.height - 2.0 * ss.margin <= 0.0
+    // the parts sit this far from the sheet's edge (a bit out of range is refused below)
+    let edge = match ss.machine {
+        Machine::Router { tool_diameter } if within(tool_diameter, 0.0, 50.0) => {
+            ss.margin + tool_diameter / 2.0
+        }
+        _ => ss.margin,
+    };
+    if !within(ss.margin, 0.0, SETTING_LIMIT)
+        || ss.width - 2.0 * edge <= 0.0
+        || ss.height - 2.0 * edge <= 0.0
     {
-        return fail(
-            "margin",
-            "0 to 10000 mm and less than half the sheet's width and height",
-        );
+        return fail("margin", MARGIN_TEXT);
     }
     match ss.machine {
         Machine::Laser { kerf } if !within(kerf, 0.0, 5.0) => return fail("kerf", "0 to 5 mm"),
@@ -482,8 +497,8 @@ fn check(ss: &SheetSettings) -> FlatResult<()> {
         }
         _ => {}
     }
-    if ss.labels && !(within(ss.label_height, 0.0, 10_000.0) && ss.label_height > 0.0) {
-        return fail("label_height", SIZE);
+    if ss.labels && !(within(ss.label_height, 0.0, SETTING_LIMIT) && ss.label_height > 0.0) {
+        return fail("label_height", SIZE_TEXT);
     }
     Ok(())
 }
@@ -493,7 +508,8 @@ fn check(ss: &SheetSettings) -> FlatResult<()> {
 /// engraving in sheet coordinates, and their names in the order placed. `gap` is the least
 /// distance between the paths the machine follows round two parts: a laser's outline already is
 /// its path, and a router's bit runs outside the part's edge, so router parts end up the bit's
-/// diameter further apart.
+/// diameter further apart. `margin` too runs to the machine's path, so a router's parts sit half
+/// the bit's diameter further from the sheet's edge.
 ///
 /// # Errors
 /// [`FlatError::Setting`] for sheet settings out of range (naming the field: `width`,
@@ -515,12 +531,15 @@ pub fn layout(res: &FabResult, ss: &SheetSettings) -> FlatResult<Vec<Sheet>> {
         }
     }
     let outlines: Vec<Ring> = pieces.iter().map(|(_, f)| f.shape.outer.clone()).collect();
-    let apart = match ss.machine {
-        Machine::Laser { .. } => ss.gap,
-        Machine::Router { tool_diameter } => ss.gap + tool_diameter,
+    // gap and margin run to the machine's paths: a router's runs half the bit outside the part
+    let (apart, edge) = match ss.machine {
+        Machine::Laser { .. } => (ss.gap, ss.margin),
+        Machine::Router { tool_diameter } => {
+            (ss.gap + tool_diameter, ss.margin + tool_diameter / 2.0)
+        }
     };
-    let places = super::nest::nest(&outlines, ss.width, ss.height, apart, ss.margin, true)
-        .map_err(|e| match e {
+    let places = super::nest::nest(&outlines, ss.width, ss.height, apart, edge, true).map_err(
+        |e| match e {
             FlatError::DoesNotFit {
                 part,
                 width,
@@ -531,7 +550,8 @@ pub fn layout(res: &FabResult, ss: &SheetSettings) -> FlatResult<Vec<Sheet>> {
                 height,
             },
             other => other,
-        })?;
+        },
+    )?;
     let mut sheets: Vec<Sheet> = Vec::new();
     for pl in &places {
         let Some((_, f)) = pieces.get(pl.part) else {
@@ -1316,6 +1336,84 @@ mod tests {
         let laser = apart(Machine::Laser { kerf: 0.0 });
         assert!(laser >= 3.0 - 1e-6, "{laser}");
         assert!(router > laser, "{router} {laser}");
+    }
+
+    #[test]
+    fn a_router_path_keeps_the_margin_from_the_sheet_edge() {
+        // the least distance from the sheet's edge to a part's outline
+        let inset = |machine: Machine| {
+            let ss = SheetSettings {
+                width: 100.0,
+                height: 100.0,
+                gap: 3.0,
+                margin: 5.0,
+                machine,
+                labels: false,
+                label_height: 5.0,
+            };
+            let res = result(vec![part(
+                "A",
+                PartKind::Slice,
+                solid(sq(0.0, 0.0, 10.0, 10.0, true)),
+            )]);
+            let sheets = layout(&res, &ss).unwrap();
+            sheets[0]
+                .cuts
+                .iter()
+                .flatten()
+                .map(|p| p[0].min(p[1]).min(100.0 - p[0]).min(100.0 - p[1]))
+                .fold(f64::MAX, f64::min)
+        };
+        // a 6 mm bit runs 3 mm outside the part: 5 mm to its path is 8 to the part
+        let router = inset(Machine::Router { tool_diameter: 6.0 });
+        assert!(router >= 8.0 - 1e-6, "{router}");
+        // a laser's outline is its path
+        let laser = inset(Machine::Laser { kerf: 0.0 });
+        assert!((5.0 - 1e-6..8.0).contains(&laser), "{laser}");
+        // the margin plus half the bit must leave room on the sheet
+        let tight = SheetSettings {
+            width: 20.0,
+            height: 20.0,
+            margin: 8.0,
+            machine: Machine::Router { tool_diameter: 4.0 },
+            ..sheet_settings()
+        };
+        assert!(matches!(
+            check(&tight),
+            Err(FlatError::Setting { name: "margin", .. })
+        ));
+        let laser = SheetSettings {
+            machine: Machine::Laser { kerf: 0.0 },
+            ..tight
+        };
+        assert!(check(&laser).is_ok());
+    }
+
+    #[test]
+    fn setting_texts_name_their_limit() {
+        let l = format!("{SETTING_LIMIT}");
+        assert_eq!(SIZE_TEXT, format!("more than 0 and at most {l} mm"));
+        assert_eq!(GAP_TEXT, format!("0 to {l} mm"));
+        assert!(
+            MARGIN_TEXT.starts_with(&format!("0 to {l} mm ")),
+            "{MARGIN_TEXT}"
+        );
+        // the limit itself is taken, just past it is refused
+        let at = SheetSettings {
+            width: SETTING_LIMIT,
+            height: SETTING_LIMIT,
+            gap: SETTING_LIMIT,
+            ..sheet_settings()
+        };
+        assert!(check(&at).is_ok());
+        let past = SheetSettings {
+            gap: SETTING_LIMIT * (1.0 + 1e-9),
+            ..at
+        };
+        assert!(matches!(
+            check(&past),
+            Err(FlatError::Setting { name: "gap", limit }) if limit == GAP_TEXT
+        ));
     }
 
     fn result(parts: Vec<FabPart>) -> FabResult {

@@ -59,8 +59,17 @@ const TOL: f64 = 0.01;
 const PAD: usize = 3;
 /// Slack (mm) when a part's box is compared with the usable area.
 const FIT_EPS: f64 = 1e-9;
-/// Sheet sizes, margins, gaps and part coordinates beyond this (mm) are refused.
+/// Sheet sizes, margins, gaps and part coordinates beyond this (mm) are refused. It is ten
+/// times [`super::finish::SETTING_LIMIT`], the bound on the user's sheet settings, so what
+/// [`super::finish::layout`] passes (the user's gap and margin plus a router's bit) always fits
+/// and these refusals never blame a setting the user entered in range.
 const LIMIT: f64 = 1e5;
+/// The limit text of a margin or gap: 0 to [`LIMIT`].
+const RANGE_TEXT: &str = "0 to 100000 mm";
+/// The limit text of a sheet's size: at most [`LIMIT`].
+const SHEET_TEXT: &str = "finite and at most 100000 mm across and down";
+/// The limit text of a part's outline: points within [`LIMIT`].
+const PART_TEXT: &str = "a ring of at least 3 points, each within 100000 mm of the origin";
 /// The most parts one call packs (copies counted): [`super::finish::layout`] refuses more
 /// too, before it finishes any part.
 pub const MAX_PARTS: usize = 5000;
@@ -573,13 +582,13 @@ pub fn nest(
     if !sane(sheet_w) || !sane(sheet_h) {
         return Err(FlatError::Setting {
             name: "sheet",
-            limit: "finite and at most 100000 mm across and down",
+            limit: SHEET_TEXT,
         });
     }
     if !sane(margin) || margin < 0.0 {
         return Err(FlatError::Setting {
             name: "margin",
-            limit: "0 to 100000 mm",
+            limit: RANGE_TEXT,
         });
     }
     let (iw, ih) = (sheet_w - 2.0 * margin, sheet_h - 2.0 * margin);
@@ -592,7 +601,7 @@ pub fn nest(
     if !sane(gap) || gap < 0.0 {
         return Err(FlatError::Setting {
             name: "gap",
-            limit: "0 to 100000 mm",
+            limit: RANGE_TEXT,
         });
     }
     if outlines.is_empty() {
@@ -610,7 +619,7 @@ pub fn nest(
     {
         return Err(FlatError::Setting {
             name: "part",
-            limit: "a ring of at least 3 points, each within 100000 mm of the origin",
+            limit: PART_TEXT,
         });
     }
 
@@ -722,6 +731,22 @@ pub fn nest(
 mod tests {
     use super::*;
     use std::f64::consts::PI;
+
+    #[test]
+    fn limit_texts_name_the_limit() {
+        let l = format!("{LIMIT}");
+        assert_eq!(RANGE_TEXT, format!("0 to {l} mm"));
+        assert_eq!(
+            SHEET_TEXT,
+            format!("finite and at most {l} mm across and down")
+        );
+        assert_eq!(
+            PART_TEXT,
+            format!("a ring of at least 3 points, each within {l} mm of the origin")
+        );
+        // layout's largest gap or margin plus the largest router bit (50 mm) stays inside
+        assert!(super::super::finish::SETTING_LIMIT + 50.0 < LIMIT);
+    }
 
     fn rect(w: f64, h: f64, x: f64, y: f64) -> Ring {
         vec![[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
