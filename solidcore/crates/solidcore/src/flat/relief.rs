@@ -86,7 +86,8 @@ fn corner(prev: P2, at: P2, next: P2, o: &Options) -> Result<Option<Relief>> {
     if turn > 0.0 {
         return Ok(None);
     }
-    Ok(match dogbone::wedge_relief(a, b, la, lb, o)? {
+    // The axis is the sheet's normal: a T-bone's side follows the turn about it.
+    Ok(match dogbone::wedge_relief(a, b, Vec3::Z, la, lb, o)? {
         Ok(w) => Some(Relief {
             centre: [at[0] + w.centre.x, at[1] + w.centre.y],
             radius: o.radius,
@@ -94,8 +95,11 @@ fn corner(prev: P2, at: P2, next: P2, o: &Options) -> Result<Option<Relief>> {
         // No relief: the corner is more open than `max_angle` (the documented rule); a minimal
         // circle reaches neither wall and so cuts no material, the part the same without it
         // (the normal style's circle passes through the corner and always bites); an outside
-        // corner, which the turn test above has already returned.
-        Err(Skip::TooOpen | Skip::Unreached | Skip::Convex) => None,
+        // corner, which the turn test above has already returned; and a solid edge's end
+        // skips, which a corner of a ring, having no ends, never gets.
+        Err(Skip::TooOpen | Skip::Unreached | Skip::Convex | Skip::Overhang | Skip::TooLong) => {
+            None
+        }
     })
 }
 
