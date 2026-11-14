@@ -126,8 +126,9 @@ pub struct FabSettingsParams {
     /// 10000; with `machine` cnc the parts end up `tool_diameter` further apart. Default: 3.
     #[serde(default)]
     pub gap: Option<f64>,
-    /// The least distance from a sheet's edge (mm), 0 to 10000 and less than half the sheet's
-    /// width and height. Default: 5.
+    /// The least distance from a sheet's edge to the machine's path (mm), 0 to 10000 and less
+    /// than half the sheet's width and height; with `machine` cnc the parts sit half the
+    /// `tool_diameter` further in, and that half counts toward the limit too. Default: 5.
     #[serde(default)]
     pub margin: Option<f64>,
     /// Engrave each part's name on it where the name fits (stepped down to 2 mm high if it
