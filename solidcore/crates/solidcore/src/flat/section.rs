@@ -857,6 +857,26 @@ mod tests {
         assert!(sum <= 1.0, "{shares:?} add up to {sum}");
     }
 
+    #[test]
+    fn simplifying_drops_a_bump_within_its_share_of_the_chord_and_keeps_a_larger_one() {
+        // a 10 mm square whose bottom side is sampled every 1 mm, with a bump at x = 5: at a
+        // 1 mm chord the simplify share lies between 0.02 and 0.2 mm, so the small bump goes
+        // and the large one stays
+        let square = |bump: f64| -> Ring {
+            let mut r: Ring = (0..=10)
+                .map(|i| [f64::from(i), if i == 5 { bump } else { 0.0 }])
+                .collect();
+            r.extend([[10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]);
+            r
+        };
+        for (bump, kept) in [(0.02, false), (0.2, true)] {
+            let rings = outlines(vec![(square(bump), None)], Axis::Z, 0.0, 1.0).unwrap();
+            assert_eq!(rings.len(), 1, "{rings:?}");
+            let r = rings.first().unwrap();
+            assert_eq!(r.contains(&[5.0, bump]), kept, "bump {bump}: {r:?}");
+        }
+    }
+
     /// The farthest the points of `ring` and the middles of its sides are from the circle of
     /// radius `r` about `c`.
     fn off_circle(ring: &Ring, c: P2, r: f64) -> f64 {
