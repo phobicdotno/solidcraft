@@ -1307,6 +1307,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_plate_in_two_pieces_keeps_each_mark_on_its_piece() {
+        // two pads, the left the larger: the plate falls apart into Pa (left) and Pb (right);
+        // a mark between them lies on neither and goes
+        let mut reg = region::rect(0.0, 0.0, 40.0, 20.0);
+        reg.extend(region::rect(60.0, 0.0, 90.0, 20.0));
+        let mark = |text: &str, x: f64| Mark {
+            text: text.to_string(),
+            at: [x, 10.0],
+            height: 4.0,
+        };
+        let marks = [mark("S1", 10.0), mark("S2", 70.0), mark("S3", 50.0)];
+        let mut out = Out {
+            parts: Vec::new(),
+            warnings: Vec::new(),
+        };
+        let s = settings(Style::Base);
+        let frame = Axis::Z.frame(0.0);
+        add_pieces(&mut out, "P", PartKind::Plate, &reg, frame, &s, &[], &marks).unwrap();
+        let got: Vec<(&str, Vec<&str>)> = out
+            .parts
+            .iter()
+            .map(|p| {
+                (
+                    p.name.as_str(),
+                    p.marks.iter().map(|m| m.text.as_str()).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(got, [("Pa", vec!["S1"]), ("Pb", vec!["S2"])]);
+        assert!(out.parts.iter().all(|p| p.kind == PartKind::Plate));
+        assert!(matches!(
+            out.warnings.as_slice(),
+            [Warning::FallsApart { part, pieces: 2 }] if part == "P"
+        ));
+    }
+
+    #[test]
     fn limit_texts_name_their_constants() {
         assert_eq!(COUNT_LIMIT, format!("0 to {MAX_SLICES}"));
         assert_eq!(DOWELS_LIMIT, format!("0 to {MAX_DOWELS}"));
