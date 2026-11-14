@@ -389,7 +389,8 @@ Packing flat parts onto sheets of a given size, a gap apart and a margin from ea
 so that as few sheets as possible are used.
 
 - **In SolidCraft:** the `sheets` of `fab.slice`; `fab.export_sheets` writes one file per sheet;
-  Slice for Laser / CNC's Sheets view.
+  Slice for Laser / CNC's Sheets view. The `gap` and `margin` are measured to the machine's path,
+  which for a CNC router runs half the bit's diameter outside the part.
 - **Don't use:** layout, arrangement (for the packing).
 - **Elsewhere:** nesting, packing.
 - **For translators:** not nested components and not a nested sketch.

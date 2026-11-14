@@ -152,6 +152,9 @@ other. Build a waffle by standing the X slices up first, then lowering the Y sli
 from above; a crossing through two layers of material (a shelf, an arch) cuts one of the two
 slices through, and the warning names the slices that fall apart. The window shows the parts assembled in the viewport as you change the settings; **Sheets**
 shows them packed onto sheets of the size you give, cuts in one colour and engraving in another.
+The gap between parts and the margin from the sheet's edge are measured to the machine's path,
+so a router's parts sit half the bit's diameter further from the edge and a whole bit further
+from each other.
 The parts allow for a laser's kerf, or get reliefs in their inside corners for a CNC router's
 bit. **Export sheets…** writes each sheet as DXF (layers CUT and ENGRAVE) and SVG
 (`fab.export_sheets`), with the cut and engrave paths only and no sheet outline. Neither
