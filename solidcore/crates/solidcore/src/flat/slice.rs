@@ -1228,6 +1228,32 @@ fn spans(r: &[Shape], u: f64) -> Vec<(f64, f64)> {
     out
 }
 
+/// The stretches of `v` where the region has material anywhere across the column `u ± half`
+/// (where the other slice's sheet lies), not only on its centre line: each piece of the region
+/// inside the column gives the stretch it spans, stretches less than a micrometre apart merged.
+fn column(r: &[Shape], u: f64, half: f64) -> Vec<(f64, f64)> {
+    let Some([_, v0, _, v1]) = region::bounds(r) else {
+        return Vec::new();
+    };
+    let inside = region::intersection(r, &region::rect(u - half, v0 - 1.0, u + half, v1 + 1.0));
+    let mut all = spans(r, u);
+    all.extend(
+        inside
+            .iter()
+            .filter_map(|p| region::ring_bounds(std::iter::once(&p.outer)))
+            .map(|b| (b[1], b[3])),
+    );
+    all.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut out: Vec<(f64, f64)> = Vec::new();
+    for (a, b) in all {
+        match out.last_mut() {
+            Some(last) if a <= last.1 + SPAN_MERGE => last.1 = last.1.max(b),
+            _ => out.push((a, b)),
+        }
+    }
+    out
+}
+
 /// Two sets of upright slices, across X and across Y, slotted where they cross at one height per
 /// crossing line, the middle of the longest stretch of material both have there: the X slice
 /// keeps what lies below it and the Y slice what lies above, each slot running out of the part,
@@ -1252,9 +1278,10 @@ fn waffle(
     let mut cut_y: Vec<Region> = vec![Vec::new(); ys.len()];
     for (xc, cx) in xs.iter().zip(cut_x.iter_mut()) {
         for (yc, cy) in ys.iter().zip(cut_y.iter_mut()) {
-            // the X slice is (y, z), the Y slice (x, z): each along the line where they cross
-            let a = spans(&xc.region, yc.at);
-            let bb = spans(&yc.region, xc.at);
+            // the X slice is (y, z), the Y slice (x, z): each across the column the other's
+            // sheet fills, so a crossing whose centre line misses the material still gets its slot
+            let a = column(&xc.region, yc.at, t / 2.0);
+            let bb = column(&yc.region, xc.at, t / 2.0);
             // the longest stretch both slices have material on, the lowest of equal ones
             let mut shared: Option<(f64, f64)> = None;
             for &(p, q) in &a {
@@ -1981,6 +2008,75 @@ mod tests {
                 assert!(top < bottom, "{} {}: {top} {bottom}", x.name, y.name);
             }
         }
+    }
+
+    #[test]
+    fn waffle_slots_a_crossing_whose_line_runs_down_a_bore() {
+        // a 2 mm square bore down the one crossing line: the centre lines miss the material,
+        // the 3 mm sheets round them do not
+        let mut model = Boxes(vec![
+            ([0.0; 3], [100.0, 49.0, 20.0]),
+            ([0.0, 51.0, 0.0], [100.0, 100.0, 20.0]),
+            ([0.0, 49.0, 0.0], [49.0, 51.0, 20.0]),
+            ([51.0, 49.0, 0.0], [100.0, 51.0, 20.0]),
+        ]);
+        let s = FabSettings {
+            thickness: 3.0,
+            count: 1,
+            clearance: 0.2,
+            ..settings(Style::Waffle)
+        };
+        let res = make(&mut model, &s).unwrap();
+        assert!(
+            !res.warnings
+                .iter()
+                .any(|w| matches!(w, Warning::NeverCross)),
+            "{:?}",
+            res.warnings
+        );
+        assert_eq!(
+            columns_clear(&res, 3.0),
+            4,
+            "the four corners round the bore"
+        );
+    }
+
+    #[test]
+    fn waffle_slots_a_sphere_crossing_its_line_misses() {
+        // 25 slices each way across a sphere R 50: the crossing at (36, 36) lies outside the
+        // sphere on its line (36² + 36² > 50²), but the 3 mm sheets there hold material of both
+        let s = FabSettings {
+            thickness: 3.0,
+            count: 25,
+            clearance: 0.2,
+            ..settings(Style::Waffle)
+        };
+        let res = make(&mut test_sphere(), &s).unwrap();
+        assert!(columns_clear(&res, 3.0) > 0);
+    }
+
+    /// No X part and Y part share material where they cross: in the column the other's sheet
+    /// fills, the X part's material ends below where the Y part's begins. Returns how many pairs
+    /// of parts meet in a column.
+    fn columns_clear(res: &FabResult, t: f64) -> usize {
+        let in_column = |p: &FabPart, u: f64| {
+            let col = region::rect(u - t / 2.0, -1e3, u + t / 2.0, 1e3);
+            region::bounds(&region::intersection(std::slice::from_ref(&p.shape), &col))
+        };
+        let mut met = 0;
+        for x in res.parts.iter().filter(|p| p.name.starts_with('X')) {
+            for y in res.parts.iter().filter(|p| p.name.starts_with('Y')) {
+                let (Some(bx), Some(by)) = (
+                    in_column(x, y.frame.origin[1]),
+                    in_column(y, x.frame.origin[0]),
+                ) else {
+                    continue;
+                };
+                met += 1;
+                assert!(bx[3] < by[1], "{} {}: {} {}", x.name, y.name, bx[3], by[1]);
+            }
+        }
+        met
     }
 
     #[test]
