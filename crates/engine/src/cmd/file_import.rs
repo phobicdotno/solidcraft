@@ -62,6 +62,28 @@ pub(crate) enum Tree<'a> {
     Mesh(&'a solidcraft_io::MeshPlan),
 }
 
+/// Add a STEP file's solids to an existing component: the exact part of an import whose other
+/// bodies are meshes (a KiCad board's substrate next to its copper).
+pub(crate) fn add_step_in_component(s: &mut Session, component: u64, file: &str, step: String, feature_name: &str) -> Result<u64> {
+    let imp = solidcraft_kernel::step_import_shared(&step).map_err(|e| EngineError::Other(format!("import: {e}")))?;
+    let kind = FeatureKind::Import { file: file.to_string(), step: step.into(), components: imp.tree.clone(), skip: Vec::new() };
+    let id = s.doc_mut().add_feature(kind, Some(feature_name))?;
+    if let Some(f) = s.doc_mut().feature_mut(id) {
+        f.component = component;
+    }
+    s.refresh();
+    if let Some(e) = s.model.result(id).and_then(|r| r.error.clone()) {
+        return Err(EngineError::Other(e));
+    }
+    let names: Vec<String> = s.model.state().bodies.iter().filter(|b| b.feature == id).map(|b| b.name.clone()).collect();
+    let d = s.doc_mut();
+    for name in names {
+        d.body_components.insert(name, component);
+    }
+    s.refresh();
+    Ok(id)
+}
+
 /// Can the components of `plan` be made as it says? (Otherwise its bodies are built in place.)
 pub(crate) fn mesh_plan_fits(plan: &solidcraft_io::MeshPlan) -> bool {
     Plan::of_mesh(plan).is_some()
@@ -328,6 +350,7 @@ pub(crate) fn add_in_component(
     mut kind: FeatureKind,
     feature_name: &str,
     body_names: Vec<String>,
+    hidden: &[bool],
     name: &str,
     tree: Tree<'_>,
 ) -> Result<(u64, Placed)> {
@@ -379,6 +402,10 @@ pub(crate) fn add_in_component(
         (FeatureKind::MeshImport { .. }, _) => body_names.iter().cloned().map(Some).collect(),
         _ => Vec::new(),
     };
+    let names_to_hide = |names: &[Option<String>]| -> Vec<String> {
+        names.iter().enumerate().filter(|(k, _)| hidden.get(*k).copied().unwrap_or(false)).filter_map(|(_, name)| name.clone()).collect()
+    };
+    let mut hidden_names = names_to_hide(&names);
     let id = s.doc_mut().add_feature(kind, Some(feature_name))?;
     if let Some(f) = s.doc_mut().feature_mut(id) {
         f.component = top;
@@ -407,7 +434,19 @@ pub(crate) fn add_in_component(
             }
             put_bodies(s, &actual, &moves);
             s.refresh();
+            hidden_names = names_to_hide(&actual);
         }
+    }
+    // The file's invisible bodies start hidden; they are still in the model, so Show brings
+    // them back like any other body.
+    hidden_names.retain(|name| s.model.state().bodies.iter().any(|b| &b.name == name));
+    if !hidden_names.is_empty() {
+        for name in hidden_names {
+            if !s.visibility.hidden_bodies.contains(&name) {
+                s.visibility.hidden_bodies.push(name);
+            }
+        }
+        s.refresh_display();
     }
     let name = s.doc.components.iter().find(|c| c.id == top).map(|c| c.name.clone()).unwrap_or_default();
     Ok((id, Placed { component: top, occurrence: top_occ, name, components: comps.len(), joints: joint_ids }))
