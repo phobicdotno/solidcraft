@@ -744,8 +744,12 @@ mod tests {
             PART_TEXT,
             format!("a ring of at least 3 points, each within {l} mm of the origin")
         );
-        // layout's largest gap or margin plus the largest router bit (50 mm) stays inside
-        assert!(super::super::finish::SETTING_LIMIT + 50.0 < LIMIT);
+        // layout's largest gap and margin plus the largest router bit (50 mm) pass
+        let most = super::super::finish::SETTING_LIMIT;
+        assert!(matches!(
+            nest(&[], LIMIT, LIMIT, most + 50.0, most + 25.0, true),
+            Ok(p) if p.is_empty()
+        ));
     }
 
     fn rect(w: f64, h: f64, x: f64, y: f64) -> Ring {

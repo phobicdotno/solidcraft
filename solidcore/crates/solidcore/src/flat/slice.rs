@@ -1255,7 +1255,8 @@ fn column(r: &[Shape], u: f64, half: f64) -> Vec<(f64, f64)> {
 }
 
 /// Two sets of upright slices, across X and across Y, slotted where they cross at one height per
-/// crossing line, the middle of the longest stretch of material both have there: the X slice
+/// crossing line, the middle of the longest stretch of material both have there (anywhere across
+/// the column the other's sheet fills, not only on the line itself): the X slice
 /// keeps what lies below it and the Y slice what lies above, each slot running out of the part,
 /// so the X slices stand first and the Y slices drop on from above. Where the line runs through
 /// more material, the X slice is cut through above and the Y slice below; the pieces this frees
