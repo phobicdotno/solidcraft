@@ -436,3 +436,19 @@ fn a_sphere_shows_its_parts_assembled_then_its_sheets() {
     assert!(!h.app.preview.active, "the sheets view draws no parts in 3D");
     assert!(!h.app.fab.fills.is_empty() && h.app.flat_view.fitted, "the sheets are framed");
 }
+
+#[test]
+fn a_preview_short_of_the_parts_says_how_many_it_shows() {
+    let mut h = Harness::new();
+    h.app.run("solid.sphere", json!({"radius": 40})).unwrap();
+    open(&mut h);
+    wait_ready(&mut h);
+    let total = h.app.fab.copies;
+    assert!(total > 5 && h.app.fab.plates.len() == total, "every part is drawn: {} of {total}", h.app.fab.plates.len());
+    assert!(crate::scenario::rects("dialog:status:The view shows").is_empty(), "no partial line while every part is drawn");
+    // past MAX_TRIANGLES the plates stop short of the copies: the window says so
+    h.app.fab.plates.truncate(total - 2);
+    h.frames(2);
+    let line = format!("dialog:status:The view shows {} of {total} parts", total - 2);
+    assert!(crate::scenario::rect_of(&line).is_some(), "{:?}", crate::scenario::rects("dialog:status:"));
+}
