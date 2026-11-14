@@ -889,14 +889,16 @@ mod tests {
 
     #[test]
     fn a_finished_outline_stays_within_the_chord_of_the_exact_circle() {
-        // traced, sampled, chained and simplified: a cylinder across its axis and a sphere
+        // traced, sampled, chained and simplified: two cylinders across their axes and a sphere
         // across two axes, at a fine chord and a coarse one
         let mut k = Kernel::default();
         for chord in [CHORD, 0.5] {
             let mut cylinder = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
+            let mut wide = create_cylinder(&mut k, Point3::ZERO, 23.0, 30.0).unwrap();
             let mut sphere = create_sphere(&mut k, Point3::new(0.0, 0.0, 50.0), 50.0).unwrap();
             for (b, cuts) in [
                 (&mut cylinder, vec![(Axis::Z, 15.0, [0.0, 0.0], 10.0)]),
+                (&mut wide, vec![(Axis::Z, 15.0, [0.0, 0.0], 23.0)]),
                 (
                     &mut sphere,
                     vec![
@@ -912,11 +914,18 @@ mod tests {
                         r.len() == 1 && r[0].holes.is_empty(),
                         "{axis:?} = {at}: {r:?}"
                     );
-                    // the kernel traces a circle exactly: only sampling and simplifying
-                    // add their shares
+                    // the kernel traces a circle exactly: only sampling (0.85 of the chord)
+                    // and simplifying (0.05) add their error, which leaves a tenth of the
+                    // chord for tracing. The sampler halves its step until a span fits its
+                    // share, so the spans' error comes in steps of about 4. At chord 0.5 the
+                    // 10 mm circle's spans, a sixteenth of it each, are 0.42 of the chord off
+                    // it (measured); the 23 mm circle's would be 0.96 off, which only the
+                    // whole chord for sampling lets pass
                     let off = off_circle(&r[0].outer, centre, radius);
-                    let share = (SAMPLE_SHARE + SIMPLIFY_SHARE) * chord;
-                    assert!(off <= share, "{axis:?} = {at}, chord {chord}: {off} off");
+                    assert!(
+                        off <= 0.9 * chord,
+                        "{axis:?} = {at}, radius {radius}, chord {chord}: {off} off"
+                    );
                 }
             }
         }
@@ -993,6 +1002,32 @@ mod tests {
             assert!(
                 missed <= chord,
                 "chord {chord}: the curve is {missed} off the outline"
+            );
+        }
+    }
+
+    #[test]
+    fn the_kernel_traces_a_torus_section_within_its_share_of_the_chord() {
+        // the spiric curve of the plane Y = 30 through the torus, as the kernel traces it,
+        // sampled far finer than the chord: every sample lies within the trace share (a tenth)
+        // of the chord of the exact curve. Measured: 0.030 and 0.033 of the chord at chords
+        // 0.5 and 0.1; with half the chord for tracing, 0.092 and 0.15
+        let mut k = Kernel::default();
+        for chord in [0.5, 0.1] {
+            let mut b = create_torus(&mut k, Point3::new(0.0, 0.0, 20.0), 40.0, 15.0).unwrap();
+            let (curves, _) = section_curves(&k, &mut b, Axis::Y, 30.0, chord, [0.0; 3]).unwrap();
+            assert!(!curves.is_empty());
+            let mut worst: f64 = 0.0;
+            for c in &curves {
+                let fine = sample_curve(&k, c, 1e-5).unwrap();
+                for q in &fine.points {
+                    let (x, z) = onto_spiric(q.x, q.z);
+                    worst = worst.max((q.x - x).hypot(q.z - z));
+                }
+            }
+            assert!(
+                worst <= 0.1 * chord,
+                "chord {chord}: traced {worst} off the curve"
             );
         }
     }
