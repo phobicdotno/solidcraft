@@ -136,6 +136,9 @@ pub struct FabSettings {
 /// The most slices one set may have.
 pub const MAX_SLICES: usize = 500;
 
+/// The count setting's limit, [`MAX_SLICES`] in words.
+const COUNT_LIMIT: &str = "0 to 500";
+
 /// Where a flat part sits in the model: its 2D `(x, y)` is `origin + x u + y v`, and the sheet's
 /// thickness is centred on that plane along `n`.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -277,6 +280,9 @@ pub trait Sectioner {
 /// The most dowel holes a stack may have.
 pub const MAX_DOWELS: u32 = 64;
 
+/// The dowels setting's limit, [`MAX_DOWELS`] in words.
+const DOWELS_LIMIT: &str = "0 to 64";
+
 /// The most spacer rings a rod may carry.
 pub const MAX_SPACERS: u64 = 100_000;
 
@@ -351,7 +357,7 @@ pub fn validate(s: &FabSettings) -> FlatResult<()> {
             "spacing",
             "0 (automatic) to 10000 mm",
         ),
-        (s.count as usize <= MAX_SLICES, "count", "0 to 500"),
+        (s.count as usize <= MAX_SLICES, "count", COUNT_LIMIT),
         (
             within(s.clearance, 0.0, s.thickness),
             "clearance",
@@ -368,7 +374,7 @@ pub fn validate(s: &FabSettings) -> FlatResult<()> {
             "rod_at",
             "within 1000000 mm of the origin on every axis",
         ),
-        (s.dowels <= MAX_DOWELS, "dowels", "0 to 64"),
+        (s.dowels <= MAX_DOWELS, "dowels", DOWELS_LIMIT),
         (
             positive(s.dowel_diameter, MAX_LENGTH),
             "dowel_diameter",
@@ -1299,6 +1305,12 @@ fn waffle(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn limit_texts_name_their_constants() {
+        assert_eq!(COUNT_LIMIT, format!("0 to {MAX_SLICES}"));
+        assert_eq!(DOWELS_LIMIT, format!("0 to {MAX_DOWELS}"));
+    }
     use crate::flat::section::BrepSection;
     use crate::geom::vector3d::Point3;
     use crate::kernel::Kernel;
