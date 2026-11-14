@@ -32,7 +32,7 @@ macro_rules! settings_doc {
     clearance? (play in slots and holes, default 0.2); rod_diameter? (default 8); dowels? (stacked, default 2, 0 none); dowel_diameter? (default 6); \
     wall? (material round holes, spacer ring width, default 4); plate_margin? (base/back, default 10); guide_outline? (stacked: engrave where the next layer goes, default true); \
     machine?: laser|cnc (default laser); kerf? (laser, default 0.15); tool_diameter? (cnc bit, default 3.175); \
-    sheet_width?, sheet_height? (default 600 x 400); gap? (between parts, default 3); margin? (from the sheet edge, default 5); labels? (engrave part names, default true); label_height? (default 5)"
+    sheet_width?, sheet_height? (default 600 x 400); gap? (between the cut paths, default 3); margin? (from the sheet edge to the cut path, default 5); labels? (engrave part names, default true); label_height? (default 5)"
     };
 }
 
