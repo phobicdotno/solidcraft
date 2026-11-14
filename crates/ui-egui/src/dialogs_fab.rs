@@ -798,7 +798,7 @@ fn poll(app: &mut SolveApp) {
 fn exported(app: &SolveApp, v: &Value) -> String {
     let files: Vec<&str> = v["files"].as_array().into_iter().flatten().filter_map(|f| f["path"].as_str()).collect();
     let folder = files.first().and_then(|f| std::path::Path::new(f).parent()).map(|p| p.display().to_string()).unwrap_or_default();
-    let key = if files.len() == 1 { "fab.exported_one" } else { "fab.exported" };
+    let key = if files.len() == 1 { "fab.exported_one" } else { "fab.exported_many" };
     solidcraft_ui_text::Locale::for_language(&app.preferences.language).format(key, &[("count", &files.len().to_string()), ("folder", &folder)])
 }
 
