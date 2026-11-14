@@ -459,6 +459,14 @@ const GAP_TEXT: &str = "0 to 10000 mm";
 /// The limit text of the margin: 0 to [`SETTING_LIMIT`], and room left inside it.
 const MARGIN_TEXT: &str = "0 to 10000 mm and less than half the sheet's width and height \
      (with a router, half the bit's diameter more)";
+/// The largest laser kerf (mm) [`check`] takes.
+const KERF_LIMIT: f64 = 5.0;
+/// The limit text of the kerf: 0 to [`KERF_LIMIT`].
+const KERF_TEXT: &str = "0 to 5 mm";
+/// The largest router bit diameter (mm) [`check`] takes.
+const BIT_LIMIT: f64 = 50.0;
+/// The limit text of the bit diameter: 0 to [`BIT_LIMIT`].
+const BIT_TEXT: &str = "0 to 50 mm";
 
 /// A setting is finite and within `lo..=hi`.
 fn within(v: f64, lo: f64, hi: f64) -> bool {
@@ -479,7 +487,7 @@ fn check(ss: &SheetSettings) -> FlatResult<()> {
     }
     // the parts sit this far from the sheet's edge (a bit out of range is refused below)
     let edge = match ss.machine {
-        Machine::Router { tool_diameter } if within(tool_diameter, 0.0, 50.0) => {
+        Machine::Router { tool_diameter } if within(tool_diameter, 0.0, BIT_LIMIT) => {
             ss.margin + tool_diameter / 2.0
         }
         _ => ss.margin,
@@ -491,9 +499,11 @@ fn check(ss: &SheetSettings) -> FlatResult<()> {
         return fail("margin", MARGIN_TEXT);
     }
     match ss.machine {
-        Machine::Laser { kerf } if !within(kerf, 0.0, 5.0) => return fail("kerf", "0 to 5 mm"),
-        Machine::Router { tool_diameter } if !within(tool_diameter, 0.0, 50.0) => {
-            return fail("tool_diameter", "0 to 50 mm")
+        Machine::Laser { kerf } if !within(kerf, 0.0, KERF_LIMIT) => {
+            return fail("kerf", KERF_TEXT)
+        }
+        Machine::Router { tool_diameter } if !within(tool_diameter, 0.0, BIT_LIMIT) => {
+            return fail("tool_diameter", BIT_TEXT)
         }
         _ => {}
     }
@@ -1413,6 +1423,31 @@ mod tests {
         assert!(matches!(
             check(&past),
             Err(FlatError::Setting { name: "gap", limit }) if limit == GAP_TEXT
+        ));
+    }
+
+    #[test]
+    fn machine_texts_name_their_limit() {
+        assert_eq!(KERF_TEXT, format!("0 to {KERF_LIMIT} mm"));
+        assert_eq!(BIT_TEXT, format!("0 to {BIT_LIMIT} mm"));
+        // each limit itself is taken, just past it is refused with its text
+        let with_kerf = |kerf| SheetSettings {
+            machine: Machine::Laser { kerf },
+            ..sheet_settings()
+        };
+        assert!(check(&with_kerf(KERF_LIMIT)).is_ok());
+        assert!(matches!(
+            check(&with_kerf(KERF_LIMIT * (1.0 + 1e-9))),
+            Err(FlatError::Setting { name: "kerf", limit }) if limit == KERF_TEXT
+        ));
+        let with_bit = |tool_diameter| SheetSettings {
+            machine: Machine::Router { tool_diameter },
+            ..sheet_settings()
+        };
+        assert!(check(&with_bit(BIT_LIMIT)).is_ok());
+        assert!(matches!(
+            check(&with_bit(BIT_LIMIT * (1.0 + 1e-9))),
+            Err(FlatError::Setting { name: "tool_diameter", limit }) if limit == BIT_TEXT
         ));
     }
 
