@@ -846,6 +846,7 @@ pub(crate) fn built(app: &SolveApp) -> crate::preview::Built {
         applied: None,
         tapered: Vec::new(),
         stopped: None,
+        mirror_meets: None,
         placed: None,
     }
 }
