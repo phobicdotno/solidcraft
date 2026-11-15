@@ -672,6 +672,8 @@ share a catalogue entry. Each meaning below gets its own term and, in time, its 
 | Gap | the space a hem leaves | hem gap | the Hem dialog's Gap row |
 | | an open end in the sketch continuity legend | open end | the sketch continuity legend |
 | | the least distance between the machine's paths round two flat parts on a sheet | part gap | Slice for Laser / CNC's Gap between parts row, `gap` of `fab.slice` |
+| Margin | the least distance from a sheet's edge to the machine's path | sheet margin | `margin` of `fab.slice` |
+| | how far a base or back plate reaches past the slices | plate margin | Slice for Laser / CNC's Plate margin row, `plate_margin` of `fab.slice` |
 | Clearance | the Clearance command | clearance check | `inspect.clearance` |
 | | a minimum distance field | clearance | the Interference and plastic rules dialogs |
 | | a hole sized for a bolt to pass through | clearance (hole) | the Hole dialog's Hole Tap Type, `ui.hole_clearance` |
