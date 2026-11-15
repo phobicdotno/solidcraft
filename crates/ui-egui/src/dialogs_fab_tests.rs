@@ -285,6 +285,26 @@ fn a_part_too_big_for_the_sheet_is_worded_by_the_window() {
     h.app.preferences.language = "de".into();
     let de = sheets_error(&h.app, &v).unwrap();
     assert!(de.contains("L1") && de != want, "{de}");
+    // a router's part keeps half the bit more from each edge, and the message says so
+    h.app.preferences.language = "en".into();
+    v["does_not_fit"]["tool_diameter_mm"] = json!(6.0);
+    let mm = |v: f64| crate::prefs::show_mm(&h.app, v, 1);
+    let want = format!(
+        "L1 ({} x {}) does not fit on a {} x {} sheet with a {} margin plus half the {} bit at each edge: use a bigger sheet",
+        mm(100.15),
+        mm(60.15),
+        mm(80.0),
+        mm(80.0),
+        mm(5.0),
+        mm(6.0)
+    );
+    assert_eq!(sheets_error(&h.app, &v).as_deref(), Some(want.as_str()));
+    let bit = mm(6.0);
+    for language in ["ar", "de", "he", "ja", "ko", "vi", "zh"] {
+        h.app.preferences.language = language.into();
+        let text = sheets_error(&h.app, &v).unwrap();
+        assert!(text.contains("L1") && text.contains(&bit) && text != want, "{language}: {text}");
+    }
     // any other reason is the command's own words
     v["does_not_fit"] = Value::Null;
     v["sheets_error"] = json!("fab.slice: too much to cut: parts");

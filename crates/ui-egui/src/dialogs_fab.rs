@@ -385,7 +385,8 @@ fn report(app: &SolveApp, ui: &mut egui::Ui) {
 }
 
 /// Why the parts could not be packed: a part too big for the sheet in the window's language, from
-/// the reply's `does_not_fit`; any other reason in the command's English words.
+/// the reply's `does_not_fit` (for a router, the margin plus half the bit it keeps from each
+/// edge); any other reason in the command's English words.
 pub(crate) fn sheets_error(app: &SolveApp, v: &Value) -> Option<String> {
     let f = &v["does_not_fit"];
     if !f.is_object() {
@@ -394,17 +395,25 @@ pub(crate) fn sheets_error(app: &SolveApp, v: &Value) -> Option<String> {
     let locale = solidcraft_ui_text::Locale::for_language(&app.preferences.language);
     let length = |key: &str| f[key].as_f64().map_or_else(|| f[key].to_string(), |mm| crate::prefs::show_mm(app, mm, 1));
     let part = f["part"].as_str().unwrap_or_default();
-    Some(locale.format(
-        "fab.does_not_fit",
-        &[
-            ("part", part),
-            ("width", &length("width_mm")),
-            ("height", &length("height_mm")),
-            ("sheet_width", &length("sheet_width_mm")),
-            ("sheet_height", &length("sheet_height_mm")),
-            ("margin", &length("margin_mm")),
-        ],
-    ))
+    let (width, height, sheet_width, sheet_height, margin) =
+        (length("width_mm"), length("height_mm"), length("sheet_width_mm"), length("sheet_height_mm"), length("margin_mm"));
+    let mut args = vec![
+        ("part", part),
+        ("width", width.as_str()),
+        ("height", height.as_str()),
+        ("sheet_width", sheet_width.as_str()),
+        ("sheet_height", sheet_height.as_str()),
+        ("margin", margin.as_str()),
+    ];
+    let bit = f["tool_diameter_mm"].as_f64().map(|mm| crate::prefs::show_mm(app, mm, 1));
+    let key = match &bit {
+        Some(bit) => {
+            args.push(("bit", bit.as_str()));
+            "fab.does_not_fit_router"
+        }
+        None => "fab.does_not_fit",
+    };
+    Some(locale.format(key, &args))
 }
 
 /// "N parts (a slices, 1 plate, b spacer rings) on M sheets", in the window's language.
