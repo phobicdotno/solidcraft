@@ -1215,19 +1215,6 @@ fn plate_part(
 
 // ---- waffle ---------------------------------------------------------------------------------
 
-/// The stretches of `v` where the region has material along the line at `u`, stretches less
-/// than a micrometre apart merged.
-fn spans(r: &[Shape], u: f64) -> Vec<(f64, f64)> {
-    let mut out: Vec<(f64, f64)> = Vec::new();
-    for (a, b) in region::spans_at_x(r, u) {
-        match out.last_mut() {
-            Some(last) if a <= last.1 + SPAN_MERGE => last.1 = last.1.max(b),
-            _ => out.push((a, b)),
-        }
-    }
-    out
-}
-
 /// The stretches of `v` where the region has material anywhere across the column `u ± half`
 /// (where the other slice's sheet lies), not only on its centre line: each piece of the region
 /// inside the column gives the stretch it spans, stretches less than a micrometre apart merged.
@@ -1235,14 +1222,12 @@ fn column(r: &[Shape], u: f64, half: f64) -> Vec<(f64, f64)> {
     let Some([_, v0, _, v1]) = region::bounds(r) else {
         return Vec::new();
     };
-    let inside = region::intersection(r, &region::rect(u - half, v0 - 1.0, u + half, v1 + 1.0));
-    let mut all = spans(r, u);
-    all.extend(
-        inside
-            .iter()
-            .filter_map(|p| region::ring_bounds(std::iter::once(&p.outer)))
-            .map(|b| (b[1], b[3])),
-    );
+    let inside = region::intersection(r, &region::rect(u - half, v0, u + half, v1));
+    let mut all: Vec<(f64, f64)> = inside
+        .iter()
+        .filter_map(|p| region::ring_bounds(std::iter::once(&p.outer)))
+        .map(|b| (b[1], b[3]))
+        .collect();
     all.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut out: Vec<(f64, f64)> = Vec::new();
     for (a, b) in all {

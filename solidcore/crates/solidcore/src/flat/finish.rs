@@ -464,7 +464,7 @@ const KERF_LIMIT: f64 = 5.0;
 /// The limit text of the kerf: 0 to [`KERF_LIMIT`].
 const KERF_TEXT: &str = "0 to 5 mm";
 /// The largest router bit diameter (mm) [`check`] takes.
-const BIT_LIMIT: f64 = 50.0;
+pub(crate) const BIT_LIMIT: f64 = 50.0;
 /// The limit text of the bit diameter: 0 to [`BIT_LIMIT`].
 const BIT_TEXT: &str = "0 to 50 mm";
 
