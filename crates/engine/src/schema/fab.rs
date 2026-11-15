@@ -255,8 +255,12 @@ pub struct FabDoesNotFit {
     pub sheet_width_mm: f64,
     /// The sheet's height (mm).
     pub sheet_height_mm: f64,
-    /// The least distance kept from the sheet's edge (mm).
+    /// The least distance from the sheet's edge to the machine's path (mm).
     pub margin_mm: f64,
+    /// With `machine` cnc, the bit's diameter (mm): its path runs half of it outside the part, so
+    /// the part keeps the margin plus that half from each edge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_diameter_mm: Option<f64>,
 }
 
 /// What `fab.slice` returns.

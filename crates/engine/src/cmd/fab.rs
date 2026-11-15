@@ -152,7 +152,17 @@ fn does_not_fit(e: &FlatError, res: &FabResult, ss: &SheetSettings) -> Option<Fa
         sheet_width_mm: ss.width,
         sheet_height_mm: ss.height,
         margin_mm: ss.margin,
+        tool_diameter_mm: bit(ss),
     })
+}
+
+/// A router's bit diameter: its path runs half of it outside the part, so a part keeps the
+/// margin plus that half from the sheet's edge. None for a laser, whose path is the part's outline.
+fn bit(ss: &SheetSettings) -> Option<f64> {
+    match ss.machine {
+        Machine::Router { tool_diameter } => Some(tool_diameter),
+        Machine::Laser { .. } => None,
+    }
 }
 
 /// A slicing's refusal as the command's error, in the parameters' words.
@@ -163,11 +173,15 @@ fn refusal(cmd: &str, e: &FlatError, res: Option<&FabResult>, ss: &SheetSettings
         FlatError::TooBig(what) => bad(cmd, format!("too much to cut: {what}")),
         FlatError::DoesNotFit { part, width, height } => {
             let name = part_name(res, *part);
+            let edge = match bit(ss) {
+                Some(d) => format!("a {} mm margin plus half the {d} mm bit at each edge", ss.margin),
+                None => format!("a {} mm margin", ss.margin),
+            };
             bad(
                 cmd,
                 format!(
-                    "{name} ({width:.1} x {height:.1} mm) does not fit on a {} x {} mm sheet with a {} mm margin: use a bigger sheet",
-                    ss.width, ss.height, ss.margin
+                    "{name} ({width:.1} x {height:.1} mm) does not fit on a {} x {} mm sheet with {edge}: use a bigger sheet",
+                    ss.width, ss.height
                 ),
             )
         }

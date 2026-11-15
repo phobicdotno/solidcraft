@@ -205,6 +205,16 @@ fn a_part_bigger_than_the_sheet_is_named() {
     assert_eq!(f["part"], "L1", "{f}");
     assert!(close(f["width_mm"].as_f64().unwrap(), 100.15, 1e-4) && close(f["height_mm"].as_f64().unwrap(), 60.15, 1e-4), "{f}");
     assert_eq!((f["sheet_width_mm"].as_f64(), f["sheet_height_mm"].as_f64(), f["margin_mm"].as_f64()), (Some(80.0), Some(80.0), Some(5.0)), "{f}");
+    assert!(f["tool_diameter_mm"].is_null(), "{f}");
+    // a router keeps the margin plus half its bit from each edge: the 100 x 60 layer fits a
+    // 112 mm square sheet by the 5 mm margin alone, not with half a 6 mm bit added
+    let r = run(&mut s, "fab.slice", json!({"thickness": 4, "machine": "cnc", "tool_diameter": 6, "sheet_width": 112, "sheet_height": 112}));
+    let e = r["sheets_error"].as_str().unwrap();
+    assert!(e.contains("L1") && e.ends_with("sheet with a 5 mm margin plus half the 6 mm bit at each edge: use a bigger sheet"), "{e}");
+    let f = &r["does_not_fit"];
+    assert_eq!((f["margin_mm"].as_f64(), f["tool_diameter_mm"].as_f64()), (Some(5.0), Some(6.0)), "{f}");
+    let r = run(&mut s, "fab.slice", json!({"thickness": 4, "machine": "cnc", "tool_diameter": 6, "sheet_width": 118, "sheet_height": 118}));
+    assert!(r["sheets_error"].is_null() && r["does_not_fit"].is_null(), "{r}");
     let r = run(&mut s, "fab.slice", json!({"thickness": 4}));
     assert!(r["sheets_error"].is_null() && r["does_not_fit"].is_null(), "{r}");
     let e = s.execute("fab.export_sheets", &json!({"thickness": 4, "sheet_width": 80, "sheet_height": 80})).unwrap_err().to_string();
