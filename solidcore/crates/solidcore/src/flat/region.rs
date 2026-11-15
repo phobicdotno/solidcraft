@@ -371,12 +371,14 @@ pub fn pieces(r: &[Shape], min_area: f64) -> Region {
 
 /// How close (mm) the end of one stretch and the start of the next must be to touch: a
 /// nanometre, the rounding between two pieces' crossings of the edge they share.
+#[cfg(test)]
 const SPAN_TOUCH: f64 = 1e-9;
 
 /// The stretches `(lo, hi)` of `y`, in order, where the vertical line at `x` runs through the
 /// region's material. Touching stretches merge.
+#[cfg(test)]
 #[must_use]
-pub fn spans_at_x(r: &[Shape], x: f64) -> Vec<(f64, f64)> {
+pub(crate) fn spans_at_x(r: &[Shape], x: f64) -> Vec<(f64, f64)> {
     // the crossings of every edge with the line, with the edge's direction: material is where
     // the running winding is not zero (half-open in x, so a vertex on the line counts once)
     let mut hits: Vec<(f64, i32)> = Vec::new();
