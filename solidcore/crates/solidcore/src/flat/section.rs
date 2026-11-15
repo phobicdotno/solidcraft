@@ -890,7 +890,8 @@ mod tests {
     #[test]
     fn a_finished_outline_stays_within_the_chord_of_the_exact_circle() {
         // traced, sampled, chained and simplified: two cylinders across their axes and a sphere
-        // across two axes, at a fine chord and a coarse one
+        // across two axes, at a fine chord and a coarse one; then a third cylinder that pins
+        // the sampling share
         let mut k = Kernel::default();
         for chord in [CHORD, 0.5] {
             let mut cylinder = create_cylinder(&mut k, Point3::ZERO, 10.0, 30.0).unwrap();
@@ -916,12 +917,12 @@ mod tests {
                     );
                     // the kernel traces a circle exactly: only sampling (0.85 of the chord)
                     // and simplifying (0.05) add their error, which leaves a tenth of the
-                    // chord for tracing. The sampler halves its step until a span fits its
-                    // share, so the spans' error comes in steps of about 4. At chord 0.5 the
-                    // 10 mm circle's spans, a sixteenth of it each, are 0.42 of the chord off
-                    // it; the 24.5 mm circle's, a thirty-second each, are 0.24 off, and with the
-                    // whole chord for sampling they are a sixteenth each and 0.94 off, which
-                    // this bound refuses (0.42 measured, the others from the spans' sagitta)
+                    // chord for tracing. Measured: the 10 mm circle's outline is 0.42 of the
+                    // chord off it at chord 0.5 and 0.34 at chord 0.01, the 24.5 mm circle's
+                    // 0.26 and 0.63. The sampler's spans keep well inside its share: with the
+                    // whole chord for sampling they were at most 0.74 of the chord off, over
+                    // radii 5 to 50 mm at chords 0.01 to 1, so this bound does not notice a
+                    // larger share; the pin below does
                     let off = off_circle(&r[0].outer, centre, radius);
                     assert!(
                         off <= 0.9 * chord,
@@ -930,6 +931,16 @@ mod tests {
                 }
             }
         }
+        // the pin: at chord 0.5 the sampler cuts a 20 mm circle into 32 spans with
+        // SAMPLE_SHARE, 0.21 of the chord off it, and into 24 spans with the whole chord
+        // for sampling, 0.71 off (measured). Half the chord lies between the two
+        let chord = 0.5;
+        let mut pin = create_cylinder(&mut k, Point3::ZERO, 20.0, 30.0).unwrap();
+        let mut s = BrepSection::new(&k, &mut pin, chord).unwrap();
+        let r = s.section(Axis::Z, 15.0).unwrap();
+        assert!(r.len() == 1 && r[0].holes.is_empty(), "{r:?}");
+        let off = off_circle(&r[0].outer, [0.0, 0.0], 20.0);
+        assert!(off <= 0.5 * chord, "radius 20, chord {chord}: {off} off");
     }
 
     /// The plane Y = 30 cuts the torus `(rho - 40)^2 + (z - 20)^2 = 15^2` around Z in one closed
