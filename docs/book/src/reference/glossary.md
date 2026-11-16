@@ -493,7 +493,7 @@ design, which then keeps a copy of its own. It is an app setting, not part of a 
 ### play
 
 How much wider a slot of a flat part is than the sheet that goes into it, in total; a hole for
-a rod or dowel is the same amount wider than the rod.
+a rod or dowel is the same amount wider than the rod or dowel.
 
 Half the play is on each side of the sheet.
 
