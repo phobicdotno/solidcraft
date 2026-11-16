@@ -79,7 +79,7 @@ fn every_style_slices_a_ball() {
 #[test]
 fn a_waffle_box_is_slotted_half_way() {
     let mut s = block();
-    let r = run(&mut s, "fab.slice", json!({"style": "waffle", "thickness": 3, "count": 3, "clearance": 0.2, "sheets": false}));
+    let r = run(&mut s, "fab.slice", json!({"style": "waffle", "thickness": 3, "count": 3, "play": 0.2, "sheets": false}));
     let mut n = names(&r);
     n.sort();
     assert_eq!(n, ["X1", "X2", "X3", "Y1", "Y2", "Y3"]);
@@ -112,7 +112,7 @@ fn base_and_back_plates_have_a_slot_for_every_tab() {
     for style in ["base", "back"] {
         for axis in ["X", "Y"] {
             let mut s = ball();
-            let r = run(&mut s, "fab.slice", json!({"style": style, "axis": axis, "thickness": 3, "count": 5, "clearance": 0.2, "geometry": true}));
+            let r = run(&mut s, "fab.slice", json!({"style": style, "axis": axis, "thickness": 3, "count": 5, "play": 0.2, "geometry": true}));
             let plate = r["parts"].as_array().unwrap().iter().find(|p| p["kind"] == "plate").unwrap();
             assert_eq!(plate["name"], if style == "base" { "Base plate" } else { "Back plate" });
             // two tabs per slice, one slot each
@@ -121,7 +121,7 @@ fn base_and_back_plates_have_a_slot_for_every_tab() {
                 let pts: Vec<[f64; 2]> = serde_json::from_value(hole.clone()).unwrap();
                 let (x0, x1) = pts.iter().fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p[0]), b.max(p[0])));
                 let (y0, y1) = pts.iter().fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p[1]), b.max(p[1])));
-                assert!(close((x1 - x0).min(y1 - y0), 3.2, 0.01), "slot width = thickness + clearance");
+                assert!(close((x1 - x0).min(y1 - y0), 3.2, 0.01), "slot width = thickness + play");
             }
         }
     }
@@ -404,7 +404,7 @@ fn the_params_text_states_the_recipes_defaults() {
     use solidcraft_kernel::fab::{DEFAULT_KERF, DEFAULT_SETTINGS as D, DEFAULT_SHEETS as S, DEFAULT_TOOL_DIAMETER};
     for (start, value) in [
         ("thickness?", D.thickness.to_string()),
-        ("clearance?", D.clearance.to_string()),
+        ("play?", D.play.to_string()),
         ("rod_diameter?", D.rod_diameter.to_string()),
         ("dowels?", D.dowels.to_string()),
         ("dowel_diameter?", D.dowel_diameter.to_string()),

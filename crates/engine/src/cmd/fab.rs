@@ -29,7 +29,7 @@ macro_rules! settings_doc {
         "body? (name; default the only solid body); style?: stacked|rod|base|back|waffle (default stacked); \
     axis?: X|Y|Z (stacked: the stacking direction, default Z; rod: the rod's direction, default X; base and back: X or Y, default X; waffle: ignored); \
     thickness? (sheet, mm, default 3); spacing? (centre to centre, 0 automatic); count? (upright or rod slices, overrides spacing); \
-    clearance? (play in slots and holes, default 0.2); rod_diameter? (default 8); dowels? (stacked, default 2, 0 none); dowel_diameter? (default 6); \
+    play? (total play between a slot and the sheet in it, and in holes, default 0.2); rod_diameter? (default 8); dowels? (stacked, default 2, 0 none); dowel_diameter? (default 6); \
     wall? (material round holes, spacer ring width, default 4); plate_margin? (base/back, default 10); guide_outline? (stacked: engrave where the next layer goes, default true); \
     machine?: laser|cnc (default laser); kerf? (laser, default 0.15); tool_diameter? (cnc bit, default 3.175); \
     sheet_width?, sheet_height? (default 600 x 400); gap? (between the machine's paths, default 3); margin? (from the sheet edge to the machine's path, default 5); labels? (engrave part names, default true); label_height? (default 5)"
@@ -92,7 +92,7 @@ pub(crate) fn settings(p: &FabSettingsParams) -> (FabSettings, SheetSettings) {
         thickness: p.thickness.unwrap_or(d.thickness),
         spacing: p.spacing.unwrap_or(d.spacing),
         count: p.count.unwrap_or(d.count),
-        clearance: p.clearance.unwrap_or(d.clearance),
+        play: p.play.unwrap_or(d.play),
         rod_diameter: p.rod_diameter.unwrap_or(d.rod_diameter),
         dowels: p.dowels.unwrap_or(d.dowels),
         dowel_diameter: p.dowel_diameter.unwrap_or(d.dowel_diameter),

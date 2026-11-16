@@ -83,9 +83,10 @@ pub struct FabSettingsParams {
     /// Default: 0. Ignored for stacked layers.
     #[serde(default)]
     pub count: Option<u32>,
-    /// Play in slots and holes (mm), from 0 to the sheet thickness. Default: 0.2.
+    /// The total play between a slot and the sheet in it, and in holes (mm), from 0 to the
+    /// sheet thickness. Default: 0.2.
     #[serde(default)]
-    pub clearance: Option<f64>,
+    pub play: Option<f64>,
     /// Rod: the rod's diameter (mm), more than 0 and at most 10000. Default: 8.
     #[serde(default)]
     pub rod_diameter: Option<f64>,
@@ -96,7 +97,7 @@ pub struct FabSettingsParams {
     #[serde(default)]
     pub dowel_diameter: Option<f64>,
     /// Material kept around holes, and the width of spacer rings (mm), 0 to 10000; for rod
-    /// slices more than half the clearance. Default: 4.
+    /// slices more than half the play. Default: 4.
     #[serde(default)]
     pub wall: Option<f64>,
     /// Base or back: how far the plate reaches past the slices (mm), at least; the plate grows
