@@ -1136,7 +1136,7 @@ mod tests {
             thickness,
             spacing: 0.0,
             count: 0,
-            clearance: 0.2,
+            play: 0.2,
             rod_diameter: 8.0,
             rod_at: None,
             dowels: 0,

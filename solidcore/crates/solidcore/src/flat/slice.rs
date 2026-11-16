@@ -110,8 +110,9 @@ pub struct FabSettings {
     pub spacing: f64,
     /// The number of upright or rod slices; overrides `spacing` when above 0.
     pub count: u32,
-    /// Play in slots and holes (mm, >= 0).
-    pub clearance: f64,
+    /// The total play between a slot and the sheet in it, and between a hole and its rod or
+    /// dowel: a slot is the thickness plus this wide (mm, >= 0).
+    pub play: f64,
     /// The rod's diameter (mm).
     pub rod_diameter: f64,
     /// The rod's position in slice coordinates; `None` for the middle of the slices.
@@ -337,12 +338,12 @@ const SPAN_MERGE: f64 = 1e-3;
 ///
 /// # Errors
 /// [`FlatError::Setting`] naming the first setting out of range: `thickness` (above 0, at
-/// most 1000 mm), `spacing` (0 to 10 m), `count` (at most [`MAX_SLICES`]), `clearance`
+/// most 1000 mm), `spacing` (0 to 10 m), `count` (at most [`MAX_SLICES`]), `play`
 /// (0 to the thickness), `rod_diameter` and `dowel_diameter` (above 0, at most 10 m), `rod_at`
 /// (finite, within a kilometre), `dowels` (at most [`MAX_DOWELS`]), `wall` and
 /// `plate_margin` (0 to 10 m), `min_area` (0 to 100 m²), `chord` (1e-4 to 10 mm), `axis`
 /// for a base or back plate sliced across Z, and `wall` for rod slices when it is at most half
-/// the clearance (no spacer ring).
+/// the play (no spacer ring).
 pub fn validate(s: &FabSettings) -> FlatResult<()> {
     let within = |x: f64, lo: f64, hi: f64| x.is_finite() && x >= lo && x <= hi;
     let positive = |x: f64, hi: f64| x.is_finite() && x > 0.0 && x <= hi;
@@ -359,8 +360,8 @@ pub fn validate(s: &FabSettings) -> FlatResult<()> {
         ),
         (s.count as usize <= MAX_SLICES, "count", COUNT_LIMIT),
         (
-            within(s.clearance, 0.0, s.thickness),
-            "clearance",
+            within(s.play, 0.0, s.thickness),
+            "play",
             "0 to the sheet thickness",
         ),
         (
@@ -406,12 +407,12 @@ pub fn validate(s: &FabSettings) -> FlatResult<()> {
             limit: "X or Y for a base or back plate",
         });
     }
-    // a spacer ring is `wall` wide around a bore half the clearance wider than the rod: a
+    // a spacer ring is `wall` wide around a bore half the play wider than the rod: a
     // wall of at most that leaves no ring
-    if s.style == Style::Rod && s.wall <= s.clearance / 2.0 {
+    if s.style == Style::Rod && s.wall <= s.play / 2.0 {
         return Err(FlatError::Setting {
             name: "wall",
-            limit: "more than half the clearance for slices on a rod",
+            limit: "more than half the play for slices on a rod",
         });
     }
     Ok(())
@@ -669,7 +670,7 @@ fn stacked(
     let (lo, hi) = extent(b, s.axis);
     let layers = slices(model, s.axis, &positions(lo, hi, s, true)?, s, out, "L")?;
     let holes = dowel_holes(&layers, s, out);
-    let r = s.dowel_diameter / 2.0 + s.clearance / 2.0;
+    let r = s.dowel_diameter / 2.0 + s.play / 2.0;
     let discs: Vec<Region> = holes.iter().map(|&p| region::disk(p, r, s.chord)).collect();
     let discs = region::union_all(&discs);
     let areas: Vec<f64> = layers.iter().map(|l| region::area(&l.region)).collect();
@@ -830,7 +831,7 @@ fn rod(model: &mut dyn Sectioner, s: &FabSettings, b: [f64; 6], out: &mut Out) -
         let [x0, y0, x1, y1] = region::ring_bounds(outlines).unwrap_or([0.0; 4]);
         [(x0 + x1) / 2.0, (y0 + y1) / 2.0]
     });
-    let bore = s.rod_diameter / 2.0 + s.clearance / 2.0;
+    let bore = s.rod_diameter / 2.0 + s.play / 2.0;
     let hole = region::disk(centre, bore, s.chord);
     let hub_r = s.rod_diameter / 2.0 + s.wall;
     for cut in &cuts {
@@ -1092,14 +1093,14 @@ const NUMBER_HEIGHT: f64 = 3.0;
 
 /// The plate in its `(a, p)` coordinates (`a` along the slicing axis, `p` along the plate):
 /// at least a margin past the slices, grown to hold the slice numbers, a slot (sheet plus
-/// clearance wide) for every tab, and each slice's number engraved below its slots.
+/// play wide) for every tab, and each slice's number engraved below its slots.
 fn plate_outline(
     cs: &[f64],
     along: &[f64],
     slots: &[Slot],
     s: &FabSettings,
 ) -> (Region, Vec<Mark>) {
-    let (t, cl, m) = (s.thickness, s.clearance, s.plate_margin);
+    let (t, play, m) = (s.thickness, s.play, s.plate_margin);
     let lo = |v: &[f64]| v.iter().copied().fold(f64::INFINITY, f64::min);
     let hi = |v: &[f64]| v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let mut marks = Vec::new();
@@ -1130,15 +1131,15 @@ fn plate_outline(
         }
     }
     let plate = region::rect(a0, p0, a1, hi(along) + m);
-    let w = t + cl;
+    let w = t + play;
     let cuts: Vec<Shape> = slots
         .iter()
         .flat_map(|sl| {
             region::rect(
                 sl.at - w / 2.0,
-                sl.a - cl / 2.0,
+                sl.a - play / 2.0,
                 sl.at + w / 2.0,
-                sl.b + cl / 2.0,
+                sl.b + play / 2.0,
             )
         })
         .collect();
@@ -1252,8 +1253,8 @@ fn waffle(
     b: [f64; 6],
     out: &mut Out,
 ) -> FlatResult<()> {
-    let (t, cl) = (s.thickness, s.clearance);
-    let w = t + cl;
+    let (t, play) = (s.thickness, s.play);
+    let w = t + play;
     let (x0, x1) = extent(b, Axis::X);
     let (y0, y1) = extent(b, Axis::Y);
     let xs = slices(model, Axis::X, &positions(x0, x1, s, false)?, s, out, "X")?;
@@ -1282,7 +1283,7 @@ fn waffle(
             let zm = (z0 + z1) / 2.0;
             cx.extend(region::rect(
                 yc.at - w / 2.0,
-                zm - cl / 2.0,
+                zm - play / 2.0,
                 yc.at + w / 2.0,
                 hi,
             ));
@@ -1290,7 +1291,7 @@ fn waffle(
                 xc.at - w / 2.0,
                 lo,
                 xc.at + w / 2.0,
-                zm + cl / 2.0,
+                zm + play / 2.0,
             ));
         }
     }
@@ -1573,7 +1574,7 @@ mod tests {
             thickness: 3.0,
             spacing: 0.0,
             count: 0,
-            clearance: 0.2,
+            play: 0.2,
             rod_diameter: 8.0,
             rod_at: None,
             dowels: 2,
@@ -1769,7 +1770,7 @@ mod tests {
         let hole = &slices[0].shape.holes[0];
         for q in hole {
             let r = (q[0] - 30.0).hypot(q[1] - 20.0);
-            assert!(close(r, 4.1, 1e-3), "{r}"); // rod radius + half the clearance
+            assert!(close(r, 4.1, 1e-3), "{r}"); // rod radius + half the play
         }
         let spacer = of_kind(&res, PartKind::Spacer)[0];
         assert_eq!(spacer.copies, 8 * 3); // 9 mm gaps = 3 sheets each
@@ -1835,7 +1836,7 @@ mod tests {
                     axis,
                     thickness: 3.0,
                     count: 5,
-                    clearance: 0.2,
+                    play: 0.2,
                     ..settings(style)
                 };
                 let res = make(&mut test_sphere(), &s).unwrap();
@@ -1917,7 +1918,7 @@ mod tests {
         let s = FabSettings {
             thickness: 3.0,
             count: 3,
-            clearance: 0.2,
+            play: 0.2,
             ..settings(Style::Waffle)
         };
         let res = make(&mut test_box(), &s).unwrap();
@@ -2009,7 +2010,7 @@ mod tests {
         let s = FabSettings {
             thickness: 3.0,
             count: 1,
-            clearance: 0.2,
+            play: 0.2,
             ..settings(Style::Waffle)
         };
         let res = make(&mut model, &s).unwrap();
@@ -2034,7 +2035,7 @@ mod tests {
         let s = FabSettings {
             thickness: 3.0,
             count: 25,
-            clearance: 0.2,
+            play: 0.2,
             ..settings(Style::Waffle)
         };
         let res = make(&mut test_sphere(), &s).unwrap();
@@ -2072,7 +2073,7 @@ mod tests {
         let s = FabSettings {
             thickness: 3.0,
             count: 3,
-            clearance: 0.2,
+            play: 0.2,
             ..settings(Style::Waffle)
         };
         let res = make(&mut model, &s).unwrap();
@@ -2111,7 +2112,7 @@ mod tests {
         ]);
         let s = FabSettings {
             thickness: 3.0,
-            clearance: 0.2,
+            play: 0.2,
             ..settings(Style::Waffle)
         };
         let res = make(&mut model, &s).unwrap();
@@ -2259,7 +2260,7 @@ mod tests {
         let fields: [(&str, Set); 10] = [
             ("thickness", |s, x| s.thickness = x),
             ("spacing", |s, x| s.spacing = x),
-            ("clearance", |s, x| s.clearance = x),
+            ("play", |s, x| s.play = x),
             ("rod_diameter", |s, x| s.rod_diameter = x),
             ("dowel_diameter", |s, x| s.dowel_diameter = x),
             ("wall", |s, x| s.wall = x),
@@ -2328,7 +2329,7 @@ mod tests {
     fn too_many_slices_are_refused_not_attempted() {
         let s = FabSettings {
             thickness: 0.001,
-            clearance: 0.0,
+            play: 0.0,
             ..settings(Style::Stacked)
         };
         assert!(matches!(
@@ -2623,7 +2624,7 @@ mod tests {
     fn a_rod_wall_must_leave_a_spacer_ring() {
         let s = |wall| FabSettings {
             rod_diameter: 8.0,
-            clearance: 0.2,
+            play: 0.2,
             wall,
             ..settings(Style::Rod)
         };
