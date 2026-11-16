@@ -490,6 +490,20 @@ design, which then keeps a copy of its own. It is an app setting, not part of a 
 - **Elsewhere:** rule library, sheet metal style library.
 - **For translators:** "personal" as in the user's own, not private or confidential.
 
+### play
+
+How much wider a slot of a flat part is than the sheet that goes into it, in total; a hole for
+a rod or dowel is the same amount wider than the rod.
+
+Half the play is on each side of the sheet.
+
+- **In SolidCraft:** the `play` parameter of `fab.slice` and `fab.export_sheets`; Slice for
+  Laser / CNC's Slot and hole play row.
+- **Don't use:** clearance, gap, tolerance (for the play).
+- **Elsewhere:** play, slack, slot allowance.
+- **For translators:** mechanical play or slack, not a clearance per side and not a gap
+  between parts.
+
 ### print face
 
 The flat face of a body that lies on the print bed when the body is sent to a slicer.
@@ -677,7 +691,6 @@ share a catalogue entry. Each meaning below gets its own term and, in time, its 
 | Clearance | the Clearance command | clearance check | `inspect.clearance` |
 | | a minimum distance field | clearance | the Interference and plastic rules dialogs |
 | | a hole sized for a bolt to pass through | clearance (hole) | the Hole dialog's Hole Tap Type, `ui.hole_clearance` |
-| | play in the slots and holes of flat parts | slot and hole play | Slice for Laser / CNC, `clearance` of `fab.slice` |
 | Fit | fit the view to the model | fit (view) | the view's Fit action, `ui.fit` |
 | | how much room a clearance hole leaves around the bolt | clearance fit | the Hole dialog's Fit, `ui.clearance_fit` |
 | Sheet | a sheet metal body's material | sheet metal | `sheet.*` |

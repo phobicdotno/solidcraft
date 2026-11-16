@@ -65,7 +65,7 @@ fn each_style_sends_the_settings_it_reads() {
         ("style", json!("stacked")),
         ("axis", json!("Z")),
         ("thickness", json!(3.0)),
-        ("clearance", json!(0.2)),
+        ("play", json!(0.2)),
         ("dowels", json!(2)),
         ("dowel_diameter", json!(6.0)),
         ("guide_outline", json!(true)),

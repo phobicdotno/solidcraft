@@ -69,7 +69,7 @@ pub struct Fab {
     pub spacing: String,
     /// 0: the spacing decides.
     pub count: String,
-    pub clearance: String,
+    pub play: String,
     pub rod_diameter: String,
     pub dowels: String,
     pub dowel_diameter: String,
@@ -102,7 +102,7 @@ impl Fab {
             thickness: len(D.thickness),
             spacing: String::new(),
             count: D.count.to_string(),
-            clearance: len(D.clearance),
+            play: len(D.play),
             rod_diameter: len(D.rod_diameter),
             dowels: D.dowels.to_string(),
             dowel_diameter: len(D.dowel_diameter),
@@ -213,7 +213,7 @@ pub(crate) fn params(app: &SolveApp, k: &Fab, inputs: &[SelInput]) -> Result<Val
     let mut p = json!({
         "style": k.style_name(),
         "thickness": length("fab.thickness", &k.thickness)?,
-        "clearance": length("fab.clearance", &k.clearance)?,
+        "play": length("fab.play", &k.play)?,
         "wall": length("fab.wall", &k.wall)?,
         "machine": MACHINES.get(k.machine).copied().unwrap_or("laser"),
         "sheet_width": length("fab.sheet_width", &k.sheet_width)?,
@@ -305,7 +305,7 @@ pub fn rows(app: &mut SolveApp, ui: &mut egui::Ui, k: &mut Fab) -> bool {
         enter |= count_row(app, ui, "fab.count", &mut k.count, MAX_SLICES);
         ui_kit::text(ui, app.tr("fab.count_hint"), ui_kit::Text::Hint("fab_count_hint"));
     }
-    enter |= ui_kit::expr_row(ui, app.tr("fab.clearance"), &mut k.clearance);
+    enter |= ui_kit::expr_row(ui, app.tr("fab.play"), &mut k.play);
 
     ui_kit::section_heading(ui, "fab.group_holding");
     match k.style {
