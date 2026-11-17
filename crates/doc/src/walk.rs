@@ -346,8 +346,11 @@ impl Walk for PlaneRef {
                     f(("Offset", distance, Kind::Length, ExprRole::Input));
                     p = base;
                 }
-                PlaneRef::AtAngle { base, angle, .. } => {
+                PlaneRef::AtAngle { base, angle, axis_origin, .. } => {
                     f(("Angle", angle, Kind::Angle, ExprRole::Input));
+                    for (label, e) in ["Axis X", "Axis Y", "Axis Z"].into_iter().zip(axis_origin) {
+                        f((label, e, Kind::Length, ExprRole::Placement));
+                    }
                     p = base;
                 }
                 PlaneRef::AlongPath { t, .. } => return f(("Distance (0 to 1)", t, Kind::Unitless, ExprRole::Input)),
@@ -373,8 +376,11 @@ impl Walk for PlaneRef {
                     f(("Offset", distance, Kind::Length, ExprRole::Input));
                     p = base;
                 }
-                PlaneRef::AtAngle { base, angle, .. } => {
+                PlaneRef::AtAngle { base, angle, axis_origin, .. } => {
                     f(("Angle", angle, Kind::Angle, ExprRole::Input));
+                    for (label, e) in ["Axis X", "Axis Y", "Axis Z"].into_iter().zip(axis_origin) {
+                        f((label, e, Kind::Length, ExprRole::Placement));
+                    }
                     p = base;
                 }
                 PlaneRef::AlongPath { t, .. } => return f(("Distance (0 to 1)", t, Kind::Unitless, ExprRole::Input)),
@@ -412,7 +418,7 @@ impl PlaneRef {
             return;
         }
         match self {
-            Self::Construction { feature } => f(Ref::Feature(feature)),
+            Self::Construction { feature, .. } => f(Ref::Feature(feature)),
             Self::Offset { base, .. } | Self::Flipped { base, .. } => base.walk_feature_refs(f, depth + 1),
             Self::ThroughPoint { base, point } => {
                 base.walk_feature_refs(f, depth + 1);
@@ -452,7 +458,7 @@ impl PlaneRef {
             return;
         }
         match self {
-            Self::Construction { feature } => f(Ref::Feature(feature)),
+            Self::Construction { feature, .. } => f(Ref::Feature(feature)),
             Self::Offset { base, .. } | Self::Flipped { base, .. } => base.walk_feature_refs_mut(f, depth + 1),
             Self::ThroughPoint { base, point } => {
                 base.walk_feature_refs_mut(f, depth + 1);

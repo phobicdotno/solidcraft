@@ -64,6 +64,7 @@ pub const DOCUMENTED: &[&str] = &[
     "explode.create",
     "fab.slice",
     "face.delete",
+    "file.insert_gerber",
     "file.insert_mesh",
     "file.insert_step",
     "file.save_mesh",
