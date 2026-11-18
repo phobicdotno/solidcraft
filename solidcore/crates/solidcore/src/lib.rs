@@ -53,6 +53,8 @@ pub mod dogbone;
 pub mod eval;
 pub mod flat;
 pub mod geom;
+#[allow(missing_docs)]
+pub mod hatch;
 pub mod heal;
 pub mod intersect;
 pub mod mass;
