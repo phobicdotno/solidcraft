@@ -850,6 +850,7 @@ pub(crate) fn built(app: &SolveApp) -> crate::preview::Built {
         scene: sc,
         sketches: Vec::new(),
         replaced,
+        outlines: Vec::new(),
         error: None,
         bounds,
         applied: None,
@@ -858,6 +859,7 @@ pub(crate) fn built(app: &SolveApp) -> crate::preview::Built {
         mirror_meets: None,
         points: Vec::new(),
         placed: None,
+        layer: None,
     }
 }
 
