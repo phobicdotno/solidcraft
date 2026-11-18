@@ -12,7 +12,7 @@ use std::fmt::Write as _;
 
 use solidcore_record::Vec2;
 
-use crate::dxf_out::{DxfEntity, DxfLayer, DxfShape, write_dxf_drawing};
+use crate::dxf_out::{DxfEntity, DxfLayer, DxfShape, write_dxf_drawing_units};
 use crate::paper::{nano, number, push_number};
 use crate::{IoError, MAX_DRAWING_BYTES, Result};
 
@@ -91,7 +91,7 @@ pub fn sheet_dxf(sheet: &SheetDrawing<'_>) -> Result<String> {
             shape: DxfShape::LwPolyline { verts: line.iter().map(|p| (v(p), 0.0)).collect(), closed: false },
         });
     }
-    let text = write_dxf_drawing(&layers, &entities)?;
+    let text = write_dxf_drawing_units(&layers, &entities, 4)?;
     fits(&text, "DXF")?;
     Ok(text)
 }
