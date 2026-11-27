@@ -1,15 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <title>Dogbone</title>
-  <path d="M3 26.98L32 43.72L32 53.77L3 37.02Z" fill="#b8c3cf"/>
-  <path d="M61 26.98L32 43.72L32 53.77L61 37.02Z" fill="#8e9faf"/>
-  <path d="M32 10.23L61 26.98L32 43.72L3 26.98Z" fill="#e2e8ef"/>
-  <path d="M32 10.23L61 26.98L61 37.02L32 53.77L3 37.02L3 26.98Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M3 26.98L32 43.72L61 26.98" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M32 43.72L32 53.77" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M24.45 20.73A4.65 2.68 0 0 1 33.75 20.73L42.82 25.97A4.65 2.68 0 0 1 42.82 31.33L39.55 33.22A4.65 2.68 0 0 1 30.25 33.22L21.18 27.99A4.65 2.68 0 0 1 21.18 22.62Z" fill="#236ead"/>
-  <defs><clipPath id="dogbone_pocket"><path d="M24.45 20.73A4.65 2.68 0 0 1 33.75 20.73L42.82 25.97A4.65 2.68 0 0 1 42.82 31.33L39.55 33.22A4.65 2.68 0 0 1 30.25 33.22L21.18 27.99A4.65 2.68 0 0 1 21.18 22.62Z" fill="none"/></clipPath></defs>
-  <g clip-path="url(#dogbone_pocket)">
-  <path d="M24.45 25.19A4.65 2.68 0 0 1 33.75 25.19L42.82 30.43A4.65 2.68 0 0 1 42.82 35.79L39.55 37.68A4.65 2.68 0 0 1 30.25 37.68L21.18 32.45A4.65 2.68 0 0 1 21.18 27.08Z" fill="#328bd3"/>
-  </g>
-  <path d="M24.45 20.73A4.65 2.68 0 0 1 33.75 20.73L42.82 25.97A4.65 2.68 0 0 1 42.82 31.33L39.55 33.22A4.65 2.68 0 0 1 30.25 33.22L21.18 27.99A4.65 2.68 0 0 1 21.18 22.62Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M24.65 17A7.35 4.24 0 0 1 39.35 17L39.35 28A7.35 4.24 0 0 0 24.65 28Z" fill="#328bd3"/>
+  <path d="M24.65 17A7.35 4.24 0 0 1 39.35 17L39.35 28A7.35 4.24 0 0 0 24.65 28Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M16.41 34L24.9 29.1A7.35 4.24 0 1 1 39.1 29.1L47.59 34L32 43Z" fill="#e2e8ef"/>
+  <path d="M24.9 29.1A7.35 4.24 0 1 1 39.1 29.1L32 25Z" fill="#328bd3"/>
+  <path d="M16.41 34L24.9 29.1A7.35 4.24 0 1 1 39.1 29.1L47.59 34L32 43Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M24.9 18.1L16.41 23L16.41 34L24.9 29.1Z" fill="#8e9faf"/>
+  <path d="M24.9 18.1L16.41 23L16.41 34L24.9 29.1Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M39.1 18.1L47.59 23L47.59 34L39.1 29.1Z" fill="#b8c3cf"/>
+  <path d="M39.1 18.1L47.59 23L47.59 34L39.1 29.1Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M32 5L55.38 18.5L47.59 23L39.1 18.1A7.35 4.24 0 1 0 24.9 18.1L16.41 23L8.62 18.5Z" fill="#e2e8ef"/>
+  <path d="M32 5L55.38 18.5L47.59 23L39.1 18.1A7.35 4.24 0 1 0 24.9 18.1L16.41 23L8.62 18.5Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M8.62 18.5L16.41 23L16.41 34L32 43L32 59L8.62 45.5Z" fill="#b8c3cf"/>
+  <path d="M8.62 18.5L16.41 23L16.41 34L32 43L32 59L8.62 45.5Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M55.38 18.5L47.59 23L47.59 34L32 43L32 59L55.38 45.5Z" fill="#8e9faf"/>
+  <path d="M55.38 18.5L47.59 23L47.59 34L32 43L32 59L55.38 45.5Z" fill="none" stroke="#34465b" stroke-width="2.55" stroke-linejoin="round" stroke-linecap="round"/>
 </svg>

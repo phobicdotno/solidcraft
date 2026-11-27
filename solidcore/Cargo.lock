@@ -483,6 +483,7 @@ dependencies = [
  "i_overlay",
  "serde",
  "serde_json",
+ "spade",
  "thiserror",
 ]
 
@@ -491,6 +492,7 @@ name = "solidcore-cadir"
 version = "0.1.0"
 dependencies = [
  "cadmpeg-ir",
+ "flate2",
  "serde_json",
  "solidcore",
  "solidcore-ops",
