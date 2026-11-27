@@ -20,7 +20,8 @@ use crate::{Body, KernelError, Result};
 pub fn slice_body(body: &Body, settings: &FabSettings) -> Result<std::result::Result<FabResult, FlatError>> {
     body.require_brep("Slice for Laser / CNC")?;
     crate::guard("slice for laser / CNC", || {
-        let (ops_body, _) = body.ops_body().ok_or_else(|| KernelError::Failed("slicing: the kernel cannot take this body".into()))?;
+        let form = body.ops_body().ok_or_else(|| KernelError::Failed("slicing: the kernel cannot take this body".into()))?;
+        let (ops_body, _) = &*form;
         solidcore_ops::fab::slice_body(ops_body, settings).map_err(|e| KernelError::Failed(format!("slicing the body: {e}")))
     })
 }
