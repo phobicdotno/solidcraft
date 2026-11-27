@@ -23,7 +23,7 @@ pub use solidcore::flat::{FlatError, Shape};
 
 use crate::body::Body;
 use crate::session::{with_body, Answer};
-use crate::Result;
+use crate::{Error, Result};
 
 /// The slicing settings a slicing starts from: stacked layers along Z from 3 mm sheet.
 pub const DEFAULT_SETTINGS: FabSettings = FabSettings {
@@ -65,8 +65,8 @@ pub const DEFAULT_SHEETS: SheetSettings = SheetSettings {
 struct Out<T>(std::result::Result<T, FlatError>);
 
 impl<T> Answer for Out<T> {
-    fn refusal(&self) -> Option<String> {
-        self.0.as_ref().err().map(ToString::to_string)
+    fn refusal(&self) -> Option<Error> {
+        self.0.as_ref().err().cloned().map(Error::Flat)
     }
 }
 

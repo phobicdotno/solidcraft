@@ -190,6 +190,9 @@ pub enum Error {
     /// A frame-stock path or its section the kernel refuses, including the curve index
     /// when its exact path checks name one.
     FrameMember(solidcore::sweep::member::Refusal),
+    /// A body Slice for Laser / CNC cannot cut into flat parts, and why
+    /// ([`solidcore::flat::FlatError`]).
+    Flat(solidcore::flat::FlatError),
     /// The geometry has no value where one is needed (the kernel's `Degenerate`): a normal
     /// at a pole or an apex, a zero-length vector, a collapsed edge.
     Degenerate,
@@ -581,6 +584,7 @@ impl Error {
             Error::DraftCutsThrough { .. } => "DraftCutsThrough",
             Error::Profile(..) => "Profile",
             Error::FrameMember(..) => "FrameMember",
+            Error::Flat(..) => "Flat",
             Error::Degenerate => "Degenerate",
             Error::UnsureRegion { .. } => "UnsureRegion",
             Error::DraftCornerRefused { .. } => "DraftCornerRefused",
@@ -1152,6 +1156,7 @@ impl std::fmt::Display for Error {
                 }
             ),
             Error::FrameMember(reason) => reason.fmt(f),
+            Error::Flat(reason) => reason.fmt(f),
             Error::Degenerate => write!(f, "degenerate geometry where a value is needed"),
             Error::UnsureRegion { region } => {
                 write!(f, "unsure whether region {region} is material")
