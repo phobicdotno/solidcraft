@@ -8,6 +8,8 @@ pub use solidcore_ops::fab::{
     Machine, PartKind, Shape, SheetSettings, Style, Warning,
 };
 
+pub use solidcore_tess::PlateFrame;
+
 use crate::{Body, KernelError, Result};
 
 /// `body` cut into flat parts as `settings` say: the outer error when the kernel fails, the inner
@@ -42,4 +44,17 @@ pub fn part_area(shape: &Shape) -> Result<f64> {
 /// points.
 pub fn part_size(shape: &Shape) -> Result<Option<[f64; 2]>> {
     crate::guard("the size of a flat part", || Ok(solidcore_ops::fab::part_size(shape)))
+}
+
+/// The mesh of a flat part `thickness` thick, its `rings` (outer first, then holes, in the part's
+/// own 2D coordinates) placed by `frame`: what the Slice preview draws for each part.
+#[must_use]
+pub fn plate(rings: &[Vec<[f64; 2]>], frame: &PlateFrame, thickness: f64) -> solidcore_tess::Mesh {
+    solidcore_tess::plate(rings, frame, thickness)
+}
+
+/// The triangles that fill `rings` (outer first, then holes): what the Sheets view shades.
+#[must_use]
+pub fn fill(rings: &[Vec<[f64; 2]>]) -> Vec<[solidcore_record::Vec2; 3]> {
+    solidcore_tess::fill(rings)
 }

@@ -13,13 +13,13 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use egui::{Align2, FontId, Pos2, Rect, Stroke, pos2, vec2};
 use serde_json::{Value, json};
 use solidcore_record::{Vec2, Vec3};
-use solidcore_tess::PlateFrame;
 use solidcraft_engine::Sel;
 use solidcraft_engine::Session;
 use solidcraft_engine::doc::expr::Kind as ValueKind;
 use solidcraft_engine::doc::progress::Progress;
 use solidcraft_engine::geom::prelude::*;
 use solidcraft_engine::geom::{Aabb3, Mesh};
+use solidcraft_engine::kernel::fab::PlateFrame;
 use solidcraft_theme::Tokens;
 
 use crate::SolveApp;
@@ -655,7 +655,7 @@ fn shapes(v: &Value) -> (Vec<(Mesh, bool)>, Vec<Vec<[Vec2; 3]>>, usize) {
                 continue;
             };
             let frame = PlateFrame { origin, u, v: w, n };
-            let Ok(mesh) = kernel::guard("plate of a flat part", || Ok(solidcore_tess::plate(&rings, &frame, thickness))) else {
+            let Ok(mesh) = kernel::guard("plate of a flat part", || Ok(kernel::fab::plate(&rings, &frame, thickness))) else {
                 continue;
             };
             triangles += mesh.triangles.len();
@@ -671,7 +671,7 @@ fn shapes(v: &Value) -> (Vec<(Mesh, bool)>, Vec<Vec<[Vec2; 3]>>, usize) {
         .flatten()
         .map(|sheet| {
             let rings = read_rings(&sheet["cut_rings"]);
-            kernel::guard("fill of a sheet", || Ok(solidcore_tess::fill(&rings))).unwrap_or_default()
+            kernel::guard("fill of a sheet", || Ok(kernel::fab::fill(&rings))).unwrap_or_default()
         })
         .collect();
     (plates, fills, copies)
@@ -860,6 +860,13 @@ pub(crate) fn built(app: &SolveApp) -> crate::preview::Built {
         points: Vec::new(),
         placed: None,
         layer: None,
+        interaction: None,
+        warning: None,
+        flange_corners: Vec::new(),
+        flange_faces: Vec::new(),
+        joints: Vec::new(),
+        plugin_view: None,
+        centrelines: Vec::new(),
     }
 }
 
