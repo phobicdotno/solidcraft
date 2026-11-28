@@ -85,7 +85,8 @@ impl FeatureKind {
             | FeatureKind::SurfaceOffset { .. }
             | FeatureKind::SurfaceMidsurface { .. }
             | FeatureKind::SurfaceMatch { .. }
-            | FeatureKind::SurfaceFair { .. } => &["faces"],
+            | FeatureKind::SurfaceFair { .. }
+            | FeatureKind::SurfaceMorph { .. } => &["faces"],
             FeatureKind::SplitFace { .. } => &["faces", "tool"],
             FeatureKind::Split { .. } => &["tool", "tool_faces"],
             FeatureKind::SurfaceTrim { .. } => &["tool"],
@@ -96,7 +97,7 @@ impl FeatureKind {
             FeatureKind::SheetConvert { .. } | FeatureKind::Lip { .. } | FeatureKind::SurfaceUntrim { .. } | FeatureKind::SurfaceRuled { .. } => {
                 &["face"]
             }
-            FeatureKind::Emboss { .. } | FeatureKind::Dome { .. } | FeatureKind::CellGrid { .. } => &["face"],
+            FeatureKind::Emboss { .. } | FeatureKind::Dome { .. } | FeatureKind::CellGrid { .. } | FeatureKind::TransformFace { .. } => &["face"],
             FeatureKind::Revolve { .. } => &["to"],
             FeatureKind::Extrude { .. } | FeatureKind::SurfaceExtrude { .. } => &["extent.to", "extent.from", "extent.to2"],
             FeatureKind::SurfaceExtend { .. } => &["up_to"],
@@ -113,6 +114,7 @@ impl FeatureKind {
             FeatureKind::Shell { body, .. }
             | FeatureKind::Dome { body, .. }
             | FeatureKind::Draft { body, .. }
+            | FeatureKind::Dogbone { body, .. }
             | FeatureKind::SplitFace { body, .. }
             | FeatureKind::OffsetFace { body, .. }
             | FeatureKind::DeleteFace { body, .. }
@@ -124,7 +126,8 @@ impl FeatureKind {
             | FeatureKind::SnapFit { body, .. }
             | FeatureKind::Rest { body, .. }
             | FeatureKind::CellGrid { body, .. } => body.as_deref(),
-            FeatureKind::SheetConvert { body, .. }
+            FeatureKind::TransformFace { body, .. }
+            | FeatureKind::SheetConvert { body, .. }
             | FeatureKind::SheetSurfaceConvert { body, .. }
             | FeatureKind::SheetRecognize { body, .. }
             | FeatureKind::SurfaceRuled { body, .. } => Some(body.as_ref()),

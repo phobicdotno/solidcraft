@@ -46,6 +46,7 @@ pub mod develop;
 pub mod frame;
 pub mod round_face;
 pub mod shaft_spline;
+pub mod sweep;
 
 use solidcore::eval as k;
 use solidcore::prism::profile as kp;
@@ -367,6 +368,11 @@ fn surface_inner(s: &Surface) -> Result<k::Surface, Invalid> {
         Surface::Blend { .. } => {
             return Err(Invalid(
                 "a blend's label: its geometry is the face's NURBS form",
+            ))
+        }
+        Surface::Sweep { .. } => {
+            return Err(Invalid(
+                "a sweep's label: its geometry is the face's NURBS form",
             ))
         }
     })
