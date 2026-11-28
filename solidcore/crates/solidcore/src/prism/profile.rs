@@ -1380,12 +1380,11 @@ pub fn regions_overlap(a: &Region2, b: &Region2, eps: f64) -> Option<bool> {
                 pa.0.x + u.x * t - u.y * 2.0 * eps,
                 pa.0.y + u.y * t + u.x * 2.0 * eps,
             );
-            match (region_holds(a, probe), region_holds(b, probe)) {
-                (Some(true), Some(true)) => true,
-                _ => {
-                    undecided = true;
-                    false
-                }
+            if let (Some(true), Some(true)) = (region_holds(a, probe), region_holds(b, probe)) {
+                true
+            } else {
+                undecided = true;
+                false
             }
         })
     });
