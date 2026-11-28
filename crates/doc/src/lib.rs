@@ -256,6 +256,7 @@ pub use eval::suggested_thread_in;
 pub use eval::tab_slot::TabSlotJoint;
 pub use eval::tab_slot::TabSlotLeftOut;
 pub use eval::tab_slot::TabSlotReport;
+pub use eval::tab_slot::offset_plate_text as tab_slot_offset_plate_text;
 pub use eval::tangent_face_chain;
 pub use eval::through_all_distance;
 pub use eval::through_all_side;

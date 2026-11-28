@@ -281,3 +281,23 @@ fn a_tab_slot_names_plates_that_do_not_meet_in_its_skipped_list() {
         assert!(j["detail"].as_str().is_some_and(|d| d.contains(apart)), "{reply}");
     }
 }
+
+/// A plate with a body offset is refused, not cut in its own geometry away from where it is
+/// shown: by the command, and by the evaluation when the offset comes after the feature.
+#[test]
+fn a_tab_slot_refuses_a_plate_with_a_body_offset() {
+    let mut shift = solidcraft_doc::IDENTITY;
+    shift[3][2] = 5.0;
+    let mut s = fixture_f();
+    s.doc_mut().body_offsets.insert("Wall".into(), shift);
+    let e = tab_slot(&mut s, json!({})).unwrap_err().to_string();
+    assert!(e.contains("Wall has a body offset") && e.contains("offset_plate"), "{e}");
+    let mut s = fixture_f();
+    tab_slot(&mut s, json!({})).unwrap();
+    s.doc_mut().body_offsets.insert("Bottom".into(), shift);
+    run(&mut s, "timeline.roll_to", json!({"position": 2}));
+    run(&mut s, "timeline.roll_to", json!({"position": "end"}));
+    let id = s.doc.features.iter().find(|f| f.name == "Joints").map(|f| f.id).unwrap();
+    let error = s.model.result(id).and_then(|r| r.error.clone()).unwrap_or_default();
+    assert!(error.contains("Bottom has a body offset"), "{error}");
+}

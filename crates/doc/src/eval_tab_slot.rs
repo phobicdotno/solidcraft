@@ -145,6 +145,15 @@ pub(crate) fn spec_of(vals: &BTreeMap<String, Value>, k: &FeatureKind, t_tab: f6
     })
 }
 
+/// Why a plate with a body offset is refused (not supported yet): the joints are found and cut in
+/// each plate's own geometry, without its offset, so they would land away from where the plate
+/// is shown.
+pub fn offset_plate_text(name: &str) -> String {
+    format!(
+        "{name} has a body offset: not supported yet by tab and slot (the joints are found in the plates' own geometry, so they would land away from where {name} is shown); remove the offset or build the plate in place (offset_plate)"
+    )
+}
+
 /// The first key that names more than one of `tab_plates` and `slot_plates` together, or a pick
 /// with no key (a key is minted on load, so that is a damaged design). Keys name every tool of a
 /// pick's joints: two picks with one key would share their names.

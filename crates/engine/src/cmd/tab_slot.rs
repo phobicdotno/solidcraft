@@ -199,6 +199,9 @@ pub(crate) fn check(s: &Session, st: &ModelState, kind: &FeatureKind) -> Result<
             let Some(body) = st.body(&name) else {
                 return Err(bad(cmd, format!("no body named {name}")));
             };
+            if s.doc.body_offsets.contains_key(&name) {
+                return Err(bad(cmd, solidcraft_doc::tab_slot_offset_plate_text(&name)));
+            }
             if body.body.is_mesh() {
                 return Err(bad(cmd, format!("{name} is a mesh body: tab and slot needs a solid")));
             }

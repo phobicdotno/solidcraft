@@ -18166,7 +18166,10 @@ fn eval_feature_kind(
             }
             Ok(())
         }
-        FeatureKind::TabSlot { .. } => {
+        FeatureKind::TabSlot { tab_plates, slot_plates, .. } => {
+            if let Some(p) = tab_plates.iter().chain(slot_plates).find(|p| doc.body_offsets.contains_key(p.body.as_ref())) {
+                return Err(DocError::Invalid(tab_slot::offset_plate_text(p.body.as_ref())));
+            }
             let report = tab_slot::apply(vals, &f.kind, st, warning)?;
             st.tab_slots.insert(f.id, report);
             Ok(())
