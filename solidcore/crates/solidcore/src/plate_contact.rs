@@ -413,8 +413,11 @@ pub fn stretches(band: (f64, f64), defects: &[Defect], tol: f64) -> Result<Vec<(
 /// strip running along the unit `d`: the band `Σ`'s extent along `d` (`u`), and one [`Defect`]
 /// per hole of Σ and per run of Σ's outer loop off the band's boundary (a notch, a chamfered
 /// end), each with its extent along `u` and across (along `d` turned a quarter left). A segment
-/// lies on the boundary when its ends and middle are within `tol` of one side of the band; a
-/// run's extent is read from its segments' ends and middles (exact for lines).
+/// lies on the boundary when its whole extent across that side (its extent along `u` or across,
+/// read as [`Region2::extent_along`](crate::prism::profile::Region2::extent_along) reads it) is
+/// within `tol` of the side, so a curve that only touches the side at its ends and middle is a
+/// defect; a run's extent is its segments' extents (exact for lines and arcs, within `tol` for
+/// curves).
 ///
 /// # Errors
 ///
@@ -453,27 +456,30 @@ pub fn strip_defects(
             across: b - a,
         });
     }
-    let uw = |p: Vec2| (p.x * d.x + p.y * d.y, p.x * w.x + p.y * w.y);
-    let points = |s: &Seg2| [s.point_at(0.0), s.point_at(0.5), s.point_at(1.0)].map(uw);
-    let near = |x: f64, to: f64| (x - to).abs() <= tol;
-    let on_side = |ps: &[(f64, f64); 3]| {
-        ps.iter().all(|p| near(p.0, band.0))
-            || ps.iter().all(|p| near(p.0, band.1))
-            || ps.iter().all(|p| near(p.1, across.0))
-            || ps.iter().all(|p| near(p.1, across.1))
+    // Each segment's whole extent along `u` and across (not samples of it): a curve whose ends
+    // and middle lie on a side but which reaches into the strip between them is off the side.
+    let reach = |s: &Seg2| {
+        let r = Region2 {
+            outer: crate::prism::profile::Loop2 { segs: vec![*s] },
+            holes: Vec::new(),
+        };
+        Ok::<_, SolidError>((extent(&r, d)?, extent(&r, w)?))
     };
     let segs = &sigma.outer.segs;
-    let off: Vec<bool> = segs.iter().map(|s| !on_side(&points(s))).collect();
+    let reaches = segs.iter().map(reach).collect::<Result<Vec<_>>>()?;
+    let near = |(lo, hi): (f64, f64), to: f64| (lo - to).abs() <= tol && (hi - to).abs() <= tol;
+    let on_side = |&(u, v): &((f64, f64), (f64, f64))| {
+        near(u, band.0) || near(u, band.1) || near(v, across.0) || near(v, across.1)
+    };
+    let off: Vec<bool> = reaches.iter().map(|r| !on_side(r)).collect();
     let n = segs.len();
     // Start the walk just after a segment on the boundary, so no run wraps around.
     if let Some(first) = off.iter().position(|o| !o) {
         let mut run: Option<((f64, f64), (f64, f64))> = None;
-        for (seg, &is_off) in segs.iter().zip(&off).cycle().skip(first + 1).take(n) {
+        for (&(u, v), &is_off) in reaches.iter().zip(&off).cycle().skip(first + 1).take(n) {
             if is_off {
-                for (u, v) in points(seg) {
-                    let ((ul, uh), (vl, vh)) = run.unwrap_or(((u, u), (v, v)));
-                    run = Some(((ul.min(u), uh.max(u)), (vl.min(v), vh.max(v))));
-                }
+                let ((ul, uh), (vl, vh)) = run.unwrap_or((u, v));
+                run = Some(((ul.min(u.0), uh.max(u.1)), (vl.min(v.0), vh.max(v.1))));
             } else if let Some((along, (vl, vh))) = run.take() {
                 out.push(Defect {
                     along,

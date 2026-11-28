@@ -804,6 +804,66 @@ fn the_defects_of_a_notched_strip() {
     assert!(strip_defects(&plain, Vec2::new(2.0, 0.0), TOL).is_err());
 }
 
+/// A curved notch whose ends and middle lie on the strip's side is still a defect (the review's
+/// case): the Bézier `x = 40 + 20t`, `y = 64t(1 − t)(t − 0.5)²` replaces the side y = 0 from x =
+/// 40 to 60; it meets y = 0 at t = 0, 0.5 and 1 but reaches 1 mm into the strip between them, so
+/// x = 40 .. 60 is not counted as usable length.
+#[test]
+fn a_curved_notch_touching_the_side_at_its_samples_is_a_defect() {
+    use crate::math::Vec2;
+    use crate::prism::profile::{Loop2, Region2, Seg2, MAX_BEZIER_CTRL};
+    let line = |a: (f64, f64), b: (f64, f64)| Seg2::Line {
+        a: Vec2::new(a.0, a.1),
+        b: Vec2::new(b.0, b.1),
+    };
+    // y = 16t − 80t² + 128t³ − 64t⁴ in degree-4 Bernstein form: 0, 4, −16/3, 4, 0.
+    let ctrl = [
+        (40.0, 0.0),
+        (45.0, 4.0),
+        (50.0, -16.0 / 3.0),
+        (55.0, 4.0),
+        (60.0, 0.0),
+    ];
+    let mut p = [Vec2::new(0.0, 0.0); MAX_BEZIER_CTRL];
+    for (slot, c) in p.iter_mut().zip(ctrl) {
+        *slot = Vec2::new(c.0, c.1);
+    }
+    let notch = Seg2::Bezier { n: 4, p };
+    for t in [0.0, 0.5, 1.0] {
+        assert!(notch.point_at(t).y.abs() < 1e-12, "t = {t}");
+    }
+    assert!((notch.point_at(0.5 - (0.125_f64).sqrt()).y - 1.0).abs() < 1e-9);
+    let sigma = Region2 {
+        outer: Loop2 {
+            segs: vec![
+                line((10.0, 0.0), (40.0, 0.0)),
+                notch,
+                line((60.0, 0.0), (150.0, 0.0)),
+                line((150.0, 0.0), (150.0, 6.0)),
+                line((150.0, 6.0), (10.0, 6.0)),
+                line((10.0, 6.0), (10.0, 0.0)),
+            ],
+        },
+        holes: Vec::new(),
+    };
+    let (band, defects) = strip_defects(&sigma, Vec2::new(1.0, 0.0), TOL).expect("defects");
+    assert_eq!(band, (10.0, 150.0));
+    assert_eq!(defects.len(), 1, "{defects:?}");
+    let d = &defects[0];
+    assert!(
+        (d.along.0 - 40.0).abs() <= TOL && (d.along.1 - 60.0).abs() <= TOL,
+        "{d:?}"
+    );
+    assert!((d.across - 1.0).abs() <= 2.0 * TOL, "{d:?}");
+    let kept = stretches(band, &defects, TOL).expect("stretches");
+    assert_eq!(kept.len(), 2, "{kept:?}");
+    assert!(
+        kept.iter()
+            .all(|&(a, b)| b <= 40.0 + TOL || a >= 60.0 - TOL),
+        "{kept:?}"
+    );
+}
+
 /// Design v2 11.3's pair ids for every [`PairSkip`].
 #[test]
 fn pair_skips_name_their_reason_ids() {
