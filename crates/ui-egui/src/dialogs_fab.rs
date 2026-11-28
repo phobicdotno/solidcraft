@@ -475,6 +475,10 @@ pub(crate) fn warnings(app: &SolveApp, v: &Value) -> Vec<String> {
             "rod_hub" => locale.format("fab.warn_rod_hub", &[("part", &text(w, "part"))]),
             "gaps_not_whole" => locale.format("fab.warn_gaps_not_whole", &[("thickness", &length(w, "thickness"))]),
             "never_cross" => locale.text("fab.warn_never_cross").to_string(),
+            "not_covered" => locale.format(
+                "fab.warn_not_covered",
+                &[("layers", &text(w, "layers")), ("covered", &length(w, "covered")), ("length", &length(w, "length")), ("axis", &text(w, "axis")), ("uncovered", &length(w, "uncovered"))],
+            ),
             _ => w["message"].as_str().unwrap_or_default().to_string(),
         })
         .collect();

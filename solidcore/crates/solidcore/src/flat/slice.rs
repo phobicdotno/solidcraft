@@ -248,6 +248,18 @@ pub enum Warning {
     },
     /// The two sets of waffle slices never cross: nothing holds them together.
     NeverCross,
+    /// The stacked layers are a whole number of sheets and cover less than the body's length
+    /// along the axis: the rest, half at each end, is left out.
+    NotCovered {
+        /// The slicing axis.
+        axis: Axis,
+        /// The number of layers.
+        layers: usize,
+        /// The length the layers cover (mm).
+        covered: f64,
+        /// The body's length along the axis (mm).
+        length: f64,
+    },
 }
 
 /// A slicing: its parts and what to know about them.
@@ -659,6 +671,9 @@ fn round_join(s: &FabSettings) -> Join {
 
 // ---- stacked --------------------------------------------------------------------------------
 
+/// How much of the body's length the stacked layers may leave out before it is a warning (mm).
+const COVER_TOLERANCE: f64 = 0.01;
+
 /// Layers one sheet thick along `s.axis`, with dowel holes where every layer has room and the
 /// outline of each smaller neighbour engraved as a placement guide.
 fn stacked(
@@ -668,7 +683,17 @@ fn stacked(
     out: &mut Out,
 ) -> FlatResult<()> {
     let (lo, hi) = extent(b, s.axis);
-    let layers = slices(model, s.axis, &positions(lo, hi, s, true)?, s, out, "L")?;
+    let at = positions(lo, hi, s, true)?;
+    let (covered, length) = (at.len() as f64 * s.thickness, hi - lo);
+    if length - covered > COVER_TOLERANCE {
+        out.warnings.push(Warning::NotCovered {
+            axis: s.axis,
+            layers: at.len(),
+            covered,
+            length,
+        });
+    }
+    let layers = slices(model, s.axis, &at, s, out, "L")?;
     let holes = dowel_holes(&layers, s, out);
     let r = s.dowel_diameter / 2.0 + s.play / 2.0;
     let discs: Vec<Region> = holes.iter().map(|&p| region::disk(p, r, s.chord)).collect();

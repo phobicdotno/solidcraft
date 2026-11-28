@@ -190,11 +190,12 @@ pub enum FabFormat {
 /// Something about a slicing to know; the parts are still usable.
 #[derive(Clone, Debug, Serialize, JsonSchema)]
 pub struct FabWarning {
-    /// `no_material`, `falls_apart`, `dowels_short`, `rod_hub`, `gaps_not_whole` or `never_cross`.
+    /// `no_material`, `falls_apart`, `dowels_short`, `rod_hub`, `gaps_not_whole`, `never_cross` or `not_covered`.
     pub code: String,
     /// The warning in English.
     pub message: String,
-    /// Its details (part, pieces, axis, at, placed, wanted, thickness), as the code has them.
+    /// Its details (part, pieces, axis, at, placed, wanted, thickness, layers, covered, length,
+    /// uncovered), as the code has them.
     #[serde(flatten)]
     #[schemars(with = "serde_json::Map<String, Value>")]
     pub details: serde_json::Map<String, Value>,

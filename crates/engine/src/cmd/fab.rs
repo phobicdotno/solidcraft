@@ -232,6 +232,21 @@ fn warning(w: &Warning) -> FabWarning {
             )
         }
         Warning::NeverCross => ("never_cross", "The two sets of slices never cross: nothing holds them together".to_string()),
+        Warning::NotCovered { axis, layers, covered, length } => {
+            d.insert("axis".into(), json!(axis_name(*axis)));
+            d.insert("layers".into(), json!(layers));
+            d.insert("covered".into(), json!(covered));
+            d.insert("length".into(), json!(length));
+            d.insert("uncovered".into(), json!(length - covered));
+            (
+                "not_covered",
+                format!(
+                    "{layers} layers cover {covered:.1} of the body's {length:.1} mm along {}: {:.1} mm is left out, half at each end",
+                    axis_name(*axis),
+                    length - covered
+                ),
+            )
+        }
     };
     FabWarning { code: code.into(), message, details: d }
 }

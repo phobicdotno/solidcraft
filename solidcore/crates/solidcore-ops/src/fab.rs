@@ -203,4 +203,45 @@ mod tests {
             Err(FlatError::Setting { .. })
         ));
     }
+
+    /// A box 80 mm tall cut into 6 mm layers: 13 layers cover 78 mm and the slicing says so; a
+    /// box 78 mm tall is covered whole and gets no such warning.
+    #[test]
+    fn a_stack_that_leaves_part_of_the_body_out_warns_by_how_much() {
+        let s = FabSettings {
+            thickness: 6.0,
+            dowels: 0,
+            ..DEFAULT_SETTINGS
+        };
+        let tall = crate::body::make_box([0.0, 0.0, 0.0], [200.0, 120.0, 80.0]).unwrap();
+        let res = slice_body(&tall, &s).unwrap().unwrap();
+        assert_eq!(res.parts.len(), 13);
+        let left_out: Vec<_> = res
+            .warnings
+            .iter()
+            .filter_map(|w| match w {
+                Warning::NotCovered {
+                    axis,
+                    layers,
+                    covered,
+                    length,
+                } => Some((*axis, *layers, *covered, *length)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(left_out.len(), 1, "{:?}", res.warnings);
+        let (axis, layers, covered, length) = left_out[0];
+        assert_eq!((axis, layers), (Axis::Z, 13));
+        assert!((covered - 78.0).abs() < 1e-9 && (length - 80.0).abs() < 1e-6);
+        let whole = crate::body::make_box([0.0, 0.0, 0.0], [200.0, 120.0, 78.0]).unwrap();
+        let res = slice_body(&whole, &s).unwrap().unwrap();
+        assert_eq!(res.parts.len(), 13);
+        assert!(
+            !res.warnings
+                .iter()
+                .any(|w| matches!(w, Warning::NotCovered { .. })),
+            "{:?}",
+            res.warnings
+        );
+    }
 }
