@@ -477,7 +477,13 @@ pub(crate) fn warnings(app: &SolveApp, v: &Value) -> Vec<String> {
             "never_cross" => locale.text("fab.warn_never_cross").to_string(),
             "not_covered" => locale.format(
                 "fab.warn_not_covered",
-                &[("layers", &text(w, "layers")), ("covered", &length(w, "covered")), ("length", &length(w, "length")), ("axis", &text(w, "axis")), ("uncovered", &length(w, "uncovered"))],
+                &[
+                    ("layers", &text(w, "layers")),
+                    ("covered", &length(w, "covered")),
+                    ("length", &length(w, "length")),
+                    ("axis", &text(w, "axis")),
+                    ("uncovered", &length(w, "uncovered")),
+                ],
             ),
             _ => w["message"].as_str().unwrap_or_default().to_string(),
         })
@@ -917,8 +923,7 @@ pub fn overlay(app: &mut SolveApp, painter: &egui::Painter, rect: Rect, d: &Dial
     let panel_left = app.viewport.dialog_rect.map_or(content.right(), |r| r.left());
     // The top sheet's caption stands above its page by its own height, whatever the scale.
     let caption = t.font_body + 8.0;
-    let area =
-        Rect::from_min_max(content.min + vec2(40.0, 60.0 + caption), pos2(panel_left.min(content.right()) - 20.0, content.bottom() - 40.0));
+    let area = Rect::from_min_max(content.min + vec2(40.0, 60.0 + caption), pos2(panel_left.min(content.right()) - 20.0, content.bottom() - 40.0));
     if area.width() <= 0.0 || area.height() <= 0.0 {
         return true;
     }
