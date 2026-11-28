@@ -5702,6 +5702,13 @@ fn placement_digest(doc: &Document, f: &Feature, st: Option<&ModelState>) -> u64
                 reads.placed_body(st, tool);
             }
         }
+        // Tab and slot refuses a plate with a body offset at evaluation, so each plate's offset
+        // is read: one added after the feature evaluates it again instead of serving the cache.
+        FeatureKind::TabSlot { tab_plates, slot_plates, .. } => {
+            for p in tab_plates.iter().chain(slot_plates) {
+                reads.placed_body(st, p.body.as_ref());
+            }
+        }
         FeatureKind::FingerJoint { bodies, .. } => {
             frame = bodies.first().and_then(|name| st.and_then(|st| st.body(name))).map(|b| body_world(doc, b));
             for body in bodies {
