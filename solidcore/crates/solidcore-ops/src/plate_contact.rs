@@ -445,11 +445,19 @@ impl Body {
         spec: TabSlotSpec,
         tol: f64,
     ) -> Result<core::result::Result<TabSlotCut, PairSkip>> {
-        let (d, plan) = match self.tab_slot_plan(slot, p, spec, tol)? {
-            Ok(planned) => planned,
+        let joint = match self.plate_pair(slot, p, tol)? {
+            Ok(joint) => joint,
             Err(skip) => return Ok(Err(skip)),
         };
-        let mut tabs = vec![self.copy()?];
+        let (d, plan) = self.tab_slot_plan_for(slot, p, &joint, spec, tol)?;
+        // An overlap joint (T sunk into S) is planned as T trimmed to P [M2]; the tabs are joined
+        // to that trimmed plate, so T keeps no material on S's side of P but its tabs.
+        let base = if joint.contact == Contact::Overlap {
+            trim_to(self, p)?
+        } else {
+            self.copy()?
+        };
+        let mut tabs = vec![base];
         let mut slots = Vec::new();
         for t in plan.iter().filter_map(|st| st.tabs.as_ref().ok()).flatten() {
             let (Ok(outline), None) = (&t.tab, t.skip) else {
@@ -494,6 +502,27 @@ pub fn tool_faces(plan: &[StretchPlan]) -> (usize, usize) {
         .filter(|t| t.skip.is_none())
         .filter_map(|t| t.tab.as_ref().ok().map(|tab| (prism(tab), prism(&t.slot))))
         .fold((0, 0), |(a, b), (t, s)| (a + t, b + s))
+}
+
+/// `t` trimmed to `p`: a copy with everything on the back of `p` (against its normal) cut away
+/// by a slab ([`slot_prism`] of a square in `p`'s frame) that holds all of `t` behind `p`.
+///
+/// # Errors
+/// Those of [`Body::bounds`], of the slab and of the boolean; [`crate::Error::Empty`] when
+/// nothing of `t` lies in front of `p`.
+#[allow(
+    clippy::float_arithmetic,
+    reason = "the slab's size: a bound on the body's reach from p's frame origin"
+)]
+fn trim_to(t: &Body, p: Plane) -> Result<Body> {
+    let (lo, hi) = t.bounds()?;
+    let reach = lo.iter().chain(&hi).fold(0.0_f64, |m, v| m.max(v.abs()));
+    // Every point of t is within sqrt(3) * reach of the world origin, so within that plus
+    // |offset| of p's frame origin: a half side and depth of 4 * (reach + |offset| + 1) hold it.
+    let r = 4.0 * (reach + p.offset.abs() + 1.0);
+    let square = ts::slot_outline(-r, 2.0 * r, (-r, r), 0.0).map_err(status)?;
+    let slab = slot_prism(p, &square, 2.0 * r, 0.0)?;
+    boolean(t.copy()?, slab, BooleanOp::Subtract)?.ok_or(Error::Empty)
 }
 
 /// Tab `k`'s prism ([`solidcore::plate_contact::tab_prism`]): `outline` (a [`TabPlan`]'s tab,
@@ -1274,6 +1303,34 @@ mod tests {
             .expect("joint");
         let v = cut.slot_plate.mass_properties(1e-9).unwrap().volume;
         assert!((v - (96000.0 - 2.0 * 10.2 * 6.2 * 6.0)).abs() < 1e-6, "{v}");
+    }
+
+    /// The overlap applied [M2]: Wall sunk 4 into Bottom gets the tabs of the wall trimmed to P,
+    /// and T and S share no material: their intersection is empty, and T is the trimmed wall's
+    /// 43200 plus two 10 x 6 x 7 tabs.
+    #[test]
+    fn an_overlap_cut_shares_no_material_with_the_slot_plate() {
+        let (s, p) = bottom();
+        let sunk = make_box([20.0, 30.0, 2.0], [120.0, 6.0, 64.0]).unwrap();
+        let cut = sunk
+            .tab_slot_cut(&s, p, spec2(), TOL)
+            .unwrap()
+            .expect("joint");
+        let v = |b: &Body| b.mass_properties(1e-9).unwrap().volume;
+        assert!(
+            (v(&cut.tab_plate) - 44040.0).abs() < 1e-6,
+            "{}",
+            v(&cut.tab_plate)
+        );
+        let common = boolean(
+            cut.tab_plate.copy().unwrap(),
+            cut.slot_plate.copy().unwrap(),
+            BooleanOp::Intersect,
+        )
+        .unwrap();
+        let shared = common.map_or(0.0, |b| v(&b));
+        assert!(shared.abs() < 1e-6, "{shared}");
+        assert!((v(&sunk) - 120.0 * 6.0 * 64.0).abs() < 1e-6);
     }
 
     /// 16.2 none: a wall beside S (x 200..320) meets P nowhere: `no_contact`, 40 apart; the recipe
