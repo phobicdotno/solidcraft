@@ -1034,6 +1034,11 @@ fn crossings_odd(span: Vec<H2>, p: Point2) -> Option<bool> {
 /// Most halvings of one boundary span in [`regions_overlap`].
 const MAX_OVERLAP_DEPTH: u32 = 40;
 
+/// Most pieces one boundary walk in [`pieces_against`] takes; past it the overlap is not decided.
+/// Two boundaries running side by side closer than `eps` but not within `eps / 2` keep halving
+/// along their whole length (about `length / eps` pieces), so the walk stops here instead.
+const MAX_OVERLAP_PIECES: usize = 1 << 18;
+
 /// The Bézier spans of a region's loops, with a straight join wherever a span ends away from
 /// where the next starts (as [`Loop2::holds`] closes them).
 fn boundary_spans(r: &Region2) -> Option<Vec<Vec<H2>>> {
@@ -1276,7 +1281,12 @@ pub(super) fn pieces_against(
         .rev()
         .map(|c| (c, 0))
         .collect();
+    let mut taken = 0usize;
     while let Some((c, depth)) = todo.pop() {
+        taken += 1;
+        if taken > MAX_OVERLAP_PIECES {
+            return None;
+        }
         let bx = hull_box(&c);
         if !other.iter().any(|o| boxes_meet(bx, *o, eps)) {
             if region_holds(b, point_of(casteljau(&c, 0.5)))? {
@@ -1310,8 +1320,10 @@ pub(super) fn pieces_against(
 /// of the other boundary by `eps` or within `eps` of it; a clear piece inside the other region
 /// has its region's inside next to it, so the two share area there. When no clear piece is
 /// inside, they still share area where their boundaries run together the same way (the insides
-/// on the same side), as for two equal regions. `None` when a point cannot be decided or a
-/// region is malformed.
+/// on the same side), as for two equal regions, provided a point just inside them lies in both.
+/// `None` when a point cannot be decided, a region is malformed, the boundary walk passes
+/// [`MAX_OVERLAP_PIECES`], or boundaries run together where that point is not in both (as for
+/// regions thinner than `2 eps`).
 pub fn regions_overlap(a: &Region2, b: &Region2, eps: f64) -> Option<bool> {
     if !(eps.is_finite() && eps > 0.0) {
         return None;
@@ -1325,7 +1337,12 @@ pub fn regions_overlap(a: &Region2, b: &Region2, eps: f64) -> Option<bool> {
         return Some(true);
     }
     let along = |(s, e): &(Point2, Point2)| Point2::new(e.x - s.x, e.y - s.y);
-    Some(a_near.iter().any(|pa| {
+    // boundaries running together prove shared area only when a point `2 eps` inside (to the
+    // left of the chord) lies in both regions; two regions thinner than that touching along an
+    // edge also have boundaries running together the same way, so a pair failing it leaves the
+    // answer undecided rather than shared
+    let mut undecided = false;
+    let shared_area = a_near.iter().any(|pa| {
         let da = along(pa);
         b_near.iter().any(|pb| {
             let db = along(pb);
@@ -1348,10 +1365,31 @@ pub fn regions_overlap(a: &Region2, b: &Region2, eps: f64) -> Option<bool> {
             let u = Point2::new(da.x / la, da.y / la);
             let at = |q: Point2| (q.x - pa.0.x) * u.x + (q.y - pa.0.y) * u.y;
             let (s, e) = (at(pb.0), at(pb.1));
-            let shared = e.max(s).min(la) - e.min(s).max(0.0);
-            shared > 0.25 * la.min(lb)
+            let (from, to) = (e.min(s).max(0.0), e.max(s).min(la));
+            if to - from <= 0.25 * la.min(lb) {
+                return false;
+            }
+            let t = 0.5 * (from + to);
+            let probe = Point2::new(
+                pa.0.x + u.x * t - u.y * 2.0 * eps,
+                pa.0.y + u.y * t + u.x * 2.0 * eps,
+            );
+            match (region_holds(a, probe), region_holds(b, probe)) {
+                (Some(true), Some(true)) => true,
+                _ => {
+                    undecided = true;
+                    false
+                }
+            }
         })
-    }))
+    });
+    if shared_area {
+        Some(true)
+    } else if undecided {
+        None
+    } else {
+        Some(false)
+    }
 }
 
 /// Why a profile is refused ([`check_regions`]).

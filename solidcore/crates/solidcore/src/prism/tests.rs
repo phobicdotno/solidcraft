@@ -4398,3 +4398,29 @@ fn gusset_plan_keeps_the_joint_offset_contacts_and_fabrication_cuts() {
     let negative = gusset::plan([&a, &b], dimensions, Placement::Negative).unwrap();
     assert_eq!((negative.start, negative.end), (-6.0, 0.0));
 }
+
+/// Two long edges running side by side closer than `eps` but not within `eps / 2` would halve
+/// down to `eps` along their whole length; the walk stops at its piece cap and leaves the
+/// overlap undecided instead of running out of memory.
+#[test]
+fn regions_overlap_caps_a_long_near_parallel_gap() {
+    use super::profile::regions_overlap;
+    let eps = 1e-6;
+    let low = rectangle(p(0.0, 0.0), p(128.0, 1.0));
+    let high = rectangle(p(0.0, 1.0 + 0.75 * eps), p(128.0, 2.0));
+    assert_eq!(regions_overlap(&low, &high, eps), None);
+}
+
+/// Two regions thinner than `eps` stacked on a shared edge have boundaries running together the
+/// same way, but no area in common: they are not reported as sharing area. Equal regions still
+/// are.
+#[test]
+fn regions_overlap_thin_regions_touching_along_an_edge_share_no_area() {
+    use super::profile::regions_overlap;
+    let eps = 1e-6;
+    let low = rectangle(p(0.0, 0.0), p(2.0, 0.25 * eps));
+    let high = rectangle(p(0.0, 0.25 * eps), p(2.0, 0.5 * eps));
+    assert_ne!(regions_overlap(&low, &high, eps), Some(true));
+    let sq = rectangle(p(0.0, 0.0), p(2.0, 2.0));
+    assert_eq!(regions_overlap(&sq, &sq.clone(), eps), Some(true));
+}
