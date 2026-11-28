@@ -472,3 +472,19 @@ fn a_preview_short_of_the_parts_says_how_many_it_shows() {
     let line = format!("dialog:status:The view shows {} of {total} parts", total - 2);
     assert!(crate::scenario::rect_of(&line).is_some(), "{:?}", crate::scenario::rects("dialog:status:"));
 }
+
+/// The Sheets view frames every sheet whole, the caption gap above the top one and a margin
+/// round all; one sheet or many.
+#[test]
+fn the_sheets_frame_holds_every_sheet_and_the_top_caption() {
+    let (w, h) = (600.0, 400.0);
+    for count in [1, 2, 5] {
+        let (lo, hi) = super::sheets_frame(w, h, count);
+        let pitch = h * 1.12;
+        let bottom = -((count - 1) as f64) * pitch;
+        assert!(lo.0 < 0.0 && hi.0 > w, "{count}: {lo:?} {hi:?}");
+        assert!(lo.1 < bottom, "{count}: the last sheet's bottom is inside");
+        assert!(hi.1 >= h + 0.12 * h, "{count}: the top caption's gap is inside");
+    }
+    assert_eq!(super::sheets_frame(w, h, 0), super::sheets_frame(w, h, 1));
+}

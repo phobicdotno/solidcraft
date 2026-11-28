@@ -870,6 +870,19 @@ pub(crate) fn built(app: &SolveApp) -> crate::preview::Built {
     }
 }
 
+/// How far apart the Sheets view stacks its sheets, in sheet heights.
+const SHEET_PITCH: f64 = 1.12;
+
+/// The box `(lo, hi)` the Sheets view frames for `count` sheets `w` by `h` (mm), sheet i's page
+/// from y = -i * pitch up: every page, the caption gap above the top one, and a margin of 4% of
+/// the larger side all round, so Fit shows every sheet whole.
+pub(crate) fn sheets_frame(w: f64, h: f64, count: usize) -> ((f64, f64), (f64, f64)) {
+    let pitch = h * SHEET_PITCH;
+    let margin = 0.04 * w.max(h);
+    let bottom = -(count.max(1) as f64 - 1.0) * pitch;
+    ((-margin, bottom - margin), (w + margin, h + (pitch - h) + margin))
+}
+
 /// The window is open on its Sheets view, which has the viewport.
 pub(crate) fn sheets_active(app: &SolveApp) -> bool {
     matches!(app.dialog.as_ref().map(|d| &d.kind), Some(Kind::Fab(k)) if k.view == 1)
@@ -897,13 +910,15 @@ pub fn overlay(app: &mut SolveApp, painter: &egui::Painter, rect: Rect, d: &Dial
         return true;
     }
     // Sheet i sits below sheet i - 1, 0.12 of its height apart, room for its caption above.
-    let pitch = h * 1.12;
+    let pitch = h * SHEET_PITCH;
     let base = |i: usize| -(i as f64) * pitch;
-    let lo = (0.0, base(sheets.len() - 1));
-    let hi = (w, h + h * 0.06);
+    let (lo, hi) = sheets_frame(w, h, sheets.len());
     let content = crate::shell::content_rect(app, rect);
     let panel_left = app.viewport.dialog_rect.map_or(content.right(), |r| r.left());
-    let area = Rect::from_min_max(content.min + vec2(40.0, 60.0), pos2(panel_left.min(content.right()) - 20.0, content.bottom() - 40.0));
+    // The top sheet's caption stands above its page by its own height, whatever the scale.
+    let caption = t.font_body + 8.0;
+    let area =
+        Rect::from_min_max(content.min + vec2(40.0, 60.0 + caption), pos2(panel_left.min(content.right()) - 20.0, content.bottom() - 40.0));
     if area.width() <= 0.0 || area.height() <= 0.0 {
         return true;
     }
