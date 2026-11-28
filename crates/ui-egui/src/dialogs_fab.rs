@@ -658,7 +658,7 @@ fn shapes(v: &Value) -> (Vec<(Mesh, bool)>, Vec<Vec<[Vec2; 3]>>, usize) {
             let Ok(mesh) = kernel::guard("plate of a flat part", || Ok(kernel::fab::plate(&rings, &frame, thickness))) else {
                 continue;
             };
-            triangles += mesh.triangles.len();
+            triangles += kernel::fab::plate_triangles(&mesh);
             if triangles > MAX_TRIANGLES {
                 break 'parts;
             }
@@ -830,12 +830,8 @@ pub(crate) fn built(app: &SolveApp) -> crate::preview::Built {
     let mut bounds = Aabb3::EMPTY;
     for (m, is_slice) in &app.fab.plates {
         let fill = if *is_slice { slice } else { other };
-        for tri in &m.triangles {
-            for &i in tri {
-                if let (Some(p), Some(n)) = (m.positions.get(i as usize), m.normals.get(i as usize)) {
-                    sc.tri(p.to_f32(), n.to_f32(), fill);
-                }
-            }
+        for (p, n) in solidcraft_engine::kernel::fab::plate_corners(m) {
+            sc.tri(p.to_f32(), n.to_f32(), fill);
         }
         for e in &m.edges {
             for w in e.windows(2) {

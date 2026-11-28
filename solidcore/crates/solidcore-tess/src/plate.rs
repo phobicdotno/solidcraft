@@ -82,6 +82,23 @@ pub fn plate(rings: &[Vec<[f64; 2]>], frame: &PlateFrame, thickness: f64) -> Mes
     mesh
 }
 
+/// The corners of `mesh`'s triangles in drawing order, three a triangle, each with its normal:
+/// what a display draws of a [`plate`]. A triangle with an index out of range is left out.
+#[must_use]
+pub fn shaded_corners(mesh: &Mesh) -> Vec<(Vec3, Vec3)> {
+    let corner = |i: u32| {
+        Some((
+            *mesh.positions.get(i as usize)?,
+            *mesh.normals.get(i as usize)?,
+        ))
+    };
+    mesh.triangles
+        .iter()
+        .filter_map(|t| Some([corner(t[0])?, corner(t[1])?, corner(t[2])?]))
+        .flatten()
+        .collect()
+}
+
 /// Triangles filling closed polygons `[x, y]` by the even-odd rule: a part's outline and holes,
 /// or every ring cut on a sheet (a part inside another's hole fills again). For drawing; empty
 /// when the rings are not polygons (as for [`plate`]).
@@ -230,6 +247,16 @@ mod tests {
             .iter()
             .map(|[a, b, c]| (*b - *a).cross(*c - *a).len() / 2.0)
             .sum()
+    }
+
+    #[test]
+    fn shaded_corners_are_every_triangle_with_its_normals() {
+        let mesh = plate(&[square(0.0, 0.0, 10.0)], &frame(), 2.0);
+        let shaded = shaded_corners(&mesh);
+        assert_eq!(shaded.len(), 3 * mesh.triangle_count());
+        let points: Vec<Vec3> = shaded.iter().map(|&(p, _)| p).collect();
+        assert_eq!(points, corners(&mesh).concat());
+        assert!(shaded.iter().all(|(_, n)| (n.len() - 1.0).abs() < 1e-9));
     }
 
     #[test]

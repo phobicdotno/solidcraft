@@ -58,3 +58,16 @@ pub fn plate(rings: &[Vec<[f64; 2]>], frame: &PlateFrame, thickness: f64) -> sol
 pub fn fill(rings: &[Vec<[f64; 2]>]) -> Vec<[solidcore_record::Vec2; 3]> {
     solidcore_tess::fill(rings)
 }
+
+/// The corners of a [`plate`]'s triangles in drawing order, three a triangle, each with its
+/// normal: what the Slice preview shades.
+#[must_use]
+pub fn plate_corners(mesh: &solidcore_tess::Mesh) -> Vec<(solidcore_record::Vec3, solidcore_record::Vec3)> {
+    solidcore_tess::shaded_corners(mesh)
+}
+
+/// How many triangles a [`plate`] has: what the Slice preview counts against its budget.
+#[must_use]
+pub fn plate_triangles(mesh: &solidcore_tess::Mesh) -> usize {
+    mesh.triangle_count()
+}

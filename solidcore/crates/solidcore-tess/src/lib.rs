@@ -64,6 +64,7 @@ pub use plan::TessPlan;
 pub use plate::PlateFrame;
 pub use plate::fill;
 pub use plate::plate;
+pub use plate::shaded_corners;
 pub use pole::AveragedPole;
 pub use pole::PoleNode;
 pub use pole::PoleRule;
