@@ -29,7 +29,7 @@ use solidcore::blend::definition_check::{
 use solidcore::blend::fillet_executive::api::{chamfer_fillet, fillet_edges_per_edge};
 use solidcore::blend::fillet_executive::session::FilletSession;
 use solidcore::blend::fillet_executive::{FitKind, FitSize};
-use solidcore::blend::fillet_geom::p1::{FilletCornerType, FilletErrorType};
+use solidcore::blend::fillet_geom::p1::FilletCornerType;
 use solidcore::blend::fillet_solver::p1::FilletSurfaceGeneratorType;
 use solidcore::boolean::api_brep::boolean_difference;
 use solidcore::curve::curve::{Curve, CurveKind};
@@ -38,6 +38,7 @@ use solidcore::geom::attribute::{AttributeStore, ObjectKey};
 use solidcore::geom::global_solver::SolverOperation;
 use solidcore::kernel::UpstreamFixes;
 use solidcore::mass::integrator::properties::{brep_volume, PropertyAttributes};
+use solidcore::math::det;
 use solidcore::math::{Point2, Point3, Vec3, BIG_DOUBLE};
 use solidcore::primitive::api_curves::create_line_segment;
 use solidcore::primitive::api_primitives::{create_box, create_pyramid};
@@ -332,7 +333,7 @@ fn half_space(k: &mut Kernel, at: Vec3, n: Vec3) -> Brep {
 /// lie on x + z = 20, with z = tan(3 degrees) max(|y| - 1/2, 0).
 #[test]
 fn rounds_follow_a_three_degree_crease_in_both_supports() {
-    let slope = 3.0_f64.to_radians().tan();
+    let slope = det::tan(3.0_f64.to_radians());
     for reverse in [false, true] {
         let mut k = all_fixes();
         let mut b = create_box(&mut k, Point3::new(0.0, -10.0, 0.0), 20.0, 20.0, 20.0).unwrap();
@@ -355,7 +356,7 @@ fn rounds_follow_a_three_degree_crease_in_both_supports() {
         // On the flat round (x-(20-r))^2+(z-r)^2=r^2, its near crossing
         // satisfies 2u^2-2r(1+d)u+r^2 d^2=0, d=1-cos(a).
         let r = 2.0;
-        let cos = 3.0_f64.to_radians().cos();
+        let cos = det::cos(3.0_f64.to_radians());
         let d = 1.0 - cos;
         let u = r * d * d / (1.0 + d + (1.0 + 2.0 * d - d * d).sqrt());
         for side in [-1.0, 1.0] {
@@ -468,8 +469,8 @@ fn oblique_corner_is_on_the_ball() {
     for i in 0..3 {
         p[i] = c + n[i] * rad;
         foot[i] = e[i] * c.dot(e[i]);
-        let a = (-n[i].dot(n[(i + 1) % 3])).acos();
-        removed += rad * rad * (1.0 / (a / 2.0).tan() - (PI - a) / 2.0) * (len - c.dot(e[i]));
+        let a = det::acos(-n[i].dot(n[(i + 1) % 3]));
+        removed += rad * rad * (1.0 / det::tan(a / 2.0) - (PI - a) / 2.0) * (len - c.dot(e[i]));
     }
     let mut hexa = 0.0;
     for i in 0..3 {
@@ -478,8 +479,10 @@ fn oblique_corner_is_on_the_ball() {
         hexa += (-c).dot((p[i] - c).cross(fb - c)).abs() / 6.0;
     }
     let omega = 2.0
-        * (n[0].dot(n[1].cross(n[2])).abs())
-            .atan2(1.0 + n[0].dot(n[1]) + n[1].dot(n[2]) + n[2].dot(n[0]));
+        * det::atan2(
+            n[0].dot(n[1].cross(n[2])).abs(),
+            1.0 + n[0].dot(n[1]) + n[1].dot(n[2]) + n[2].dot(n[0]),
+        );
     removed += hexa - rad * rad * rad * omega / 3.0;
 
     let mut body = create_box(&mut k, Point3::new(-40.0, -40.0, -40.0), 80.0, 80.0, 80.0).unwrap();
@@ -1213,7 +1216,7 @@ fn a_mitre_point_outside_the_corner_is_refused_with_its_fit() {
         let c = fit.size;
         chamfer(&mut k, &mut b, &edges, &[1.0, 1.0, c], corner).unwrap();
         let (_, lines, v) = report(&mut k, &mut b);
-        let mitre = 24000.0 - (35.0 + 10.0 * c * c - c + 1.0 / 3.0 - (2.0 - c).powi(3) / 12.0);
+        let mitre = 24000.0 - (35.0 + 10.0 * c * c - c + 1.0 / 3.0 - det::powi(2.0 - c, 3) / 12.0);
         // the facet's tetrahedron: M = (c/2, c/2, (2 - c)/2), X_w = (1, 1, 0),
         // X_u = (0, c, 1), X_v = (c, 0, 1)
         let m = Vec3::new(c / 2.0, c / 2.0, (2.0 - c) / 2.0);
@@ -1252,54 +1255,41 @@ fn l_block() -> (Kernel, Brep, Vec<EdgeId>) {
     (k, b, edges)
 }
 
-// Chamfers of both convexities at a vertex of three, as bevels: the event declines them, and the
-// pinned bevel cannot find their common point, so the refusal must name the vertex. Today it
-// fails with code 3, "Vertex Computation Failure".
+// Chamfers of both convexities at a vertex of three are the chamfer event's mitre
+// (tangency-labs/solidcraft#23136), asked or not: 11 faces (the L block's 8 and the three
+// chamfers), clean.
+//
+// In V's frame (u = x - 20, v = y - 15, w = 20 - z; the material u < 0 or v < 0) with the
+// upright's chamfer c and the top chamfers a (along x) and b (along y): the upright's adds the
+// wedge u, v > 0, u + v < c over the height, 10 c^2; the top chamfers' planes v = w - a and
+// u = w - b, run on over the wedge, take what is above both. At depth w that is, of the L, the
+// strip v > w - a along x (length 20) with the strip u > w - b along y (length 15) and the
+// rectangle between them at V, (a - w) (20 + b - w) + 15 (b - w) while w < a, b, and one
+// strip's rest past the smaller size; and of the wedge the triangle of legs
+// c - max(0, w - a) - max(0, w - b), down to the mitre point at w = (a + b + c) / 2.
+// - a = b = c = 2: 35 s^2 / 2 + s^3 / 3 of the L and s^3 / 2 + s^3 / 12 of the wedge, 77 + 1/3
+//   in all: 18000 + 40 - 77 - 1/3.
+// - c = 3, a = 1, b = 2: of the L 33 + 1/3 for w < 1 (52 - 38 w + w^2) and 7 + 1/3 for
+//   1 < w < 2 ((2 - w) (16 - w)); of the wedge 9/2 for w < 1, 19/6 for 1 < w < 2
+//   ((4 - w)^2 / 2) and 2/3 for 2 < w < 3 ((6 - 2 w)^2 / 2): 49 in all: 18000 + 90 - 49.
 #[test]
-fn chamfers_of_both_convexities_at_a_vertex_are_refused_as_bevels_naming_the_vertex() {
-    for d in [[2.0; 3], [3.0, 1.0, 2.0]] {
-        let (mut k, mut b, edges) = l_block();
-        let mut s = FilletSession::new(&mut k, &mut b).unwrap();
-        let xs = [FilletSurfaceGeneratorType::Linear; 3];
-        s.prepare_per_edge_constant_radius(&mut k, &edges, &d, &xs, 1, 1.0)
-            .unwrap();
-        s.create_corners(&k, None).unwrap();
-        for id in s.fillet_corners().unwrap() {
-            s.set_corner_bevel(id, true).unwrap();
+fn chamfers_of_both_convexities_at_a_vertex_are_mitred() {
+    for (d, want) in [
+        ([2.0; 3], 18000.0 + 40.0 - 77.0 - 1.0 / 3.0),
+        ([3.0, 1.0, 2.0], 18041.0),
+    ] {
+        for corner in [None, Some(BlendChamferCorner::Mitre)] {
+            let (mut k, mut b, edges) = l_block();
+            chamfer_asking(&mut k, &mut b, &edges, &d, corner).unwrap();
+            let (n, lines, v) = report(&mut k, &mut b);
+            assert!(lines.is_empty(), "{d:?} {corner:?}: {lines:?}");
+            assert_eq!(n.0, 11, "{d:?} {corner:?}");
+            assert!(
+                (v - want).abs() <= 1e-12 * want,
+                "{d:?} {corner:?}: {v} vs {want}"
+            );
         }
-        let done = s.do_filleting(&mut k, None);
-        let info = s.error_info();
-        assert!(done.is_err(), "{d:?}: built");
-        assert_eq!(
-            info.code,
-            FilletErrorType::CornerUnsupported as i32,
-            "{d:?}: {}",
-            info.comment
-        );
-        let at = info.location.unwrap();
-        assert!(
-            (at.x - 20.0).abs() <= 1e-12
-                && (at.y - 15.0).abs() <= 1e-12
-                && (at.z - 20.0).abs() <= 1e-12,
-            "{d:?}: refused at {at:?}"
-        );
-        assert!(
-            info.comment
-                .contains("chamfers of convex and of concave edges meet at the vertex"),
-            "{d:?}: {}",
-            info.comment
-        );
     }
-}
-
-// Without bevels the same three chamfers keep the pinned corner patch: it builds, 12 faces, clean.
-#[test]
-fn chamfers_of_both_convexities_without_bevels_keep_the_pinned_corner() {
-    let (mut k, mut b, edges) = l_block();
-    chamfer(&mut k, &mut b, &edges, &[2.0; 3], BlendChamferCorner::Mitre).unwrap();
-    let (n, lines, _) = report(&mut k, &mut b);
-    assert!(lines.is_empty(), "{lines:?}");
-    assert_eq!(n.0, 12);
 }
 
 fn pyramid() -> (Kernel, Brep, Vec<EdgeId>) {
@@ -1480,7 +1470,7 @@ fn five_and_six_chamfers_at_an_apex_are_bilinear_quadrilaterals() {
         let base: Vec<Point3> = (0..n)
             .map(|i| {
                 let a = 2.0 * PI * i as f64 / n as f64;
-                Point3::new(10.0 * a.cos(), 10.0 * a.sin(), 0.0)
+                Point3::new(10.0 * det::cos(a), 10.0 * det::sin(a), 0.0)
             })
             .collect();
         // F_i between e_(i-1) and e_i, its outward unit normal
@@ -1772,7 +1762,8 @@ fn polyhedron(k: &mut Kernel, faces: &[Vec<Point3>]) -> Brep {
 
 // The unit vectors u_k at 0, 120 and 240 degrees in z = 0.
 fn apex_directions() -> [Vec3; 3] {
-    [0.0_f64, 120.0, 240.0].map(|a| Vec3::new(a.to_radians().cos(), a.to_radians().sin(), 0.0))
+    [0.0_f64, 120.0, 240.0]
+        .map(|a| Vec3::new(det::cos(a.to_radians()), det::sin(a.to_radians()), 0.0))
 }
 
 // A low apex of three faces at V = 0 on a triangular prism, and its three ridges. The faces

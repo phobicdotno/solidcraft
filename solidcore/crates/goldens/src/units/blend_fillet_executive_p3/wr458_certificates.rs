@@ -6,7 +6,7 @@
 //! record's own [`observe`] call, so it is the golden's body bit for bit):
 //! - the record's status is a success and the body's vertex, edge and face counts are the
 //!   golden's;
-//! - `check_brep` Level 2 reports nothing (or, on the two rows of [`MAIN_LEVEL2`], exactly
+//! - `check_brep` Level 2 reports nothing (or, on the row of [`MAIN_LEVEL2`], exactly
 //!   the lines main's body of that row reports: this change adds none) and, for a closed
 //!   result, the body is one closed manifold solid;
 //! - every blend face that is a definition re-certifies its net within its bound;
@@ -30,6 +30,7 @@ use solidcore::topology::brep::validation::{check_brep, CheckLevel};
 use solidcore::topology::FaceId;
 use std::cell::RefCell;
 use std::rc::Rc;
+use solidcore::math::det;
 
 /// A moved row: name, whether the result is closed (else open), and its status and counts
 /// (the same on main).
@@ -108,17 +109,12 @@ fn every_moved_row_has_its_own_test() {
 /// The moved body reports exactly these, so the lines are main's, not this change's. They
 /// are kept as main's facts here, not excused: any other line, or a count that differs,
 /// fails.
+///
+/// `issue_2176_tabbed_plate_tab_side_r0_5` reported main's `SmBSplineCurve` test 11 ("Interior
+/// 1st Deriv too slow") once, on a UV trim that ran back just after a knot of its curve where the
+/// curve's first derivative jumps; the drop's curve-knot rule (tangency-labs/solidcraft#22201)
+/// starts that span with the speed ahead, the line is gone, and the row is held to the default.
 const MAIN_LEVEL2: &[(&str, &[(&str, usize)])] = &[
-    (
-        "issue_2176_tabbed_plate_tab_side_r0_5",
-        &[(
-            "SmBSplineCurve::Test #11 Bad SpeedPt: 2D BSplineCurve Warning: Interior 1st Deriv \
-             too slow, less than AvgSpeed/10000 (often an almost kink or almost singular point - \
-             never good practice) (offset=2.5724395e-12, tolerance=6.6664096e-05) [owner \
-             SmBSplineCurve]",
-            1,
-        )],
-    ),
     (
         "sweep5-nurb_box1-all-r0.5",
         &[
@@ -276,7 +272,7 @@ fn surface_surface_row_is_a_certified_definition() {
         let u = d.u_interval().min() + f * (d.u_interval().max() - d.u_interval().min());
         let v = 0.5 * (d.v_interval().min() + d.v_interval().max());
         let p = surface.evaluate_point(&k, solidcore::math::Point2::new(u, v)).unwrap();
-        let far = ((p.x - (5.0 + 2f64.sqrt())).powi(2) + (p.z + 2f64.sqrt()).powi(2)).sqrt();
+        let far = (det::powi(p.x - (5.0 + 2f64.sqrt()), 2) + det::powi(p.z + 2f64.sqrt(), 2)).sqrt();
         assert!(far <= input.tolerance, "{name}: the middle of the section at u = {u} is {far:e} off the arc's far point");
     }
 }

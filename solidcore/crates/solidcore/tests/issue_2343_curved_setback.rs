@@ -37,6 +37,7 @@ use solidcore::geom::axis2_placement::Axis2Placement;
 use solidcore::geom::extent1d::Extent1d;
 use solidcore::geom::global_solver::{SolutionRequested, SolverOperation};
 use solidcore::kernel::UpstreamFixes;
+use solidcore::math::det;
 use solidcore::math::{Point2, Point3, Vec3, BIG_DOUBLE};
 use solidcore::nurbs::b_spline_surface_n_lib::p2::EvaluateFlags;
 use solidcore::nurbs::knots::Side;
@@ -123,7 +124,7 @@ fn arc(k: &Kernel, c: Point3, r: f64, a0: f64, a1: f64) -> Curve {
     let axis = Vec3::Z;
     let reference = Vec3::X;
     let y = axis.cross(reference);
-    let x0 = reference * a0.cos() + y * a0.sin();
+    let x0 = reference * det::cos(a0) + y * det::sin(a0);
     let y0 = axis.cross(x0);
     let frame = Axis2Placement::new(c, x0, y0);
     let interval = Extent1d::from_min_max(0.0, (a1 - a0) * 180.0 / PI);
@@ -132,7 +133,7 @@ fn arc(k: &Kernel, c: Point3, r: f64, a0: f64, a1: f64) -> Curve {
 
 /// The disc of radius `rr` about (`cx`, `cy`) less x > cx + a, from z0 up `height`.
 fn d_prism(k: &mut Kernel, cx: f64, cy: f64, rr: f64, a: f64, z0: f64, height: f64) -> Brep {
-    let al = (a / rr).acos();
+    let al = det::acos(a / rr);
     let h = (rr * rr - a * a).sqrt();
     let l = line(
         Point3::new(cx + a, cy - h, z0),
@@ -400,7 +401,7 @@ struct Case {
 }
 
 fn angle(a: Vec3, b: Vec3) -> f64 {
-    a.cross(b).length().atan2(a.dot(b))
+    det::atan2(a.cross(b).length(), a.dot(b))
 }
 
 /// The parameters of `s` nearest `x`, and how far `x` is from it there.
@@ -811,7 +812,7 @@ fn d_prism_corner_room_is_measured_along_its_edges() {
     let mut want = [
         2.0 * (rr * rr - a * a).sqrt(),
         10.0,
-        rr * (2.0 * PI - 2.0 * (a / rr).acos()),
+        rr * (2.0 * PI - 2.0 * det::acos(a / rr)),
     ];
     want.sort_by(f64::total_cmp);
     let mut room = r.room.clone();
@@ -975,8 +976,8 @@ fn knife_edge_corner_is_a_setback_no_more_concave_than_its_wall() {
                 2.0,
             ),
             mid(
-                Point3::new(tip + 23.5 * q.cos(), -21.0 + 23.5 * q.sin(), 7.5),
-                Point3::new(tip + 21.0 * q.cos(), -21.0 + 21.0 * q.sin(), 10.0),
+                Point3::new(tip + 23.5 * det::cos(q), -21.0 + 23.5 * det::sin(q), 7.5),
+                Point3::new(tip + 21.0 * det::cos(q), -21.0 + 21.0 * det::sin(q), 10.0),
                 2.5,
             ),
             mid(
@@ -1086,8 +1087,8 @@ fn middle(c: [f64; 3], n1: [f64; 3], n2: [f64; 3], r: f64) -> Point3 {
 /// top's arc rounded 1.25, 1.5 and 2 (k = 0). Faces: the part's 5, 4 rounds, 6 patches (15).
 fn cone_frustum_case() -> (Kernel, Brep, Vec<EdgeId>, Vec<f64>, Case) {
     let mut k = all_fixes();
-    let tb = (PI / 6.0).tan();
-    let (cb, sb) = ((PI / 6.0).cos(), (PI / 6.0).sin());
+    let tb = det::tan(PI / 6.0);
+    let (cb, sb) = (det::cos(PI / 6.0), det::sin(PI / 6.0));
     let rt = 10.0 - 6.0 * tb;
     let rm = 10.0 - 3.0 * tb;
     let cone = solidcore::primitive::api_primitives::create_cone(
@@ -1103,7 +1104,7 @@ fn cone_frustum_case() -> (Kernel, Brep, Vec<EdgeId>, Vec<f64>, Case) {
     let mut edges = vec![pick(&k, &b, [0.0, 0.0, 6.0]), pick(&k, &b, [0.0, rm, 3.0])];
     let mut radii = vec![1.25, 1.5];
     for e in edges_on(&k, &b, |p| {
-        (p.z - 6.0).abs() <= 1e-7 && (p.x.hypot(p.y) - rt).abs() <= 1e-7
+        (p.z - 6.0).abs() <= 1e-7 && (det::hypot(p.x, p.y) - rt).abs() <= 1e-7
     }) {
         edges.push(e);
         radii.push(2.0);
@@ -1173,7 +1174,7 @@ fn countersink_case(k: &mut Kernel) -> (Brep, Vec<EdgeId>, Vec<f64>, Case) {
     ];
     let mut radii = vec![1.25, 1.0];
     for e in edges_on(k, &b, |p| {
-        (p.z - 20.0).abs() <= 1e-7 && ((p.x - 4.0).hypot(p.y) - 8.0).abs() <= 1e-7
+        (p.z - 20.0).abs() <= 1e-7 && (det::hypot(p.x - 4.0, p.y) - 8.0).abs() <= 1e-7
     }) {
         edges.push(e);
         radii.push(1.5);
@@ -1202,9 +1203,9 @@ fn countersink_case(k: &mut Kernel) -> (Brep, Vec<EdgeId>, Vec<f64>, Case) {
                 1.25,
             ),
             middle(
-                [4.0 + rr * a3.cos(), rr * a3.sin(), zr],
+                [4.0 + rr * det::cos(a3), rr * det::sin(a3), zr],
                 [0.0, 0.0, 1.0],
-                [-c45 * a3.cos(), -c45 * a3.sin(), c45],
+                [-c45 * det::cos(a3), -c45 * det::sin(a3), c45],
                 1.5,
             ),
             middle(
@@ -1588,15 +1589,15 @@ fn d_prism_asked_past_the_rails_names_the_setback_that_fits() {
 /// parameter (each a few millionths long).
 fn top_spring_least_rho(s: f64) -> f64 {
     let p = (7.0, 6.0 - s);
-    let psi = 6.0f64.atan2(8.0) + s / 10.0;
-    let q = (8.0 * psi.cos(), 8.0 * psi.sin());
-    let along = (7.0 - q.0) / psi.sin();
-    let x = (7.0, q.1 - along * psi.cos());
+    let psi = det::atan2(6.0f64, 8.0) + s / 10.0;
+    let q = (8.0 * det::cos(psi), 8.0 * det::sin(psi));
+    let along = (7.0 - q.0) / det::sin(psi);
+    let x = (7.0, q.1 - along * det::cos(psi));
     (0..=20000)
         .map(|i| {
             let t = f64::from(i) / 20000.0;
             let (a, b, c) = ((1.0 - t) * (1.0 - t), 2.0 * t * (1.0 - t), t * t);
-            (a * p.0 + b * x.0 + c * q.0).hypot(a * p.1 + b * x.1 + c * q.1)
+            det::hypot(a * p.0 + b * x.0 + c * q.0, a * p.1 + b * x.1 + c * q.1)
         })
         .fold(f64::INFINITY, f64::min)
 }
@@ -1694,12 +1695,12 @@ fn bored_d_prism_spring_curve_leaving_the_top_names_the_setback_that_keeps_it() 
 /// steps of its parameter), the arc round's end section out to rho = 10, and the arc back to V
 /// (200 steps).
 fn top_piece(s: f64) -> Vec<(f64, f64)> {
-    let psi_v = 6.0f64.atan2(8.0);
+    let psi_v = det::atan2(6.0f64, 8.0);
     let p = (7.0, 6.0 - s);
     let psi = psi_v + s / 10.0;
-    let q = (8.0 * psi.cos(), 8.0 * psi.sin());
-    let along = (7.0 - q.0) / psi.sin();
-    let x = (7.0, q.1 - along * psi.cos());
+    let q = (8.0 * det::cos(psi), 8.0 * det::sin(psi));
+    let along = (7.0 - q.0) / det::sin(psi);
+    let x = (7.0, q.1 - along * det::cos(psi));
     let mut out = vec![(8.0, 6.0), (8.0, 6.0 - s)];
     for i in 0..=2000 {
         let t = f64::from(i) / 2000.0;
@@ -1708,7 +1709,7 @@ fn top_piece(s: f64) -> Vec<(f64, f64)> {
     }
     for i in 0..=200 {
         let a = psi + (psi_v - psi) * f64::from(i) / 200.0;
-        out.push((10.0 * a.cos(), 10.0 * a.sin()));
+        out.push((10.0 * det::cos(a), 10.0 * det::sin(a)));
     }
     out
 }
@@ -1725,7 +1726,7 @@ fn placed(piece: &[(f64, f64)], c: (f64, f64)) -> (bool, f64) {
         }
         let (dx, dy) = (b.0 - a.0, b.1 - a.1);
         let t = (((c.0 - a.0) * dx + (c.1 - a.1) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
-        least = least.min((a.0 + t * dx - c.0).hypot(a.1 + t * dy - c.1));
+        least = least.min(det::hypot(a.0 + t * dx - c.0, a.1 + t * dy - c.1));
     }
     (inside, least)
 }
@@ -1815,7 +1816,7 @@ fn a_bore_inside_the_corners_piece_of_the_top_is_refused_naming_the_setback_that
     kept_definitions(&k, &b, &case, 3);
     let top_circle = |k: &Kernel, b: &Brep, c: (f64, f64)| {
         edges_on(k, b, |p| {
-            (p.z - 20.0).abs() < 1e-9 && ((p.x - c.0).hypot(p.y - c.1) - radius).abs() < 1e-9
+            (p.z - 20.0).abs() < 1e-9 && (det::hypot(p.x - c.0, p.y - c.1) - radius).abs() < 1e-9
         })
         .len()
     };
@@ -1842,7 +1843,7 @@ fn a_bore_inside_the_corners_piece_of_the_top_is_refused_naming_the_setback_that
 /// angle `a0` to `a1` (radians, from `xref` toward `yref`).
 fn arc_in(k: &Kernel, c: Point3, xref: Vec3, yref: Vec3, r: f64, a0: f64, a1: f64) -> Curve {
     let axis = xref.cross(yref);
-    let x0 = xref * a0.cos() + yref * a0.sin();
+    let x0 = xref * det::cos(a0) + yref * det::sin(a0);
     let y0 = axis.cross(x0);
     let frame = Axis2Placement::new(c, x0, y0);
     let interval = Extent1d::from_min_max(0.0, (a1 - a0) * 180.0 / PI);
@@ -1867,8 +1868,8 @@ fn hip_roof(k: &mut Kernel, curved: bool) -> Brep {
         Vec3::Y,
         Vec3::Z,
         5.0,
-        (-2.0f64).atan2(21.0f64.sqrt()),
-        4.0f64.atan2(3.0),
+        det::atan2(-2.0f64, 21.0f64.sqrt()),
+        det::atan2(4.0f64, 3.0),
     );
     let along_x = if curved {
         let floor = line(p(yb, 0.0), p(-8.0, 0.0));
@@ -2054,8 +2055,8 @@ fn cone_frustum_named_and_twice_asked_setbacks_build() {
     let named = 1.102 * CONE_ASKED;
     // points on the rounds past twice the ask (3.431 along each edge from V): the top's
     // diameter's at y = 1.5, the generator's ball at z = 1.5, the top's arc's at 30 degrees
-    let tb = (PI / 6.0).tan();
-    let (cb, sb) = ((PI / 6.0).cos(), (PI / 6.0).sin());
+    let tb = det::tan(PI / 6.0);
+    let (cb, sb) = (det::cos(PI / 6.0), det::sin(PI / 6.0));
     let rg = 10.0 - 1.5 * tb - 1.5 / cb;
     let yg = (rg * rg - 2.25).sqrt();
     let ra = 10.0 - 4.0 * tb - 2.0 / cb;
@@ -2101,7 +2102,7 @@ fn double_d_prism(
     height: f64,
 ) -> Brep {
     let [ox, oy, oz] = origin;
-    let alpha = (d / rr).asin();
+    let alpha = det::asin(d / rr);
     let x_end = (rr * rr - d * d).sqrt();
     let p0 = Point3::new(ox + x_back, oy - d, oz);
     let p1 = Point3::new(ox + x_end, oy - d, oz);
@@ -2273,11 +2274,11 @@ fn arc_edge_far_mitre_cut_names_arc_length_reach_and_builds() {
     for v_cfg in &variants {
         let [ox, oy, oz] = v_cfg.origin;
         let (rr, d, x_back, hh, r_far) = (v_cfg.rr, v_cfg.d, v_cfg.x_back, v_cfg.hh, v_cfg.r_far);
-        let alpha = (d / rr).asin();
+        let alpha = det::asin(d / rr);
         let x_end = (rr * rr - d * d).sqrt();
         let y_up_c = d - r_up;
         let x_up_c = ((rr - r_up) * (rr - r_up) - y_up_c * y_up_c).sqrt();
-        let phi_cut = ((d - r_far) / (rr - r_arc)).asin();
+        let phi_cut = det::asin((d - r_far) / (rr - r_arc));
         let l_cut = rr * (alpha + phi_cut);
         let s = if v_cfg.at_end { 1.0f64 } else { -1.0f64 };
         let build_case = || {
@@ -2308,12 +2309,12 @@ fn arc_edge_far_mitre_cut_names_arc_length_reach_and_builds() {
                 ),
                 middle(
                     [
-                        ox + (rr - r_arc) * phi_mid.cos(),
-                        oy + (rr - r_arc) * phi_mid.sin(),
+                        ox + (rr - r_arc) * det::cos(phi_mid),
+                        oy + (rr - r_arc) * det::sin(phi_mid),
                         oz + hh - r_arc,
                     ],
                     [0.0, 0.0, 1.0],
-                    [phi_mid.cos(), phi_mid.sin(), 0.0],
+                    [det::cos(phi_mid), det::sin(phi_mid), 0.0],
                     r_arc,
                 ),
                 middle(
@@ -2500,4 +2501,532 @@ fn arc_edge_far_mitre_cut_names_arc_length_reach_and_builds() {
         kept_definitions(&k3, &b3, &case3, 3);
         springs_are_the_fills(&k3, &b3, &r3, case3.name, 3);
     }
+}
+
+/// Box `[ox + x_min, ox + 40] x [oy, oy + 40] x [oz, oz + 20]` less the vertical cylinder of
+/// radius 20 about `(ox + 40, oy + 40)`, leaving a concave cylindrical wall meeting the top
+/// `z = oz + 20` and flat `y = oy + 40` at `V = (ox + 20, oy + 40, oz + 20)` with straight
+/// top edge of length `20 - x_min` running back to `x = ox + x_min`.
+fn box_minus_cylinder(k: &mut Kernel, origin: [f64; 3], x_min: f64) -> Brep {
+    let [ox, oy, oz] = origin;
+    let block = create_box(k, Point3::new(ox + x_min, oy, oz), 40.0 - x_min, 40.0, 20.0).unwrap();
+    let cyl = create_cylinder(k, Point3::new(ox + 40.0, oy + 40.0, oz - 2.0), 20.0, 24.0).unwrap();
+    boolean_difference(k, block, cyl).unwrap()
+}
+
+/// #13647: when setback-corner growth beside a curved face (`grow_curved`) is stopped by a
+/// far corner's cut on a round's rail and no fill up to the rails' reach certifies, the
+/// refusal is typed and names the certified reach and its reason (`fit_setback = 0`), for
+/// both asked setbacks (via `set_set_back_fill` and the marked corner door, and far from the
+/// origin) and automatic rule setbacks.
+///
+/// Closed form on `box_minus_cylinder`: the top flat edge runs from `V = (ox + 20, oy + 40,
+/// oz + 20)` to `(ox + x_min, oy + 40, oz + 20)` (length `20 - x_min`). Rounding the square
+/// back top edge `x = ox + x_min` at `r_far` puts its far rail at `x = ox + x_min + r_far`,
+/// cutting the flat edge's round at `L_cut = 20 - x_min - r_far` from `V`, certified reach
+/// `L_cut - 1000 * tol_flat`:
+/// - asked `4.0` (`x_min = 14.0`, `radii = [2, 2, 2, 1]`): `L_cut = 5.0` (`4.0 < 4.99 < 6.0
+///   = room < 8.0 = 2 * asked`);
+/// - automatic (`x_min = 16.5`, `radii = [1, 1.5, 2, 0.5]`): `L_cut = 3.0` (`base ~ 2.227 <
+///   2.99 < 3.25 = room - 0.25 * r < 4.455 = 2 * base`).
+#[test]
+fn curved_setback_growth_uncertified_within_rail_reach_is_refused_as_data() {
+    struct Variant {
+        label: &'static str,
+        origin: [f64; 3],
+        x_min: f64,
+        radii: [f64; 4],
+        asked: Option<f64>,
+        marked: bool,
+    }
+    let variants = [
+        Variant {
+            label: "asked, straight far cut",
+            origin: [0.0, 0.0, 0.0],
+            x_min: 14.0,
+            radii: [2.0, 2.0, 2.0, 1.0],
+            asked: Some(4.0),
+            marked: false,
+        },
+        Variant {
+            label: "asked via marked corner door",
+            origin: [0.0, 0.0, 0.0],
+            x_min: 14.0,
+            radii: [2.0, 2.0, 2.0, 1.0],
+            asked: Some(4.0),
+            marked: true,
+        },
+        Variant {
+            label: "asked, far from origin +1000",
+            origin: [1000.0, 1000.0, 1000.0],
+            x_min: 14.0,
+            radii: [2.0, 2.0, 2.0, 1.0],
+            asked: Some(4.0),
+            marked: false,
+        },
+        Variant {
+            label: "automatic rule setbacks, straight far cut",
+            origin: [0.0, 0.0, 0.0],
+            x_min: 16.5,
+            radii: [1.0, 1.5, 2.0, 0.5],
+            asked: None,
+            marked: false,
+        },
+    ];
+    for cfg in &variants {
+        let [ox, oy, oz] = cfg.origin;
+        let mut k = all_fixes();
+        let mut b = box_minus_cylinder(&mut k, cfg.origin, cfg.x_min);
+        let v_pt = Point3::new(ox + 20.0, oy + 40.0, oz + 20.0);
+        let p_flat = [ox + 0.5 * (cfg.x_min + 20.0), oy + 40.0, oz + 20.0];
+        let p_up = [ox + 20.0, oy + 40.0, oz + 10.0];
+        let p_arc = [
+            ox + 40.0 - 20.0 * det::cos(PI / 4.0),
+            oy + 40.0 - 20.0 * det::sin(PI / 4.0),
+            oz + 20.0,
+        ];
+        let p_back = [ox + cfg.x_min, oy + 20.0, oz + 20.0];
+        let edges: Vec<EdgeId> = [p_flat, p_up, p_arc, p_back]
+            .iter()
+            .map(|&p| pick(&k, &b, p))
+            .collect();
+        let v = vertex_at(&b, v_pt);
+        let flat_tol = edge::tolerance(&b, edges[0]).unwrap();
+        let want = (20.0 - cfg.x_min - cfg.radii[3]) - 1000.0 * flat_tol;
+        let r = round_set_back(
+            &mut k, &mut b, &edges, &cfg.radii, v_pt, cfg.asked, cfg.marked,
+        );
+        assert_eq!(
+            r.event,
+            Some(BlendCornerEvent::Setback),
+            "{}: {}",
+            cfg.label,
+            r.reason
+        );
+        assert!(!r.ok, "{}: built", cfg.label);
+        assert_eq!(r.fit, 0.0, "{}: fit_setback", cfg.label);
+        match r.refusal {
+            Some(BlendRefusal::SetbackUncertifiedWithinRails { vertex, reach }) => {
+                assert_eq!(vertex, v, "{}", cfg.label);
+                // the cut is certified to a bracket the edge's tolerance wide (`gather_ends`)
+                assert!(
+                    reach <= want && want - reach <= flat_tol,
+                    "{}: reach {reach:.12} against closed form {want:.12} (diff {:+.3e})",
+                    cfg.label,
+                    reach - want
+                );
+            }
+            other => panic!(
+                "{}: expected SetbackUncertifiedWithinRails, got {other:?}: {}",
+                cfg.label, r.reason
+            ),
+        }
+        assert!(
+            r.reason.contains("far corner cuts a round"),
+            "{}: missing rail-cut reason: {}",
+            cfg.label,
+            r.reason
+        );
+        assert!(
+            !r.reason.contains("up to twice"),
+            "{}: wrong untyped twice message: {}",
+            cfg.label,
+            r.reason
+        );
+        if cfg.asked.is_none() {
+            // Per-edge rail reach: only the cut edge is held at `want`; the uncut upright
+            // and arc edges still grow to about twice their base setbacks (4.75 and 6.0).
+            // The cut edge is the flat one, the shortest (3.5 against 20 and the arc's 31.4),
+            // so the one with the least room.
+            assert_eq!(r.setbacks.len(), 3, "{}: setbacks len", cfg.label);
+            assert_eq!(r.room.len(), 3, "{}: room len", cfg.label);
+            let cut = (0..3)
+                .min_by(|&i, &j| r.room[i].total_cmp(&r.room[j]))
+                .unwrap();
+            assert!(
+                r.setbacks[cut] <= want && want - r.setbacks[cut] <= flat_tol,
+                "{}: cut edge setback {} vs reach {want}",
+                cfg.label,
+                r.setbacks[cut]
+            );
+            assert!(
+                (0..3).filter(|&i| i != cut).all(|i| r.setbacks[i] > 4.5),
+                "{}: uncut edges wrongly held by the cut edge's reach: {:?}",
+                cfg.label,
+                r.setbacks
+            );
+        }
+    }
+}
+
+/// #13647: an asked setback on a curved Setback corner whose growth is bounded below twice
+/// the asked setback by a far Mitre cutting the arc round's rail (`double_d_prism`, `R = 30`,
+/// `d = 2.5`, `x_back = 20`, `H = 15`, radii `[1.0, 1.5, 2.0, 2.5]`, asked `2.2`).
+///
+/// Closed form: `alpha = asin(2.5 / 30)`, `phi_cut = asin((2.5 - 2.5) / 28) = 0`, so the
+/// arc's far Mitre cut sits at `L_cut = 30 * alpha = 2.502903` from `V`, certified reach
+/// `want = L_cut - 1000 * tol_arc ~ 2.492903` (`2.2 < 2.2176 < want < 4.4 = 2 * asked`).
+/// Bounding growth at the rail reach finds the certifying setback (`<= want`) and returns
+/// `SetbackTooShort { why: ConcaveFill }` naming a setback that builds cleanly with exact
+/// topology, G1 seams, exact round definitions and re-certified Setback patches. With the far
+/// round at `2.758` the reach falls between grid steps, and the setback named is the reach.
+#[test]
+fn curved_setback_asked_growth_bounded_by_arc_rail_reach_names_and_builds() {
+    let (rr, d, x_back, hh) = (30.0f64, 2.5f64, 20.0f64, 15.0f64);
+    let (r_flat, r_up, r_arc, r_far) = (1.0f64, 1.5f64, 2.0f64, 2.5f64);
+    let alpha = det::asin(d / rr);
+    let x_end = (rr * rr - d * d).sqrt();
+    let x_pick = 0.5 * (x_back + x_end);
+    let y_up_c = d - r_up;
+    let x_up_c = ((rr - r_up) * (rr - r_up) - y_up_c * y_up_c).sqrt();
+    // where the far round at `r_far` cuts the arc round's rail, along the arc from `V`
+    let cut_at = |r_far: f64| rr * (alpha + det::asin((d - r_far) / (rr - r_arc)));
+    let l_cut = cut_at(r_far);
+
+    let build_case = |r_far: f64| {
+        let mut k = all_fixes();
+        let b = double_d_prism(&mut k, [0.0, 0.0, 0.0], rr, d, x_back, hh);
+        let edges: Vec<EdgeId> = [
+            [x_pick, -d, hh],
+            [x_end, -d, 0.5 * hh],
+            [rr, 0.0, hh],
+            [x_pick, d, hh],
+        ]
+        .iter()
+        .map(|&p| pick(&k, &b, p))
+        .collect();
+        let phi_mid = -0.004f64;
+        let on_rounds = vec![
+            middle(
+                [x_back + 2.0, -(d - r_flat), hh - r_flat],
+                [0.0, -1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                r_flat,
+            ),
+            middle(
+                [x_up_c, -y_up_c, 3.0],
+                [0.0, -1.0, 0.0],
+                [x_up_c / (rr - r_up), -y_up_c / (rr - r_up), 0.0],
+                r_up,
+            ),
+            middle(
+                [
+                    (rr - r_arc) * det::cos(phi_mid),
+                    (rr - r_arc) * det::sin(phi_mid),
+                    hh - r_arc,
+                ],
+                [0.0, 0.0, 1.0],
+                [det::cos(phi_mid), det::sin(phi_mid), 0.0],
+                r_arc,
+            ),
+            middle(
+                [x_back + 4.0, d - r_far, hh - r_far],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                r_far,
+            ),
+        ];
+        let case = Case {
+            name: "asked growth bounded by arc rail reach",
+            v: Point3::new(x_end, -d, hh),
+            reach: cut_at(r_far) + 2.0,
+            convex: true,
+            inside: Point3::new(x_pick, 0.0, 0.5 * hh),
+            faces: vec![
+                CurvedFace::plane([0.0, 0.0, hh], [0.0, 0.0, 1.0]),
+                CurvedFace::plane([0.0, -d, 0.0], [0.0, -1.0, 0.0]),
+                CurvedFace {
+                    kind: Kind::Cylinder,
+                    at: Point3::new(0.0, 0.0, 0.0),
+                    axis: Vec3::Z,
+                    radius: rr,
+                    slope: 0.0,
+                    side: 1.0,
+                },
+            ],
+            on_rounds,
+            k: 0.0,
+            faces_want: 16,
+        };
+        (k, b, edges, case)
+    };
+
+    let (mut k, mut b, edges, case) = build_case(r_far);
+    let v = vertex_at(&b, case.v);
+    let arc_tol = edge::tolerance(&b, edges[2]).unwrap();
+    let want = l_cut - 1000.0 * arc_tol;
+    let r = round_asked(
+        &mut k,
+        &mut b,
+        &edges,
+        &[r_flat, r_up, r_arc, r_far],
+        case.v,
+        Some(2.2),
+    );
+    assert_eq!(r.event, Some(BlendCornerEvent::Setback), "{}", r.reason);
+    assert!(!r.ok, "asked 2.2 built");
+    let named = match r.refusal {
+        Some(BlendRefusal::SetbackTooShort { vertex, least, why }) => {
+            assert_eq!(vertex, v);
+            assert_eq!(why, SetbackTooShortWhy::ConcaveFill);
+            assert!(
+                least > 2.2 && least <= want,
+                "named {least:.6} outside (2.2, {want:.6}]"
+            );
+            least
+        }
+        other => panic!("expected SetbackTooShort, got {other:?}: {}", r.reason),
+    };
+    assert!((r.fit - named).abs() <= 1e-12, "fit {}", r.fit);
+
+    // the least on the grid of thousandths of 2.2: asking one step below is refused too short
+    let (mut k1, mut b1, edges1, case1) = build_case(r_far);
+    let below = named - 0.001 * 2.2;
+    let r1 = round_asked(
+        &mut k1,
+        &mut b1,
+        &edges1,
+        &[r_flat, r_up, r_arc, r_far],
+        case1.v,
+        Some(below),
+    );
+    assert!(!r1.ok, "asked {below} built");
+    assert!(
+        matches!(r1.refusal, Some(BlendRefusal::SetbackTooShort { .. })),
+        "asked {below}: {:?}: {}",
+        r1.refusal,
+        r1.reason
+    );
+
+    // Asking the named setback builds cleanly with exact topology and re-certified fill.
+    let (mut k2, mut b2, edges2, case2) = build_case(r_far);
+    let r2 = round_asked(
+        &mut k2,
+        &mut b2,
+        &edges2,
+        &[r_flat, r_up, r_arc, r_far],
+        case2.v,
+        Some(named),
+    );
+    assert_eq!(r2.event, Some(BlendCornerEvent::Setback), "{}", r2.reason);
+    assert!(r2.ok, "asked named {named}: {}", r2.reason);
+    assert_eq!(r2.setbacks, vec![named; 3]);
+    assert_eq!(get_faces(&b2).unwrap().len(), 16, "faces");
+    assert_eq!(get_edges(&b2).unwrap().len(), 39, "edges");
+    assert_eq!(brep1::vertices(&b2, None).unwrap().len(), 25, "vertices");
+    assert_eq!(
+        brep1::shells(&mut k2, &b2, None).unwrap().len(),
+        2,
+        "shells"
+    );
+    graded(&mut k2, &mut b2, &case2, 3);
+    kept_definitions(&k2, &b2, &case2, 3);
+    springs_are_the_fills(&k2, &b2, &r2, case2.name, 3);
+
+    // Held at the reach: with the far round at 2.758 the arc's certified reach,
+    // `cut_at(2.758) - 1000 * tol_arc ~ 2.216470`, lies between the least setback that
+    // certifies (about 2.215849, found by asking setbacks directly) and the next step of the
+    // grid of thousandths of 2.18 above it (1.017 * 2.18 = 2.21706). The growth from 2.18 is
+    // held at the reach, so it names the reach itself, not that grid step, and it builds.
+    let r_held = 2.758f64;
+    let want_held = cut_at(r_held) - 1000.0 * arc_tol;
+    let radii_held = [r_flat, r_up, r_arc, r_held];
+    let (mut k3, mut b3, edges3, case3) = build_case(r_held);
+    let r3 = round_asked(&mut k3, &mut b3, &edges3, &radii_held, case3.v, Some(2.18));
+    assert!(!r3.ok, "asked 2.18 built");
+    let held = match r3.refusal {
+        Some(BlendRefusal::SetbackTooShort { least, why, .. }) => {
+            assert_eq!(why, SetbackTooShortWhy::ConcaveFill);
+            // the cut is certified to a bracket the edge's tolerance wide (`gather_ends`)
+            assert!(
+                least <= want_held && want_held - least <= arc_tol,
+                "named {least:.9} against the reach {want_held:.9}"
+            );
+            least
+        }
+        other => panic!("expected SetbackTooShort, got {other:?}: {}", r3.reason),
+    };
+    let (mut k4, mut b4, edges4, case4) = build_case(r_held);
+    let r4 = round_asked(&mut k4, &mut b4, &edges4, &radii_held, case4.v, Some(held));
+    assert!(r4.ok, "asked the reach {held}: {}", r4.reason);
+    assert_eq!(r4.setbacks, vec![held; 3]);
+    assert_eq!(get_faces(&b4).unwrap().len(), 16, "faces at the reach");
+    assert_eq!(get_edges(&b4).unwrap().len(), 39, "edges at the reach");
+    assert_eq!(
+        brep1::vertices(&b4, None).unwrap().len(),
+        25,
+        "vertices at the reach"
+    );
+    assert_eq!(brep1::shells(&mut k4, &b4, None).unwrap().len(), 2);
+    graded(&mut k4, &mut b4, &case4, 3);
+    kept_definitions(&k4, &b4, &case4, 3);
+    springs_are_the_fills(&k4, &b4, &r4, case4.name, 3);
+}
+
+/// #13647: moving the far Mitre cut on `double_d_prism` (`R = 30`, `d = 2.5`, `r_far = 2.78`,
+/// `asked = 2.18`) below the certifying threshold (`L_cut = 2.202903`, certified arc-length
+/// reach `want ~ 2.192903 < 2.2154`) refuses with `SetbackUncertifiedWithinRails` naming the
+/// certified arc-length reach.
+#[test]
+fn curved_setback_asked_growth_uncertified_within_arc_rail_reach_is_refused() {
+    let (rr, d, x_back, hh) = (30.0f64, 2.5f64, 20.0f64, 15.0f64);
+    let (r_flat, r_up, r_arc, r_far_tight) = (1.0f64, 1.5f64, 2.0f64, 2.78f64);
+    let alpha = det::asin(d / rr);
+    let x_end = (rr * rr - d * d).sqrt();
+    let x_pick = 0.5 * (x_back + x_end);
+    let phi_tight = det::asin((d - r_far_tight) / (rr - r_arc));
+    let l_cut_tight = rr * (alpha + phi_tight);
+
+    let mut k = all_fixes();
+    let mut b = double_d_prism(&mut k, [0.0, 0.0, 0.0], rr, d, x_back, hh);
+    let edges: Vec<EdgeId> = [
+        [x_pick, -d, hh],
+        [x_end, -d, 0.5 * hh],
+        [rr, 0.0, hh],
+        [x_pick, d, hh],
+    ]
+    .iter()
+    .map(|&p| pick(&k, &b, p))
+    .collect();
+    let v_pt = Point3::new(x_end, -d, hh);
+    let v = vertex_at(&b, v_pt);
+    let arc_tol = edge::tolerance(&b, edges[2]).unwrap();
+    let want_tight = l_cut_tight - 1000.0 * arc_tol;
+    let r = round_asked(
+        &mut k,
+        &mut b,
+        &edges,
+        &[r_flat, r_up, r_arc, r_far_tight],
+        v_pt,
+        Some(2.18),
+    );
+    assert_eq!(r.event, Some(BlendCornerEvent::Setback), "{}", r.reason);
+    assert!(!r.ok, "tight arc reach built");
+    assert_eq!(r.fit, 0.0, "tight arc reach fit_setback");
+    match r.refusal {
+        Some(BlendRefusal::SetbackUncertifiedWithinRails { vertex, reach }) => {
+            assert_eq!(vertex, v);
+            // the cut is certified to a bracket the edge's tolerance wide (`gather_ends`)
+            assert!(
+                reach <= want_tight && want_tight - reach <= arc_tol,
+                "arc reach {reach:.12} against closed form {want_tight:.12} (diff {:+.3e})",
+                reach - want_tight
+            );
+        }
+        other => panic!(
+            "expected SetbackUncertifiedWithinRails on tight arc reach, got {other:?}: {}",
+            r.reason
+        ),
+    }
+}
+
+/// #13647: an automatic curved Setback corner whose rule setbacks need growth and whose near
+/// flat edge is cut by a far Mitre below twice its base setback (`double_d_prism`, `R = 30`,
+/// `d = 10`, `x_back = 24`, `H = 10`, radii `[1.0, 1.5, 2.0, 1.0]` on `[flat, up, arc,
+/// back]`).
+///
+/// Closed form: `x_end = sqrt(800) = 28.284271`, flat length `4.284271`, `room - 0.25 * r =
+/// 4.034271`, far back round `r_back = 1.0` cuts the flat rail at `L_cut = 3.284271`,
+/// certified reach `want = L_cut - 1000 * tol_flat ~ 3.274271`. Because `base ~ 2.0201 <
+/// grown ~ 2.0949 < want < 4.0343 < 2 * base`, unbounded growth at `2x` runs past the rail
+/// cut and refuses the corner; bounding growth by each edge's rail reach builds it cleanly.
+#[test]
+fn curved_setback_auto_growth_bounded_by_rail_reach_builds() {
+    let (rr, d, x_back, hh) = (30.0f64, 10.0f64, 24.0f64, 10.0f64);
+    let (r_flat, r_up, r_arc, r_back) = (1.0f64, 1.5f64, 2.0f64, 1.0f64);
+    let x_end = (rr * rr - d * d).sqrt();
+    let x_pick = 0.5 * (x_back + x_end);
+    let y_up_c = d - r_up;
+    let x_up_c = ((rr - r_up) * (rr - r_up) - y_up_c * y_up_c).sqrt();
+
+    let mut k = all_fixes();
+    let mut b = double_d_prism(&mut k, [0.0, 0.0, 0.0], rr, d, x_back, hh);
+    let edges: Vec<EdgeId> = [
+        [x_pick, -d, hh],
+        [x_end, -d, 0.5 * hh],
+        [rr, 0.0, hh],
+        [x_back, 0.0, hh],
+    ]
+    .iter()
+    .map(|&p| pick(&k, &b, p))
+    .collect();
+    let flat_tol = edge::tolerance(&b, edges[0]).unwrap();
+    let want_flat = (x_end - x_back - r_back) - 1000.0 * flat_tol;
+    let on_rounds = vec![
+        middle(
+            [x_back + r_back + 0.6, -(d - r_flat), hh - r_flat],
+            [0.0, -1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            r_flat,
+        ),
+        middle(
+            [x_up_c, -y_up_c, 3.0],
+            [0.0, -1.0, 0.0],
+            [x_up_c / (rr - r_up), -y_up_c / (rr - r_up), 0.0],
+            r_up,
+        ),
+        middle(
+            [rr - r_arc, 0.0, hh - r_arc],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            r_arc,
+        ),
+        middle(
+            [x_back + r_back, 0.0, hh - r_back],
+            [-1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            r_back,
+        ),
+    ];
+    let case = Case {
+        name: "auto growth bounded by rail reach",
+        v: Point3::new(x_end, -d, hh),
+        reach: 5.0,
+        convex: true,
+        inside: Point3::new(x_pick, 0.0, 0.5 * hh),
+        faces: vec![
+            CurvedFace::plane([0.0, 0.0, hh], [0.0, 0.0, 1.0]),
+            CurvedFace::plane([0.0, -d, 0.0], [0.0, -1.0, 0.0]),
+            CurvedFace {
+                kind: Kind::Cylinder,
+                at: Point3::new(0.0, 0.0, 0.0),
+                axis: Vec3::Z,
+                radius: rr,
+                slope: 0.0,
+                side: 1.0,
+            },
+        ],
+        on_rounds,
+        k: 0.0,
+        faces_want: 16,
+    };
+
+    let r = round_each(
+        &mut k,
+        &mut b,
+        &edges,
+        &[r_flat, r_up, r_arc, r_back],
+        case.v,
+    );
+    assert_eq!(r.event, Some(BlendCornerEvent::Setback), "{}", r.reason);
+    assert!(r.ok, "auto growth bounded by rail reach: {}", r.reason);
+    assert_eq!(r.setbacks.len(), 3);
+    assert_eq!(r.room.len(), 3);
+    // the flat edge is the shortest (4.28 against the upright's 10 and the arc's 20.5), so
+    // the one with the least room
+    let flat = (0..3)
+        .min_by(|&i, &j| r.room[i].total_cmp(&r.room[j]))
+        .unwrap();
+    assert!(
+        r.setbacks[flat] <= want_flat,
+        "flat setback {} past rail reach {want_flat}",
+        r.setbacks[flat]
+    );
+    assert_eq!(get_faces(&b).unwrap().len(), 16, "faces");
+    assert_eq!(get_edges(&b).unwrap().len(), 38, "edges");
+    assert_eq!(brep1::vertices(&b, None).unwrap().len(), 24, "vertices");
+    assert_eq!(brep1::shells(&mut k, &b, None).unwrap().len(), 2, "shells");
+    graded(&mut k, &mut b, &case, 3);
+    kept_definitions(&k, &b, &case, 3);
+    springs_are_the_fills(&k, &b, &r, case.name, 3);
 }

@@ -59,6 +59,7 @@ use crate::error::{EntityRef, Failure, Result, SolidError, SM_ERR_NULL_POINTER};
 use crate::geom::global_solver::SolverOperation;
 use crate::intersect::surface_intersector::p1::SrfIndex;
 use crate::kernel::Kernel;
+use crate::math::det;
 use crate::math::{Point2, Point3, Vec3, EFF_ZERO};
 use crate::nurbs::b_spline_curve::p1::{BSplineCurveForm, CanonicalData, KnotType};
 use crate::nurbs::b_spline_curve::BSplineCurve;
@@ -78,7 +79,9 @@ pub mod join_gap;
 pub mod mixed;
 pub mod on_face;
 pub(crate) mod piece;
+pub(crate) mod proved_trim;
 pub mod rollover;
+pub mod section_mitre;
 pub mod separate_ends;
 pub mod setback;
 pub mod support_ball;
@@ -527,7 +530,7 @@ pub fn join_within_xsect_tolerance_deg(size: f64, xsect_tol: f64, tangency_tol_d
     let eps = f64::EPSILON;
     let budget = xsect_tol * (1.0 - 16.0 * eps) - 8.0 * eps * size;
     if budget > 0.0 {
-        crate::math::rad_to_deg(2.0 * (budget / (2.0 * size)).atan()).min(tangency_tol_deg)
+        crate::math::rad_to_deg(2.0 * det::atan(budget / (2.0 * size))).min(tangency_tol_deg)
     } else {
         0.0
     }
@@ -596,45 +599,59 @@ pub trait MitreSolvers {
     fn ops(&mut self, id: FilletSolverId) -> Result<&mut dyn FilletSolverOps>;
 }
 
-/// `sm_FootOnSurface`: the point of `surface` nearest `point` (on it), from the guess
-/// `uv`: Newton on the foot's normal equations, to rounding. `None` where it does not
-/// converge in 40 steps (or the normal equations are singular).
-fn foot_on_surface(
+/// One Newton step of the foot's normal equations at `uv`: the change of `uv` towards the
+/// point of `surface` nearest `point`. On a surface affine in its parameters (a plane's) the
+/// step from any `uv` lands on the foot, also where the foot is past the surface's box.
+/// `None` where the normal equations are singular.
+fn foot_step(
     k: &Kernel,
     surface: &Surface,
     point: Point3,
-    mut uv: Point2,
-) -> Result<Option<Point2>> {
+    uv: Point2,
+) -> Result<Option<(f64, f64)>> {
     let flags = EvaluateFlags {
         u_side: Side::Left,
         v_side: Side::Left,
         only_upper_half: true,
         non_zero_tangents: false,
     };
+    let d = surface.evaluate(k, uv, 1, 1, flags)?;
+    let at = |i: usize, j: usize| {
+        d.get(i).and_then(|row| row.get(j)).copied().ok_or_else(|| {
+            missing_defect(
+                OP_EXACT,
+                "the surface's evaluation to first order returned fewer derivatives than asked",
+            )
+        })
+    };
+    let r = point - at(0, 0)?;
+    let su = at(1, 0)?;
+    let sv = at(0, 1)?;
+    let a = su.dot(su);
+    let b = su.dot(sv);
+    let c = sv.dot(sv);
+    let det = a * c - b * b;
+    if det <= EFF_ZERO * a * c {
+        return Ok(None);
+    }
+    let ru = su.dot(r);
+    let rv = sv.dot(r);
+    Ok(Some(((c * ru - b * rv) / det, (a * rv - b * ru) / det)))
+}
+
+/// `sm_FootOnSurface`: the point of `surface` nearest `point` (on it), from the guess
+/// `uv`: Newton on the foot's normal equations, to rounding. `None` where it does not
+/// converge in 40 steps (or the normal equations are singular).
+pub(crate) fn foot_on_surface(
+    k: &Kernel,
+    surface: &Surface,
+    point: Point3,
+    mut uv: Point2,
+) -> Result<Option<Point2>> {
     for _ in 0..40 {
-        let d = surface.evaluate(k, uv, 1, 1, flags)?;
-        let at = |i: usize, j: usize| {
-            d.get(i).and_then(|row| row.get(j)).copied().ok_or_else(|| {
-                missing_defect(
-                    OP_EXACT,
-                    "the surface's evaluation to first order returned fewer derivatives than asked",
-                )
-            })
-        };
-        let r = point - at(0, 0)?;
-        let su = at(1, 0)?;
-        let sv = at(0, 1)?;
-        let a = su.dot(su);
-        let b = su.dot(sv);
-        let c = sv.dot(sv);
-        let det = a * c - b * b;
-        if det <= EFF_ZERO * a * c {
+        let Some((du, dv)) = foot_step(k, surface, point, uv)? else {
             return Ok(None);
-        }
-        let ru = su.dot(r);
-        let rv = sv.dot(r);
-        let du = (c * ru - b * rv) / det;
-        let dv = (a * rv - b * ru) / det;
+        };
         uv.x += du;
         uv.y += dv;
         if du.abs() + dv.abs() <= 4.0 * EFF_ZERO * (1.0 + uv.x.abs() + uv.y.abs()) {
@@ -1010,7 +1027,7 @@ pub fn exact_mitre_curve(
     };
     let w = a.cross(u);
     let s_off = s_pnt - c;
-    let dt = s_off.dot(w).atan2(s_off.dot(u));
+    let dt = det::atan2(s_off.dot(w), s_off.dot(u));
     if dt.abs() <= EFF_ZERO || dt.abs() >= 0.99 * core::f64::consts::PI {
         return Ok(false);
     }
@@ -1020,8 +1037,8 @@ pub fn exact_mitre_curve(
     // curve runs as the edge does
     let mut arc = [
         (1.0, 0.0, 1.0),
-        (1.0, (0.5 * dt).tan(), (0.5 * dt).cos()),
-        (dt.cos(), dt.sin(), 1.0),
+        (1.0, det::tan(0.5 * dt), det::cos(0.5 * dt)),
+        (det::cos(dt), det::sin(dt), 1.0),
     ];
     if from_s {
         arc.reverse();
@@ -1223,11 +1240,11 @@ mod tests {
     #[test]
     fn blends_join_only_below_the_intersection_tolerance() {
         let deg = join_within_xsect_tolerance_deg(1.0, 2e-5, 10.0);
-        let bound = crate::math::rad_to_deg(2.0 * 1e-5_f64.atan());
+        let bound = crate::math::rad_to_deg(2.0 * det::atan(1e-5_f64));
         assert!(deg < bound, "{deg} not below {bound}");
         let a = deg.to_radians();
         assert!(
-            2.0 * (a / 2.0).tan() < 2e-5,
+            2.0 * det::tan(a / 2.0) < 2e-5,
             "{a}: the gap reaches the tolerance"
         );
         assert!(deg > bound * (1.0 - 1e-9), "{deg} far below {bound}");

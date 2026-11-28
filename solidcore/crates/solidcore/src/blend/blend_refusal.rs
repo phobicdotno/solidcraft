@@ -13,6 +13,7 @@
 use crate::blend::blend_corner::end::continuing_edges;
 use crate::blend::fillet_executive::p1::{is_radius_supported, SUPPORTED_TOLERANCES};
 use crate::error::blend::BlendFailure;
+use crate::math::det;
 use crate::math::{rad_to_deg, EFF_ZERO_SQRT, PI};
 use crate::topology::edgeuse::p1 as eu1;
 use crate::topology::edgeuse::p3::{evaluate_binormal, BinormalOptions};
@@ -95,6 +96,18 @@ pub enum BlendRefusal {
         /// Which test refused it.
         why: SetbackTooLongWhy,
     },
+    /// At a Setback corner whose setbacks grow during fill construction (beside a curved
+    /// face, or unequal planar G1 rounds on real rails), growth along an edge was stopped by
+    /// where a far corner cuts one of its round's rails (less the fit margin and ease), and
+    /// no fill up to the rails' reach certifies. `reach` is the least such bound among the
+    /// stopped edges, less the ease, and never below the setback that edge grows from:
+    /// unlike [`Self::SetbackTooLong`], no setback up to `reach` is certified to build.
+    SetbackUncertifiedWithinRails {
+        /// The corner's vertex.
+        vertex: VertexId,
+        /// The certified rail-reach bound, less the ease, that stopped the growth.
+        reach: f64,
+    },
     /// A Swept turn at `vertex` that no radius of its rounds builds: its side edge is sharp
     /// and of the rounds' convexity, so their ball cannot circle it
     /// ([`crate::blend::blend_corner::swept::classify_swept`]). The ball passes a side edge
@@ -139,7 +152,9 @@ pub enum SetbackTooShortWhy {
     ConvexFill,
     /// At a Setback corner beside a curved face, its fill is not certified no more concave
     /// than its faces at it. `least` is the setback at the least scale of it, on a grid of
-    /// thousandths, at which it is; with its ease it lies within the corner's rooms.
+    /// thousandths, at which it is (or the rails' reach less the ease where that certifies
+    /// and the largest grid step below it does not); with its ease it lies within the
+    /// corner's rooms and the rounds' rail reaches.
     ConcaveFill,
 }
 
@@ -198,6 +213,7 @@ impl BlendRefusal {
             | Self::ChamferAngleTooLarge { edge, .. } => EntityRef::Edge(edge),
             Self::SetbackTooShort { vertex, .. }
             | Self::SetbackTooLong { vertex, .. }
+            | Self::SetbackUncertifiedWithinRails { vertex, .. }
             | Self::SweptTurnPastSharpEdge { vertex, .. } => EntityRef::Vertex(vertex),
         }
     }
@@ -429,13 +445,13 @@ pub fn round_too_small(
     }
     // the blend's tangency angle: faces within it are tangent ([`edge::blend_edgeuse`])
     let tangent = PI / 180.0 * (90.0 - edge::CREASE_ANGLE);
-    let reach = 1.0 / (0.5 * turn).cos() - 1.0;
+    let reach = 1.0 / det::cos(0.5 * turn) - 1.0;
     if turn <= tangent || !(reach.is_finite() && reach > 0.0) {
         return Ok(None);
     }
     let tolerance = b.edge(e)?.tolerance.max(b.tolerance());
     // the round's width across its faces, the chord between its two edges
-    let chord = 2.0 * (0.5 * turn).sin();
+    let chord = 2.0 * det::sin(0.5 * turn);
     let narrowest = SUPPORTED_TOLERANCES * b.tolerance() / chord * (1.0 + EFF_ZERO_SQRT);
     if radius * reach >= tolerance && radius >= narrowest {
         return Ok(None);

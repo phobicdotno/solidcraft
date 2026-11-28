@@ -150,6 +150,7 @@ use crate::geom::extent2d::Extent2d;
 use crate::geom::global_solver::{SolutionRequested, SolverOperation};
 use crate::geom::vector2d::{Point2, Vec2};
 use crate::kernel::Kernel;
+use crate::math::det;
 use crate::math::{Point3, Vec3, EFF_ZERO, PI};
 use crate::nurbs::b_spline_curve::BSplineCurve;
 use crate::nurbs::b_spline_curve_n_lib::TrimMode;
@@ -425,7 +426,7 @@ fn may_meet_tangentially(
         return Ok(true);
     }
     let cos = (n1.dot(n2) / (l1 * l2)).abs().min(1.0);
-    Ok(crate::math::rad_to_deg(cos.acos()) <= bound_deg)
+    Ok(crate::math::rad_to_deg(det::acos(cos)) <= bound_deg)
 }
 const OP_MAKE_EDGE: &str = "blend::fillet_geom::p5::FilletBrep::make_fillet_edge";
 const OP_COPY: &str = "blend::fillet_geom::p5::FilletBrep::copy_fillet_geom";
@@ -1337,6 +1338,8 @@ impl FilletBrep {
         let mut surface1: Surface;
         // the other geometry, its solver's tolerance and its fillet surface, together
         let mut second: Option<(FilletGeomId, f64, Surface)> = None;
+        // the round the section runs across short of its end (#23151)
+        let mut crossed: Option<FilletGeomId> = None;
         let tol: f64;
         if let Some(g1) = g1 {
             let sid1 = self.geom(g1)?.fillet_solver();
@@ -1410,7 +1413,7 @@ impl FilletBrep {
                         };
                         let solvers = [solver_of(g1)?, solver_of(g2)?];
                         // fork 9b7cd48 passes this on (SER)
-                        super::p1::examine_n_fix_fillet_geoms_with_solvers(
+                        crossed = super::p1::examine_n_fix_fillet_geoms_with_solvers(
                             k,
                             self,
                             g1,
@@ -1458,6 +1461,21 @@ impl FilletBrep {
             surface1_face = Some(orig_face);
             tol = crate::topology::face::p2::tolerance(target.brep(), orig_face)?;
         }
+
+        // Not upstream (#23151): the section is the end row of one round and runs across
+        // the other. Its curve is the first one's, so that round is taken first whichever
+        // use of the edge is the primary one; the other's trim is the curve lifted onto it.
+        let (prim, mate, g1, g2, tol) = match (crossed, g1, second.as_mut()) {
+            (Some(across), Some(first), Some((other, other_tol, other_surface)))
+                if across == first =>
+            {
+                std::mem::swap(&mut surface1, other_surface);
+                let owner = std::mem::replace(other, first);
+                let owner_tol = std::mem::replace(other_tol, tol);
+                (mate, prim, Some(owner), Some(first), owner_tol)
+            }
+            _ => (prim, mate, g1, g2, tol),
+        };
 
         // Drop start & end points onto pFilletSurface1, then join them with a uv-curve
         let mut create_two_boundary_curves = false;
@@ -1536,17 +1554,39 @@ impl FilletBrep {
 
         // See if we need to add side curve for the other solver
         if let Some((g2, tol, surface2)) = second {
-            let uv = super::p4::create_uv_curve(
-                k,
-                self,
-                start_fv,
-                end_fv,
-                false,
-                &surface2,
-                50.0 * tol,
-            )?;
-            // the duplicate 3D curve and an unexpected second UV curve are deleted
-            self.set_uv(mate, uv.uv_curve1)?;
+            let trim = if crossed == Some(g2) {
+                // Not upstream (#23151): two vertices do not say where the section runs
+                // between them on a round it crosses; the edge's own curve does
+                let section = self
+                    .brep()
+                    .edge(e)?
+                    .curve
+                    .clone()
+                    .ok_or_else(|| broken_link(OP_CROSS, SECTION_NO_CURVE))?;
+                let lifted = crate::blend::blend_corner::proved_trim::lifted_trim(
+                    k, &surface2, &section, tol,
+                )?
+                .ok_or(SolidError::Unsupported {
+                    operation: OP_CROSS,
+                    reason: "two rounds that meet at a corner apart by more than the \
+                             tolerance: the section they share is not proved to lie on \
+                             the round it runs across",
+                })?;
+                Some(lifted)
+            } else {
+                let uv = super::p4::create_uv_curve(
+                    k,
+                    self,
+                    start_fv,
+                    end_fv,
+                    false,
+                    &surface2,
+                    50.0 * tol,
+                )?;
+                // the duplicate 3D curve and an unexpected second UV curve are deleted
+                uv.uv_curve1
+            };
+            self.set_uv(mate, trim)?;
             self.geom_mut(g2)?.add_side_fillet_edgeuse(mate);
         } else if g2.is_none() {
             self.rolled_piece_side_curve(k, mate, g1, start_fv, end_fv, resolve)?;
@@ -4487,8 +4527,8 @@ mod tests {
         let t = seam_deg.to_radians();
         let frame = Axis2Placement::new(
             Point3::new(0.0, 0.0, 0.0),
-            Vec3::new(t.cos(), t.sin(), 0.0),
-            Vec3::new(-t.sin(), t.cos(), 0.0),
+            Vec3::new(det::cos(t), det::sin(t), 0.0),
+            Vec3::new(-det::sin(t), det::cos(t), 0.0),
         );
         let mut cylinder = Cone::create_canonical_cylinder(k, &frame, 10.0).unwrap();
         let mut domain = Extent2d::default();
@@ -4509,7 +4549,7 @@ mod tests {
     /// The point at `deg` degrees on the circle of [`boss_and_floor`].
     fn on_foot(deg: f64) -> Point3 {
         let t = deg.to_radians();
-        Point3::new(10.0 * t.cos(), 10.0 * t.sin(), 5.0)
+        Point3::new(10.0 * det::cos(t), 10.0 * det::sin(t), 5.0)
     }
 
     /// A turned-back rail's cap edge (`turned_back_arc`, not upstream) continues the foot edge
@@ -4567,7 +4607,7 @@ mod tests {
                             let p = curve
                                 .evaluate_point(&k, ivl.evaluate(f64::from(i) / f64::from(n)))
                                 .unwrap();
-                            let off = (p.x.hypot(p.y) - 10.0).abs().max((p.z - 5.0).abs());
+                            let off = (det::hypot(p.x, p.y) - 10.0).abs().max((p.z - 5.0).abs());
                             assert!(off <= 1e-9, "{what}: {p:?} off the circle by {off}");
                             length += p.distance(last);
                             last = p;

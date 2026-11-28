@@ -319,6 +319,9 @@ dependencies = [
 [[package]]
 name = "nurbs-grid-mesh"
 version = "0.1.0"
+dependencies = [
+ "solidcore",
+]
 
 [[package]]
 name = "ordered-float"
@@ -581,6 +584,9 @@ dependencies = [
 [[package]]
 name = "ssi"
 version = "0.1.0"
+dependencies = [
+ "solidcore",
+]
 
 [[package]]
 name = "step-export"

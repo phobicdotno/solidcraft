@@ -1045,6 +1045,7 @@ fn parallel_curved_import_keeps_face_colours_and_exact_display_meshes() {
                 opacity: 0.7,
                 faces: vec![crate::FacePaint { face: 0, color: [0.8, 0.1, 0.3], opacity: 0.5, name: None }],
                 name: None,
+                layer: None,
             }))
         })
         .collect();
@@ -2343,6 +2344,21 @@ fn finishing_a_partly_read_assembly_reuses_its_placed_parts() {
     assert_eq!(reading.progress().0, MAX_WINDOW);
     let finished = reading.finish().unwrap();
     assert_same_import(&step_import_with_workers(&text, 1).unwrap(), &finished);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn ready_step_parts_and_work_ahead_fit_in_two_windows() {
+    let text = boxes_step(3 * MAX_WINDOW, "work ahead");
+    let mut reading = StepReading::with_workers(&text, 2).unwrap();
+    let ex = reading.rd.ex.clone();
+    parallel::with_queue(&ex, 2, 0, |queue| {
+        let queue = queue.expect("the STEP worker pool");
+        assert!(reading.rd.convert_window(false, Some(queue)));
+        assert_eq!(reading.rd.bodies.len(), MAX_WINDOW);
+        assert!(queue.peak_ahead > MAX_WINDOW, "workers can start parts beyond the current window");
+        assert!(queue.peak_ahead <= 2 * MAX_WINDOW, "{} parts ahead of publication", queue.peak_ahead);
+    });
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -5662,6 +5678,31 @@ fn an_invisibility_record_hides_its_styled_item_and_representation() {
     assert!(!shown.bodies[0].hidden);
 }
 
+/// The presentation layer a file puts a body on is read with it, whether the layer lists the
+/// solid, its styled item or its representation; a body on two layers is on the first, a blank
+/// layer name is no layer, and a body on none has none.
+#[test]
+fn a_body_is_read_with_the_layer_it_is_assigned_to() {
+    let layer_of = |extra: &str| {
+        let mut t = String::from(HEAD);
+        t += &cube_entities();
+        t += &context(20, "(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))");
+        t += "#60=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#101),#20);\n";
+        t += extra;
+        t += TAIL;
+        let imported = step_import(&t).unwrap();
+        assert_eq!(imported.bodies.len(), 1, "{:?}", imported.warnings);
+        imported.bodies[0].layer.clone()
+    };
+    assert_eq!(layer_of("#80=PRESENTATION_LAYER_ASSIGNMENT('Frame/Rails','',(#101));\n").as_deref(), Some("Frame/Rails"));
+    assert_eq!(layer_of("#70=STYLED_ITEM('',(),#101);\n#80=PRESENTATION_LAYER_ASSIGNMENT('Styled','',(#70));\n").as_deref(), Some("Styled"));
+    assert_eq!(layer_of("#80=PRESENTATION_LAYER_ASSIGNMENT('Represented','',(#60));\n").as_deref(), Some("Represented"));
+    let two = "#80=PRESENTATION_LAYER_ASSIGNMENT('First','',(#101));\n#81=PRESENTATION_LAYER_ASSIGNMENT('Second','',(#101));\n";
+    assert_eq!(layer_of(two).as_deref(), Some("First"));
+    assert_eq!(layer_of("#80=PRESENTATION_LAYER_ASSIGNMENT(' ','',(#101));\n"), None);
+    assert_eq!(layer_of(""), None);
+}
+
 /// #12291: a part styled with a surface colour and, beside it, a curve style (its edges) is the
 /// surface colour, whichever style the file lists first or last. The edge's colour once painted
 /// the whole solid, because the first colour found was taken.
@@ -5967,11 +6008,36 @@ fn a_solid_with_edges_shorter_than_the_stated_tolerance_is_read_at_its_own() {
     // A file whose stated tolerance resolves every edge is read once, at what it states.
     let imp = step_import(&text).unwrap_or_else(|e| panic!("{e}"));
     assert!(imp.warnings.is_empty(), "{:?}", imp.warnings);
-    // So is one whose shortest edge is longer than the stated tolerance, however little.
+    // So is one whose shortest edge is twice the stated tolerance: its vertices' balls touch, no more.
     let (_, coarse) = stating_coarse(0.02);
     let imp = step_import(&coarse).unwrap_or_else(|e| panic!("{e}"));
     assert!(imp.warnings.is_empty(), "{:?}", imp.warnings);
     assert_eq!(imp.bodies[0].body.record().tolerance, 0.01);
+}
+
+/// #3212: a bar whose end's top edge is rounded 0.01 mm, in a file that states 0.01 mm. The
+/// round's edges are 0.0141 mm long: longer than the stated tolerance, so the bar was read at
+/// it, but shorter than its two vertices' tolerances together, so their balls overlap. United
+/// with a box whose side the rounded end touches, level with the box's top (the bar first),
+/// the union made the round's lower vertex one with the box's top edge 0.01 mm above it and
+/// refused ("a merged vertex needs tolerance 0.02 ... which reaches a vertex it does not
+/// bound"). Read at a quarter of its shortest edge, the bar joins the box as one solid.
+#[test]
+fn a_round_whose_edges_the_stated_tolerance_cannot_tell_apart_joins_after_import() {
+    let r = 0.01;
+    let bar = fillet(&box_solid(Vec3::new(-1.0, 0.0, 0.0), Vec3::new(0.0, 0.4, 0.15)).unwrap(), &[Vec3::new(0.0, 0.2, 0.15)], r).unwrap();
+    let text = step_export(&[&bar], "test").unwrap();
+    let line = text.lines().find(|l| l.contains("UNCERTAINTY_MEASURE_WITH_UNIT")).unwrap();
+    let (head, rest) = line.split_once("LENGTH_MEASURE(").unwrap();
+    let (_, tail) = rest.split_once(')').unwrap();
+    let coarse = text.replace(line, &format!("{head}LENGTH_MEASURE(0.01){tail}"));
+    let imp = step_import(&coarse).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
+    let base = box_solid(Vec3::new(0.0, -1.0, -0.5), Vec3::new(1.6, 1.4, 0.15)).unwrap();
+    let joined = boolean(&imp.bodies[0].body, &base, BoolOp::Union).unwrap_or_else(|e| panic!("{e}")).unwrap();
+    let want = 1.6 * 2.4 * 0.65 + 0.4 * 0.15 - (1.0 - std::f64::consts::PI / 4.0) * r * r * 0.4;
+    let m = measure(&joined).unwrap();
+    assert!(rel(m.volume, want) < 1e-9, "volume {} want {want}", m.volume);
 }
 
 /// A closed polyhedron record from its corners and its faces (cycles of corner indices,
@@ -6558,6 +6624,7 @@ fn the_checks_heal_a_shared_import_once_they_end() {
             file_faces: 8,
             refused: None,
             hidden: k > 1,
+            layer: None,
         })
         .collect();
     heals.apply(&mut bodies);

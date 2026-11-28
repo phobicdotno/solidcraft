@@ -31,7 +31,8 @@
 //! ([`TurnRefusal::refusal`]). `%g` in the refusal's text is `fmt_g`. The torus and its loop
 //! are kept in [`SweptTurn`] from the edge geometry until the patch takes them. With the
 //! session's swept turns (`FilletSession::set_swept_turns`, the fork's `SetSweptTurns`;
-//! WR-697). No recursion.
+//! WR-697). Not the fork's: `O` is the feet's from S, on the side edge, not from the edge
+//! line's own point, which can lie far along it ([`swept_corner_edge_geom`]). No recursion.
 
 use crate::blend::blend_refusal::BlendRefusal;
 use crate::blend::fillet_corner::p1::face_by_two_edgeuses;
@@ -50,6 +51,7 @@ use crate::geom::axis2_placement::Axis2Placement;
 use crate::geom::extent2d::Extent2d;
 use crate::intersect::surface_intersector::p1::SrfIndex;
 use crate::kernel::Kernel;
+use crate::math::det;
 use crate::math::{rad_to_deg, Point2, Point3, Vec3, EFF_ZERO};
 use crate::nurbs::b_spline_surface::p1::SurfParamType;
 use crate::nurbs::b_spline_surface_n_lib::p2::OrientType;
@@ -227,7 +229,7 @@ fn tangent_at_vertex(k: &Kernel, b: &Brep, e: EdgeId, vertex: VertexId) -> Resul
 /// `sm_MeridianAngleDeg`: the angle (degrees) of `w` in the frame (`x`, `z`) of a meridian
 /// plane, `atan2(w.z, w.x)`.
 fn meridian_angle_deg(w: Vec3, x: Vec3, z: Vec3) -> f64 {
-    rad_to_deg(w.dot(z).atan2(w.dot(x)))
+    rad_to_deg(det::atan2(w.dot(z), w.dot(x)))
 }
 
 /// The radius of `solver`'s offset surface `rail` (`GetSurface(rail)->GetOffsetDistance()`,
@@ -547,6 +549,19 @@ pub fn swept_corner_edge_geom(
         .is_line(k, 10, tol)?
         .ok_or_else(|| unbuildable(OP_BUILD, CornerStep::SweptSideEdgeNotLine))?;
     let axis = axis.unitize()?;
+    // The feet are taken from S, the side edge's vertex at the corner, where it is on the
+    // edge's line: the line's own point can lie far along it (a notch's upright edge reports
+    // one 6e5 below the part), and `p + a ((c - p) . a)` then rounds at that distance (the
+    // foot 4.7e-11 off the balls' height). x and x2 were then not square to the edge, the
+    // torus's axis (x × x2) tilted by 2.3e-10, and the polar converter, measuring its end
+    // angle on the torus's smallest sweep circle (radius 0.047 at r 0.2), read it 2.3e-9
+    // degrees past the sweep: the check's polar interval test refused the result.
+    let off_line = (s_pnt - line_pt) - axis * (s_pnt - line_pt).dot(axis);
+    let line_pt = if off_line.length() <= tol {
+        s_pnt
+    } else {
+        line_pt
+    };
     let [c0, c1] = centre;
     let foot0 = line_pt + axis * (c0 - line_pt).dot(axis);
     let foot1 = line_pt + axis * (c1 - line_pt).dot(axis);
@@ -581,7 +596,7 @@ pub fn swept_corner_edge_geom(
     }
     let z = z.unitize()?;
     let y = z.cross(x);
-    let turn_deg = rad_to_deg(sin.atan2(x.dot(x2)));
+    let turn_deg = rad_to_deg(det::atan2(sin, x.dot(x2)));
 
     // the end section's arc: from S to A in the meridian (X, Z) through the first ball
     let a_pnt = pseudo.vertex_point(a)?;
