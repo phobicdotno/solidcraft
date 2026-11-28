@@ -261,28 +261,11 @@ pub fn rows(app: &mut SolveApp, ui: &mut egui::Ui, k: &mut Fab) -> bool {
         ui_kit::segmented(ui, &mut k.view, &[app.tr("fab.view_3d"), app.tr("fab.view_sheets")], ui_kit::Segments::default())
     });
 
-    report(app, ui);
-    // Only the settings shown are written: a change still waiting to be sliced, or a field the
-    // last result no longer matches (a bad number, a lost body pick), holds the export.
-    let can_export = app.fab.problem.is_none()
-        && app.fab.exporting.is_none()
-        && !app.fab.busy()
-        && app.fab.result.as_ref().is_some_and(|r| r.as_ref().is_ok_and(|v| v["sheets"].as_array().is_some_and(|s| !s.is_empty())));
-    // Scenarios wait on this: a result is in and nothing newer is coming.
-    crate::scenario::publish_count("fab:ready", f64::from(u8::from(can_export)));
-    let clicked = ui.add_enabled_ui(can_export, |ui| ui_kit::button(ui, app.tr("fab.export"), ui_kit::Button::Normal).clicked()).inner;
-    if clicked {
-        export(app);
-    }
-    match &app.fab.status {
-        Some(Ok(s)) => {
-            ui_kit::status_line(ui, s, ui_kit::StatusTone::Dim);
-        }
-        Some(Err(e)) => {
-            ui_kit::status_line(ui, e, ui_kit::StatusTone::Error);
-        }
-        None => {}
-    }
+    // What the last slicing found comes and goes (the "Slicing…" line while it runs, its
+    // warnings after): drawn in a scope of its own, it takes one id of the form however many
+    // lines it has, so the fields under it keep theirs and a field being typed in keeps the
+    // keyboard when a result comes in.
+    ui.scope(|ui| result_rows(app, ui));
     ui_kit::divider(ui, "fab_result");
     ui_kit::section_heading(ui, "fab.group_build");
     let before = k.style;
@@ -336,6 +319,32 @@ pub fn rows(app: &mut SolveApp, ui: &mut egui::Ui, k: &mut Fab) -> bool {
     ui_kit::checkbox(ui, app.tr("fab.labels"), &mut k.labels);
 
     enter
+}
+
+/// The last slicing's report, Export sheets… and how the export went.
+fn result_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
+    report(app, ui);
+    // Only the settings shown are written: a change still waiting to be sliced, or a field the
+    // last result no longer matches (a bad number, a lost body pick), holds the export.
+    let can_export = app.fab.problem.is_none()
+        && app.fab.exporting.is_none()
+        && !app.fab.busy()
+        && app.fab.result.as_ref().is_some_and(|r| r.as_ref().is_ok_and(|v| v["sheets"].as_array().is_some_and(|s| !s.is_empty())));
+    // Scenarios wait on this: a result is in and nothing newer is coming.
+    crate::scenario::publish_count("fab:ready", f64::from(u8::from(can_export)));
+    let clicked = ui.add_enabled_ui(can_export, |ui| ui_kit::button(ui, app.tr("fab.export"), ui_kit::Button::Normal).clicked()).inner;
+    if clicked {
+        export(app);
+    }
+    match &app.fab.status {
+        Some(Ok(s)) => {
+            ui_kit::status_line(ui, s, ui_kit::StatusTone::Dim);
+        }
+        Some(Err(e)) => {
+            ui_kit::status_line(ui, e, ui_kit::StatusTone::Error);
+        }
+        None => {}
+    }
 }
 
 fn count_row(app: &SolveApp, ui: &mut egui::Ui, label: &str, value: &mut String, max: i64) -> bool {

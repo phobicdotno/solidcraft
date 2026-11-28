@@ -488,3 +488,39 @@ fn the_sheets_frame_holds_every_sheet_and_the_top_caption() {
     }
     assert_eq!(super::sheets_frame(w, h, 0), super::sheets_frame(w, h, 1));
 }
+
+/// The "Slicing…" line comes and goes above the fields while a changed thickness is sliced
+/// again: the field being typed in keeps the keyboard, so the next keys go on into it and not to
+/// the app's shortcuts (the ribbon jumped to Manage, 2026-11-28).
+#[test]
+fn the_thickness_field_keeps_the_keyboard_while_it_is_sliced_again() {
+    let mut h = with_box();
+    open(&mut h);
+    wait_ready(&mut h);
+    let row = crate::scenario::rect_of("dialog:row:Sheet thickness").expect("the Sheet thickness row");
+    let at = egui::pos2(row.right() - 8.0, row.center().y);
+    h.step(&json!({"click": [at.x, at.y]})).unwrap();
+    h.frames(2);
+    let field = h.ctx.memory(|m| m.focused()).expect("a click in Sheet thickness takes the keyboard");
+    form(&mut h).thickness.clear();
+    h.frames(1);
+    h.step(&json!({"text": "4"})).unwrap();
+    h.frames(1);
+    assert_eq!(form(&mut h).thickness, "4");
+    // Past the pause the change is sliced: the line comes, then the result.
+    let began = std::time::Instant::now();
+    let mut saw_busy = false;
+    while !saw_busy || h.app.fab.busy() {
+        assert!(began.elapsed().as_secs() < 60, "no slicing came back");
+        saw_busy |= h.app.fab.busy();
+        assert_eq!(h.ctx.memory(|m| m.focused()), Some(field), "the field lost the keyboard while it was sliced");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        h.frames(1);
+    }
+    h.frames(2);
+    assert_eq!(h.ctx.memory(|m| m.focused()), Some(field), "the field lost the keyboard when the result came in");
+    h.step(&json!({"text": "."})).unwrap();
+    h.step(&json!({"text": "5"})).unwrap();
+    h.frames(1);
+    assert_eq!(form(&mut h).thickness, "4.5", "the next keys go on into the field");
+}
