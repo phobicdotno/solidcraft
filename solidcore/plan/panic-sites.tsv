@@ -831,6 +831,9 @@ crates/solidcore/src/offset/offset_geometry_creation.rs	OffsetGeometryCreation::
 crates/solidcore/src/offset/offset_geometry_creation.rs	OffsetGeometryCreation::vertex_offset_with_backend	int-rem	1	open	(j + 1) % curves.len()	
 crates/solidcore/src/offset/offset_geometry_creation.rs	OffsetGeometryCreation::vertex_offset_with_backend	int-rem	2	proven	(kk + 1) % 3	constant non-zero divisor
 crates/solidcore/src/offset/offset_geometry_creation.rs	OffsetGeometryCreation::vertex_offset_with_backend	int-rem	3	proven	(other + 1) % 3	constant non-zero divisor
+crates/solidcore/src/plate_contact.rs	footprint_across	int-rem	1	proven	held_by.len() % 2	constant non-zero divisor
+crates/solidcore/src/plate_contact.rs	footprint_across	int-rem	2	proven	held_by.len() % 2	constant non-zero divisor
+crates/solidcore/src/plate_contact.rs	seg_distance	f64::clamp	1	proven	clamp(0.0, 1.0)	constant bounds, min <= max
 crates/solidcore/src/primitive/api_curve_ops.rs	create_curve_interp_points	windows	1	proven	windows(2)	constant non-zero size
 crates/solidcore/src/primitive/api_curves.rs	create_curve	with_capacity	1	proven	Vec::with_capacity(num_knots)	num_knots < points.len(), an in-memory slice
 crates/solidcore/src/primitive/api_curves.rs	create_curve	with_capacity	2	proven	Vec::with_capacity(num_knots)	num_knots < points.len(), an in-memory slice
@@ -859,6 +862,7 @@ crates/solidcore/src/primitive/primitive_creation/p2/taper_walls.rs	seam_pcurve	
 crates/solidcore/src/primitive/primitive_creation/p2/taper_walls.rs	walls_closing_at_apexes	int-rem	1	proven	(i + count - 1) % count	inside for i in 0..count, so count > 0
 crates/solidcore/src/primitive/primitive_creation/p2/taper_walls.rs	walls_closing_at_apexes	int-rem	2	proven	(i + 1) % count	inside for i in 0..count, so count > 0
 crates/solidcore/src/primitive/primitive_creation/p2/taper_walls.rs	with_tangent_planes	int-rem	1	proven	(i + count - 1) % count	inside for i in 0..count, so count > 0
+crates/solidcore/src/prism/profile.rs	distance_to_segment	f64::clamp	1	proven	clamp(0.0, 1.0)	constant bounds, min <= max
 crates/solidcore/src/primitive/primitive_creation/p3/sweeps.rs	split_curves_on_axis	with_capacity	1	proven	Vec::with_capacity(middle.len() + 1)	middle.len() + 1 <= at.len() + 1, an in-memory Vec length
 crates/solidcore/src/query/api_queries.rs	edge_piece_points	windows	1	proven	windows(2)	constant non-zero size
 crates/solidcore/src/query/face/p3.rs	find_and_classify_loop_bisector_cached	int-div	1	proven	sample_cnt / 2	constant non-zero divisor
@@ -1048,6 +1052,7 @@ crates/solidcore/src/sweep/stations.rs	fractions	Ord::clamp	1	proven	clamp(MIN_S
 crates/solidcore/src/sweep/topology_sweep/store.rs	SweepStore::drop	Vec::drain	1	proven	drain(..)	full drain(..) has no invalid bounds
 crates/solidcore/src/sweep/topology_sweep/store.rs	SweepStore::unlock_mark	Vec::remove	1	proven	remove(index)	index is rposition() in the same locks Vec
 crates/solidcore/src/sweep/topology_sweep/store.rs	body_pair_mut	split_at	1	proven	split_at_mut(si.max(di))	entry() validates both base-adjusted indices against the same slots Vec
+crates/solidcore/src/tab_slot.rs	vary	with_capacity	1	proven	Vec::with_capacity(starts.len())	the length of a slice already in memory
 crates/solidcore/src/topology.rs	Brep::add_loop	with_capacity	1	open	Vec::with_capacity(edges.len())	
 crates/solidcore/src/topology.rs	Brep::end_surface_owner_cleared	Vec::remove	1	open	remove(i)	
 crates/solidcore/src/topology/brep/local_operation.rs	local_operation	with_capacity	1	open	Vec::with_capacity(all_faces.len())	
