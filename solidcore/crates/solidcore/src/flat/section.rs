@@ -62,6 +62,13 @@ const NUDGE_FAR: f64 = 11.5 * VERTEX_CLEARANCE;
 /// The plane offsets (mm) tried in order when the plane comes too close to a vertex.
 pub const NUDGES: [f64; 5] = [0.0, NUDGE_NEAR, -NUDGE_NEAR, NUDGE_FAR, -NUDGE_FAR];
 
+/// How far (mm) inside the body's bounds a plane must be to count as inside them for
+/// [`BrepSection::nudged`]: 1e-4, a twentieth of [`VERTEX_CLEARANCE`], so a plane on a face at
+/// the end of the body (a cylinder's cap) is nudged out of the body and gives nothing even where
+/// the kernel's tight box stands a little off that face (a cone face's box is found by
+/// classifying candidate points within a tolerance, and may come out about 1e-6 mm large).
+const BOUND_SLACK: f64 = VERTEX_CLEARANCE / 20.0;
+
 /// The smallest and largest chord tolerances (mm) a section accepts.
 pub(crate) const CHORD_RANGE: (f64, f64) = (1e-4, 10.0);
 
@@ -142,7 +149,8 @@ impl<'a> BrepSection<'a> {
 
     /// The plane position actually sectioned for `axis = at`: `at` moved by the first of
     /// [`NUDGES`] that keeps [`VERTEX_CLEARANCE`] from every vertex (when none does, the one
-    /// farthest from every vertex). A plane strictly inside the body's bounds is never nudged
+    /// farthest from every vertex). A plane inside the body's bounds (by more than
+    /// [`BOUND_SLACK`]) is never nudged
     /// out of them, so a slice just below a sphere's pole stays a small disc.
     #[must_use]
     pub fn nudged(&self, axis: Axis, at: f64) -> f64 {
@@ -151,7 +159,9 @@ impl<'a> BrepSection<'a> {
             self.bounds.get(i).copied().unwrap_or(f64::NAN),
             self.bounds.get(i + 3).copied().unwrap_or(f64::NAN),
         );
-        let inside = |c: f64| lo < c && c < hi;
+        // a plane within `BOUND_SLACK` of a side of the box is on that side, not inside: the
+        // kernel's tight box may stand off the body by its rounding and tolerances
+        let inside = |c: f64| lo + BOUND_SLACK < c && c < hi - BOUND_SLACK;
         let keep_inside = inside(at);
         // the distance to the nearest vertex along the axis
         let room = |c: f64| {
@@ -618,7 +628,13 @@ mod tests {
         assert!(close(s.nudged(Axis::Z, 3.0), 3.0, 0.0));
         // inside the bounds, the nudge stays inside
         assert!(close(s.nudged(Axis::Z, 9.999), 9.989, 1e-12));
+        // a box that stands a hair off the pole (kernel rounding) still has the pole on its
+        // side: the plane there is nudged out, not in
         let mut s = s;
+        let top = s.bounds[5];
+        s.bounds[5] = top + 1e-6;
+        assert!(close(s.nudged(Axis::Z, 10.0), 10.01, 1e-12));
+        s.bounds[5] = top;
         // just inside the top: a small disc, not nothing
         assert!(!s.section(Axis::Z, 9.999).unwrap().is_empty());
     }
